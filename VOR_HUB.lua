@@ -4102,19 +4102,31 @@ local categoryBar = create("Frame", {
 addCorner(categoryBar, 6)
 addVorTrim(categoryBar, 6, 3, 0.08)
 addVorCornerArmor(categoryBar, 4, 15, 0.38)
+
+-- Keep the functional layout in its own holder. VOR trim and corner armor use
+-- GuiObjects, so placing a UIListLayout directly on categoryBar makes Roblox
+-- count those decorative frames as extra tab cards and pushes the real tabs
+-- beyond the right edge.
+local categoryButtonsHolder = create("Frame", {
+    Name = "CategoryButtonsHolder",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 20,
+}, categoryBar)
 create("UIPadding", {
     PaddingLeft = UDim.new(0, 6),
     PaddingRight = UDim.new(0, 6),
     PaddingTop = UDim.new(0, 6),
     PaddingBottom = UDim.new(0, 6),
-}, categoryBar)
+}, categoryButtonsHolder)
 create("UIListLayout", {
     FillDirection = Enum.FillDirection.Horizontal,
     HorizontalAlignment = Enum.HorizontalAlignment.Center,
     VerticalAlignment = Enum.VerticalAlignment.Center,
     Padding = UDim.new(0, 6),
     SortOrder = Enum.SortOrder.LayoutOrder,
-}, categoryBar)
+}, categoryButtonsHolder)
 
 local homeCategories = {}
 local activeHomeCategory = nil
@@ -4193,7 +4205,7 @@ local function addHomeCategory(name, order, assetId)
         ImageTransparency = 0.14,
         ScaleType = Enum.ScaleType.Crop,
         ZIndex = 21,
-    }, categoryBar)
+    }, categoryButtonsHolder)
     addCorner(button, 6)
     local buttonStroke = addStroke(button, COLORS.line, 1, 0.34)
     addVorCornerArmor(button, 4, 12, 0.54)
