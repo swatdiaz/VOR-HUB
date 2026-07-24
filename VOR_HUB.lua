@@ -4379,7 +4379,7 @@ local VisualSection = VisualsPage:AddSection("Character Visuals", "Left")
 local VisualInfoSection = VisualsPage:AddSection("Visual Status", "Right")
 local NotificationSection = VisualsPage:AddSection("Hub Notifications", "Right")
 local OutfitSection = ToolsPage:AddSection("Local Outfit Preview", "Left")
-local FrozenPresetSection = ToolsPage:AddSection("Frozen Codex Armor", "Right")
+local VoidArmorSection = ToolsPage:AddSection("VOR Void Armor", "Right")
 local ToolsInfoSection = ToolsPage:AddSection("Tools Status", "Right")
 
 selectHomeCategory("Overnight")
@@ -4401,7 +4401,7 @@ local discordReminderStatusLabel = NotificationSection:AddLabel("Discord Reminde
 local outfitStatusLabel = ToolsInfoSection:AddLabel("Outfit: Your Roblox avatar")
 local soulRingStatusLabel = SoulRingSection:AddLabel("Soul Ring: Reading slot 1...")
 local soulRingCurrencyLabel = SoulRingSection:AddLabel("Soul Stones: Reading... | Rerolls: Reading...")
-ToolsInfoSection:AddLabel("Catalog previews and the frozen preset are client-only. Other players keep seeing your server avatar.")
+ToolsInfoSection:AddLabel("Catalog previews and VOR Void Armor are client-only. Other players keep seeing your server avatar.")
 
 local function setReviveStatus(message, success)
     statusLabel.Text = "Status: " .. tostring(message)
@@ -6319,17 +6319,18 @@ TweenSection:AddSlider({
 })
 
 local VISUAL_COLORS = {
-    ["Frozen White"] = Color3.fromRGB(225, 248, 255),
-    ["Glacier Blue"] = Color3.fromRGB(92, 205, 255),
-    ["Deep Ice"] = Color3.fromRGB(62, 130, 255),
-    ["Arctic Cyan"] = Color3.fromRGB(96, 255, 245),
+    ["Void Purple"] = Color3.fromRGB(151, 70, 255),
+    ["Royal Amethyst"] = Color3.fromRGB(196, 92, 255),
+    ["Abyss Violet"] = Color3.fromRGB(92, 32, 180),
+    ["Eclipse Magenta"] = Color3.fromRGB(232, 62, 255),
 }
-local visualColor = VISUAL_COLORS["Frozen White"]
-local visualState = {outline = false, aura = false, trail = false, glow = false, wings = false, halo = false, nameplate = false, frozenOutfit = false}
+local visualColor = VISUAL_COLORS["Void Purple"]
+local visualState = {outline = false, aura = false, trail = false, glow = false, wings = false, halo = false, nameplate = false, voidArmor = false}
 local visualConnections = {}
 
 local function markVisual(object)
     object:SetAttribute("CodexReviveVisual", true)
+    object:SetAttribute("VorReviveVisual", true)
     return object
 end
 
@@ -6359,7 +6360,7 @@ end
 
 local function weldVisualPart(part, basePart)
     local weld = markVisual(Instance.new("WeldConstraint"))
-    weld.Name = "CodexVisualWeld"
+    weld.Name = "VORVisualWeld"
     weld.Part0 = basePart
     weld.Part1 = part
     weld.Parent = part
@@ -6386,18 +6387,18 @@ local function makeWingSegment(model, core, localStart, localFinish, width, colo
     return segment
 end
 
-local function createFrozenAngelWings(character, torso)
+local function createVorVoidWings(character, torso)
     local wingModel = markVisual(Instance.new("Model"))
-    wingModel.Name = "CodexFrozenAngelWings"
+    wingModel.Name = "VORVoidWings"
     wingModel.Parent = character
 
     local highlight = markVisual(Instance.new("Highlight"))
-    highlight.Name = "WingIceBloom"
+    highlight.Name = "WingVoidBloom"
     highlight.Adornee = wingModel
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     highlight.FillColor = visualColor
     highlight.FillTransparency = 0.72
-    highlight.OutlineColor = Color3.fromRGB(246, 253, 255)
+    highlight.OutlineColor = Color3.fromRGB(215, 150, 255)
     highlight.OutlineTransparency = 0.18
     highlight.Parent = wingModel
 
@@ -6436,9 +6437,9 @@ local function createFrozenAngelWings(character, torso)
             local root = Vector3.new((0.20 + index * 0.075) * side, 0.46 - index * 0.07, 0)
             local middle = root:Lerp(tip, 0.48) + Vector3.new(0.12 * side, 0.30, -0.07)
             local width = 0.24 - index * 0.012
-            local featherColor = index % 2 == 0 and visualColor:Lerp(SNOW_WHITE, 0.45) or visualColor
+            local featherColor = index % 2 == 0 and visualColor:Lerp(Color3.fromRGB(218, 151, 255), 0.40) or visualColor
             makeWingSegment(wingModel, core, root, middle, width, featherColor, 0.05)
-            makeWingSegment(wingModel, core, middle, tip, width * 0.72, featherColor:Lerp(SNOW_WHITE, 0.32), 0.10)
+            makeWingSegment(wingModel, core, middle, tip, width * 0.72, featherColor:Lerp(Color3.fromRGB(221, 158, 255), 0.28), 0.10)
 
             local ribbonRoot = markVisual(Instance.new("Attachment"))
             ribbonRoot.Name = "FeatherRibbonRoot"
@@ -6449,10 +6450,10 @@ local function createFrozenAngelWings(character, torso)
             ribbonTip.Position = tip
             ribbonTip.Parent = core
             local ribbon = markVisual(Instance.new("Beam"))
-            ribbon.Name = "LuminousIceFeather"
+            ribbon.Name = "LuminousVoidFeather"
             ribbon.Attachment0 = ribbonRoot
             ribbon.Attachment1 = ribbonTip
-            ribbon.Color = ColorSequence.new(featherColor, Color3.fromRGB(248, 254, 255))
+            ribbon.Color = ColorSequence.new(featherColor, Color3.fromRGB(218, 151, 255))
             ribbon.Transparency = NumberSequence.new({
                 NumberSequenceKeypoint.new(0, 0.28),
                 NumberSequenceKeypoint.new(0.72, 0.40),
@@ -6471,13 +6472,13 @@ local function createFrozenAngelWings(character, torso)
                 Vector3.new(width * 1.35, width * 1.35, width * 1.35),
                 core.CFrame * CFrame.new(tip),
                 wingModel,
-                Color3.fromRGB(244, 253, 255),
+                Color3.fromRGB(211, 123, 255),
                 0.12,
                 Enum.PartType.Ball
             )
             weldVisualPart(crystal, core)
             if previousTip then
-                makeWingSegment(wingModel, core, previousTip, tip, 0.075, visualColor:Lerp(SNOW_WHITE, 0.58), 0.22)
+                makeWingSegment(wingModel, core, previousTip, tip, 0.075, visualColor:Lerp(Color3.fromRGB(225, 169, 255), 0.52), 0.22)
             end
             previousTip = tip
         end
@@ -6494,9 +6495,9 @@ local function createFrozenAngelWings(character, torso)
         sparkleAttachment.Name = "WingSparkleAttachment"
         sparkleAttachment.Parent = core
         local sparkles = markVisual(Instance.new("ParticleEmitter"))
-        sparkles.Name = "WingFrostSparkles"
+        sparkles.Name = "WingVoidMotes"
         sparkles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-        sparkles.Color = ColorSequence.new(visualColor, SNOW_WHITE)
+        sparkles.Color = ColorSequence.new(visualColor, Color3.fromRGB(222, 151, 255))
         sparkles.LightEmission = 1
         sparkles.Rate = 5
         sparkles.Lifetime = NumberRange.new(0.7, 1.35)
@@ -6531,18 +6532,18 @@ local function createFrozenAngelWings(character, torso)
     end))
 end
 
-local function createFrozenHalo(character, head)
+local function createVorVoidHalo(character, head)
     local haloModel = markVisual(Instance.new("Model"))
-    haloModel.Name = "CodexFrozenHalo"
+    haloModel.Name = "VORVoidHalo"
     haloModel.Parent = character
 
     local haloHighlight = markVisual(Instance.new("Highlight"))
-    haloHighlight.Name = "HaloIceBloom"
+    haloHighlight.Name = "HaloVoidBloom"
     haloHighlight.Adornee = haloModel
     haloHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     haloHighlight.FillColor = visualColor
     haloHighlight.FillTransparency = 0.48
-    haloHighlight.OutlineColor = Color3.fromRGB(246, 253, 255)
+    haloHighlight.OutlineColor = Color3.fromRGB(220, 153, 255)
     haloHighlight.OutlineTransparency = 0.08
     haloHighlight.Parent = haloModel
 
@@ -6556,7 +6557,7 @@ local function createFrozenHalo(character, head)
         Enum.PartType.Ball
     )
     local motor = markVisual(Instance.new("Motor6D"))
-    motor.Name = "FrozenHaloMotor"
+    motor.Name = "VORVoidHaloMotor"
     motor.Part0 = head
     motor.Part1 = core
     motor.C0 = CFrame.new(0, 1.58, 0) * CFrame.Angles(math.rad(-32), 0, 0)
@@ -6573,18 +6574,18 @@ local function createFrozenHalo(character, head)
             Vector3.new(segmentLength, 0.09, 0.14),
             core.CFrame * CFrame.new(localPosition) * CFrame.Angles(0, -angle - math.pi * 0.5, 0),
             haloModel,
-            index % 2 == 0 and visualColor:Lerp(SNOW_WHITE, 0.46) or visualColor,
+            index % 2 == 0 and visualColor:Lerp(Color3.fromRGB(221, 154, 255), 0.42) or visualColor,
             0.04
         )
         weldVisualPart(segment, core)
 
         if index % 3 == 0 then
             local diamond = makeNeonPart(
-                "HaloIceDiamond",
+                "HaloVoidDiamond",
                 Vector3.new(0.16, 0.16, 0.16),
                 core.CFrame * CFrame.new(localPosition * 1.08) * CFrame.Angles(math.rad(45), math.rad(45), 0),
                 haloModel,
-                Color3.fromRGB(247, 254, 255),
+                Color3.fromRGB(213, 124, 255),
                 0.05
             )
             weldVisualPart(diamond, core)
@@ -6600,12 +6601,12 @@ local function createFrozenHalo(character, head)
     haloLight.Parent = core
 
     local attachment = markVisual(Instance.new("Attachment"))
-    attachment.Name = "HaloSnowAttachment"
+    attachment.Name = "HaloVoidAttachment"
     attachment.Parent = core
     local snow = markVisual(Instance.new("ParticleEmitter"))
-    snow.Name = "HaloSnow"
+    snow.Name = "HaloVoidMotes"
     snow.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    snow.Color = ColorSequence.new(visualColor, SNOW_WHITE)
+    snow.Color = ColorSequence.new(visualColor, Color3.fromRGB(222, 151, 255))
     snow.LightEmission = 1
     snow.Rate = 7
     snow.Lifetime = NumberRange.new(0.8, 1.5)
@@ -6632,7 +6633,7 @@ local function createFrozenHalo(character, head)
     end))
 end
 
-local function createFrozenExpeditionOutfit(character)
+local function createVorVoidArmor(character)
     local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
     local head = character:FindFirstChild("Head")
     if not torso or not head then
@@ -6640,212 +6641,265 @@ local function createFrozenExpeditionOutfit(character)
     end
 
     local model = markVisual(Instance.new("Model"))
-    model.Name = "CodexFrozenExpeditionOutfit"
+    model.Name = "VORVoidArmor"
     model.Parent = character
 
-    local function armorPart(name, basePart, size, localCFrame, color, transparency, shape)
+    local function armorPart(name, basePart, size, localCFrame, color, transparency, shape, material)
         if not basePart then return nil end
         local part = makeNeonPart(name, size, basePart.CFrame * localCFrame, model, color, transparency, shape)
-        part.Material = Enum.Material.Ice
+        part.Material = material or Enum.Material.Metal
         weldVisualPart(part, basePart)
         return part
     end
 
-    local deepIce = Color3.fromRGB(21, 71, 111)
-    local midIce = Color3.fromRGB(49, 137, 194)
-    local glacier = visualColor:Lerp(SNOW_WHITE, 0.38)
-    local crystal = Color3.fromRGB(218, 248, 255)
+    local voidBlack = Color3.fromRGB(5, 2, 11)
+    local obsidian = Color3.fromRGB(15, 7, 27)
+    local voidMetal = Color3.fromRGB(40, 15, 68)
+    local voidViolet = visualColor
+    local voidEnergy = Color3.fromRGB(208, 101, 255)
 
-    -- A slim undersuit keeps the avatar silhouette instead of replacing it with
-    -- one oversized rectangular coat.
+    -- The armor follows the avatar silhouette: blackened metal carries the
+    -- weight while narrow violet seams supply the living VOR energy.
     armorPart(
-        "ArcticUndersuit",
+        "VORVoidUndersuit",
         torso,
         torso.Size + Vector3.new(0.12, 0.10, 0.10),
         CFrame.new(0, -0.02, 0.02),
-        deepIce,
-        0.48
+        voidBlack,
+        0.30,
+        nil,
+        Enum.Material.SmoothPlastic
     )
     armorPart(
-        "GlacierBreastplate",
+        "VORObsidianBreastplate",
         torso,
         Vector3.new(math.max(1.12, torso.Size.X * 0.62), math.max(1.12, torso.Size.Y * 0.60), 0.16),
         CFrame.new(0, 0.08, -(torso.Size.Z * 0.5 + 0.09)),
-        midIce,
-        0.12
+        obsidian,
+        0.04
     )
     armorPart(
-        "LeftChestFacet",
+        "LeftVoidChestBlade",
         torso,
         Vector3.new(math.max(0.18, torso.Size.X * 0.13), math.max(0.82, torso.Size.Y * 0.45), 0.12),
         CFrame.new(-torso.Size.X * 0.34, 0.10, -(torso.Size.Z * 0.5 + 0.08)) * CFrame.Angles(0, 0, math.rad(-16)),
-        glacier,
-        0.18
+        voidMetal,
+        0.06
     )
     armorPart(
-        "RightChestFacet",
+        "RightVoidChestBlade",
         torso,
         Vector3.new(math.max(0.18, torso.Size.X * 0.13), math.max(0.82, torso.Size.Y * 0.45), 0.12),
         CFrame.new(torso.Size.X * 0.34, 0.10, -(torso.Size.Z * 0.5 + 0.08)) * CFrame.Angles(0, 0, math.rad(16)),
-        glacier,
-        0.18
+        voidMetal,
+        0.06
     )
     local chestCore = armorPart(
-        "CodexIceCore",
+        "VORVoidCore",
         torso,
         Vector3.new(0.34, 0.34, 0.13),
         CFrame.new(0, 0.10, -(torso.Size.Z * 0.5 + 0.20)) * CFrame.Angles(0, 0, math.rad(45)),
-        crystal,
-        0.02
+        voidEnergy,
+        0.00,
+        nil,
+        Enum.Material.Neon
     )
     armorPart(
-        "GlacierBelt",
+        "VORObsidianBelt",
         torso,
         Vector3.new(torso.Size.X + 0.18, 0.22, torso.Size.Z + 0.16),
         CFrame.new(0, -(torso.Size.Y * 0.5 - 0.13), 0.02),
-        deepIce,
-        0.18
+        voidBlack,
+        0.04
     )
 
     for _, sideInfo in ipairs({{"Left", -1}, {"Right", 1}}) do
         local side = sideInfo[1]
         local sign = sideInfo[2]
         armorPart(
-            side .. "GlacierPauldron",
+            side .. "VORPauldron",
             torso,
             Vector3.new(0.58, 0.28, 0.72),
             CFrame.new(sign * (torso.Size.X * 0.5 + 0.22), torso.Size.Y * 0.32, -0.01)
                 * CFrame.Angles(0, 0, math.rad(sign * 18)),
-            glacier,
-            0.13
+            obsidian,
+            0.02
         )
         armorPart(
-            side .. "ShoulderCrystal",
+            side .. "VoidShoulderSpike",
             torso,
             Vector3.new(0.16, 0.54, 0.22),
             CFrame.new(sign * (torso.Size.X * 0.5 + 0.48), torso.Size.Y * 0.42, -0.05)
                 * CFrame.Angles(0, 0, math.rad(sign * 32)),
-            crystal,
-            0.08
+            voidViolet,
+            0.02,
+            nil,
+            Enum.Material.Neon
         )
 
         local lowerArm = character:FindFirstChild(side .. "LowerArm") or character:FindFirstChild(side .. " Arm")
         if lowerArm then
             armorPart(
-                side .. "FrostBracer",
+                side .. "VORVoidBracer",
                 lowerArm,
                 lowerArm.Size + Vector3.new(0.12, -math.min(0.10, lowerArm.Size.Y * 0.08), 0.14),
                 CFrame.new(0, -lowerArm.Size.Y * 0.12, -0.02),
-                midIce,
-                0.20
+                voidMetal,
+                0.08
             )
         end
 
         local upperLeg = character:FindFirstChild(side .. "UpperLeg")
         if upperLeg then
             armorPart(
-                side .. "IceCuisses",
+                side .. "VORLegArmor",
                 upperLeg,
                 Vector3.new(upperLeg.Size.X + 0.10, upperLeg.Size.Y * 0.72, upperLeg.Size.Z + 0.12),
                 CFrame.new(0, -upperLeg.Size.Y * 0.08, -0.03),
-                deepIce,
-                0.28
+                voidBlack,
+                0.10
             )
         end
 
         local lowerLeg = character:FindFirstChild(side .. "LowerLeg") or character:FindFirstChild(side .. " Leg")
         if lowerLeg then
             armorPart(
-                side .. "GlacierBoot",
+                side .. "VORVoidBoot",
                 lowerLeg,
                 lowerLeg.Size + Vector3.new(0.16, 0.08, 0.22),
                 CFrame.new(0, -lowerLeg.Size.Y * 0.16, -0.05),
-                deepIce,
-                0.22
+                obsidian,
+                0.06
             )
             armorPart(
-                side .. "BootCrystal",
+                side .. "BootVoidRune",
                 lowerLeg,
                 Vector3.new(math.max(0.18, lowerLeg.Size.X * 0.30), math.max(0.38, lowerLeg.Size.Y * 0.32), 0.13),
                 CFrame.new(0, -lowerLeg.Size.Y * 0.25, -(lowerLeg.Size.Z * 0.5 + 0.08)),
-                glacier,
-                0.10
+                voidViolet,
+                0.03,
+                nil,
+                Enum.Material.Neon
             )
         end
     end
 
-    -- The old cylinder crossed the player's eyes. This thin circlet and its
-    -- crystals sit above the face and keep the avatar readable.
+    -- A narrow crown sits above the eyes and keeps the avatar face readable.
     armorPart(
-        "FrozenCirclet",
+        "VORVoidCrownBand",
         head,
         Vector3.new(math.max(1.35, head.Size.X * 0.82), 0.12, 0.10),
         CFrame.new(0, head.Size.Y * 0.30, -(head.Size.Z * 0.5 + 0.04)),
-        midIce,
-        0.10
+        obsidian,
+        0.02
     )
     for crownIndex = -2, 2 do
         local crownHeight = crownIndex == 0 and 0.50 or (math.abs(crownIndex) == 1 and 0.38 or 0.27)
         armorPart(
-            "CrownCrystal" .. tostring(crownIndex + 3),
+            "VORCrownSpike" .. tostring(crownIndex + 3),
             head,
             Vector3.new(0.12, crownHeight, 0.12),
             CFrame.new(crownIndex * 0.25, head.Size.Y * 0.5 + crownHeight * 0.32, -0.08)
                 * CFrame.Angles(0, 0, math.rad(crownIndex * -7)),
-            crownIndex == 0 and crystal or glacier,
-            0.08
+            crownIndex == 0 and voidEnergy or voidViolet,
+            0.02,
+            nil,
+            Enum.Material.Neon
         )
     end
 
     if chestCore then
         local coreLight = markVisual(Instance.new("PointLight"))
         coreLight.Name = "SuitCoreGlow"
-        coreLight.Color = visualColor
-        coreLight.Brightness = 1.35
-        coreLight.Range = 7
+        coreLight.Color = voidEnergy
+        coreLight.Brightness = 1.65
+        coreLight.Range = 9
         coreLight.Shadows = false
         coreLight.Parent = chestCore
         local glowStart = os.clock()
         trackVisualConnection(RunService.RenderStepped:Connect(function()
             if coreLight.Parent then
-                coreLight.Brightness = 1.20 + (math.sin((os.clock() - glowStart) * 2.4) + 1) * 0.22
+                coreLight.Brightness = 1.25 + (math.sin((os.clock() - glowStart) * 2.8) + 1) * 0.34
             end
         end))
     end
 
     local highlight = markVisual(Instance.new("Highlight"))
-    highlight.Name = "EverestIceBloom"
+    highlight.Name = "VORVoidBloom"
     highlight.Adornee = model
     highlight.FillColor = visualColor
-    highlight.FillTransparency = 0.86
-    highlight.OutlineColor = SNOW_WHITE
-    highlight.OutlineTransparency = 0.20
+    highlight.FillTransparency = 0.82
+    highlight.OutlineColor = voidEnergy
+    highlight.OutlineTransparency = 0.14
     highlight.DepthMode = Enum.HighlightDepthMode.Occluded
     highlight.Parent = model
 
     local attachment = markVisual(Instance.new("Attachment"))
-    attachment.Name = "EverestSnowAttachment"
+    attachment.Name = "VORVoidMoteAttachment"
     attachment.Position = Vector3.new(0, torso.Size.Y * 0.5, 0)
     attachment.Parent = torso
-    local snow = markVisual(Instance.new("ParticleEmitter"))
-    snow.Name = "EverestSnow"
-    snow.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    snow.Color = ColorSequence.new(SNOW_WHITE, visualColor)
-    snow.LightEmission = 0.75
-    snow.Rate = 14
-    snow.Lifetime = NumberRange.new(0.8, 1.6)
-    snow.Speed = NumberRange.new(0.8, 2.2)
-    snow.Acceleration = Vector3.new(-1.2, -2.4, 0)
-    snow.SpreadAngle = Vector2.new(160, 160)
-    snow.Size = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.16),
+    local voidMotes = markVisual(Instance.new("ParticleEmitter"))
+    voidMotes.Name = "VORVoidMotes"
+    voidMotes.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    voidMotes.Color = ColorSequence.new(voidViolet, voidEnergy)
+    voidMotes.LightEmission = 1
+    voidMotes.Rate = 12
+    voidMotes.Lifetime = NumberRange.new(0.9, 1.8)
+    voidMotes.Speed = NumberRange.new(0.25, 1.15)
+    voidMotes.Acceleration = Vector3.new(0, 1.8, 0)
+    voidMotes.SpreadAngle = Vector2.new(180, 180)
+    voidMotes.Rotation = NumberRange.new(0, 360)
+    voidMotes.RotSpeed = NumberRange.new(-55, 55)
+    voidMotes.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.10),
+        NumberSequenceKeypoint.new(0.48, 0.22),
         NumberSequenceKeypoint.new(1, 0),
     })
-    snow.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.10),
+    voidMotes.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.28),
+        NumberSequenceKeypoint.new(0.45, 0.08),
         NumberSequenceKeypoint.new(1, 1),
     })
-    snow.Parent = attachment
+    voidMotes.Parent = attachment
+
+    -- Four light shards orbit the torso like fragments pulled into the core.
+    local orbitCore = makeNeonPart(
+        "VOROrbitCore",
+        Vector3.new(0.10, 0.10, 0.10),
+        torso.CFrame,
+        model,
+        voidViolet,
+        1,
+        Enum.PartType.Ball
+    )
+    local orbitMotor = markVisual(Instance.new("Motor6D"))
+    orbitMotor.Name = "VORVoidOrbitMotor"
+    orbitMotor.Part0 = torso
+    orbitMotor.Part1 = orbitCore
+    orbitMotor.C0 = CFrame.new()
+    orbitMotor.Parent = torso
+    for shardIndex = 0, 3 do
+        local angle = shardIndex * math.pi * 0.5
+        local shard = makeNeonPart(
+            "VOROrbitShard" .. tostring(shardIndex + 1),
+            Vector3.new(0.10, 0.38, 0.10),
+            orbitCore.CFrame
+                * CFrame.new(math.cos(angle) * 1.35, (shardIndex % 2 == 0) and 0.42 or -0.30, math.sin(angle) * 1.35)
+                * CFrame.Angles(math.rad(24), 0, math.rad(45)),
+            model,
+            shardIndex % 2 == 0 and voidEnergy or voidViolet,
+            0.05
+        )
+        weldVisualPart(shard, orbitCore)
+    end
+    local orbitStart = os.clock()
+    trackVisualConnection(RunService.RenderStepped:Connect(function()
+        if orbitMotor.Parent and model.Parent then
+            local elapsed = os.clock() - orbitStart
+            orbitMotor.C0 = CFrame.new(0, math.sin(elapsed * 1.6) * 0.07, 0)
+                * CFrame.Angles(0, elapsed * 0.72, 0)
+        end
+    end))
 end
 
 local function clearCharacterVisuals(character)
@@ -6861,7 +6915,7 @@ local function clearCharacterVisuals(character)
         visualConnections[index] = nil
     end
     for _, descendant in ipairs(character:GetDescendants()) do
-        if descendant:GetAttribute("CodexReviveVisual") == true then
+        if descendant:GetAttribute("VorReviveVisual") == true or descendant:GetAttribute("CodexReviveVisual") == true then
             descendant:Destroy()
         end
     end
@@ -6873,7 +6927,7 @@ local function getLocalNameplateRoot()
     return worldGui and worldGui:FindFirstChild(LocalPlayer.Name)
 end
 
-local function applyCodexNameplate()
+local function applyVorNameplate()
     local nameplateRoot = getLocalNameplateRoot()
     if not nameplateRoot then
         return false
@@ -6888,8 +6942,8 @@ local function applyCodexNameplate()
                     descendant:SetAttribute("CodexOriginalNameplateText", descendant.Text)
                     descendant:SetAttribute("CodexNameplateManaged", true)
                 end
-                if descendant.Text ~= "Codex" then
-                    descendant.Text = "Codex"
+                if descendant.Text ~= "VOR" then
+                    descendant.Text = "VOR"
                 end
                 changed = true
             end
@@ -6898,7 +6952,7 @@ local function applyCodexNameplate()
     return changed
 end
 
-local function restoreCodexNameplate()
+local function restoreVorNameplate()
     local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     local worldGui = playerGui and playerGui:FindFirstChild("World")
     if not worldGui then
@@ -6915,9 +6969,9 @@ end
 
 local function applyCharacterVisuals()
     if visualState.nameplate then
-        applyCodexNameplate()
+        applyVorNameplate()
     else
-        restoreCodexNameplate()
+        restoreVorNameplate()
     end
     local character = LocalPlayer.Character
     if not character then
@@ -6931,24 +6985,24 @@ local function applyCharacterVisuals()
 
     if visualState.outline then
         local highlight = markVisual(Instance.new("Highlight"))
-        highlight.Name = "CodexFrozenOutline"
+        highlight.Name = "VORVoidOutline"
         highlight.Adornee = character
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.FillColor = visualColor
         highlight.FillTransparency = 0.78
-        highlight.OutlineColor = Color3.fromRGB(242, 253, 255)
+        highlight.OutlineColor = Color3.fromRGB(220, 151, 255)
         highlight.OutlineTransparency = 0.08
         highlight.Parent = character
     end
 
     if visualState.aura then
         local attachment = markVisual(Instance.new("Attachment"))
-        attachment.Name = "CodexIceAuraAttachment"
+        attachment.Name = "VORVoidAuraAttachment"
         attachment.Parent = root
         local emitter = markVisual(Instance.new("ParticleEmitter"))
-        emitter.Name = "CodexIceAura"
+        emitter.Name = "VORVoidAura"
         emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-        emitter.Color = ColorSequence.new(visualColor, Color3.fromRGB(245, 253, 255))
+        emitter.Color = ColorSequence.new(visualColor, Color3.fromRGB(221, 151, 255))
         emitter.LightEmission = 0.75
         emitter.Rate = 22
         emitter.Lifetime = NumberRange.new(0.7, 1.4)
@@ -6970,18 +7024,18 @@ local function applyCharacterVisuals()
 
     if visualState.trail then
         local attachment0 = markVisual(Instance.new("Attachment"))
-        attachment0.Name = "CodexTrailTop"
+        attachment0.Name = "VORTrailTop"
         attachment0.Position = Vector3.new(0, 1.7, 0)
         attachment0.Parent = root
         local attachment1 = markVisual(Instance.new("Attachment"))
-        attachment1.Name = "CodexTrailBottom"
+        attachment1.Name = "VORTrailBottom"
         attachment1.Position = Vector3.new(0, -1.7, 0)
         attachment1.Parent = root
         local trail = markVisual(Instance.new("Trail"))
-        trail.Name = "CodexFrozenTrail"
+        trail.Name = "VORVoidTrail"
         trail.Attachment0 = attachment0
         trail.Attachment1 = attachment1
-        trail.Color = ColorSequence.new(visualColor, Color3.fromRGB(245, 253, 255))
+        trail.Color = ColorSequence.new(visualColor, Color3.fromRGB(222, 151, 255))
         trail.LightEmission = 0.8
         trail.Lifetime = 0.32
         trail.MinLength = 0.12
@@ -6994,7 +7048,7 @@ local function applyCharacterVisuals()
 
     if visualState.glow then
         local light = markVisual(Instance.new("PointLight"))
-        light.Name = "CodexFrozenGlow"
+        light.Name = "VORVoidGlow"
         light.Color = visualColor
         light.Brightness = 1.35
         light.Range = 12
@@ -7005,13 +7059,13 @@ local function applyCharacterVisuals()
     local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or root
     local head = character:FindFirstChild("Head")
     if visualState.wings and torso then
-        createFrozenAngelWings(character, torso)
+        createVorVoidWings(character, torso)
     end
     if visualState.halo and head then
-        createFrozenHalo(character, head)
+        createVorVoidHalo(character, head)
     end
-    if visualState.frozenOutfit then
-        createFrozenExpeditionOutfit(character)
+    if visualState.voidArmor then
+        createVorVoidArmor(character)
     end
 
     local activeVisuals = {}
@@ -7029,23 +7083,23 @@ end
 
 VisualSection:AddDropdown({
     Name = "Visual Color",
-    Options = {"Frozen White", "Glacier Blue", "Deep Ice", "Arctic Cyan"},
-    Default = "Frozen White",
+    Options = {"Void Purple", "Royal Amethyst", "Abyss Violet", "Eclipse Magenta"},
+    Default = "Void Purple",
     Flag = "revive_visual_color",
     Callback = function(value)
-        visualColor = VISUAL_COLORS[value] or VISUAL_COLORS["Frozen White"]
+        visualColor = VISUAL_COLORS[value] or VISUAL_COLORS["Void Purple"]
         applyCharacterVisuals()
     end,
 })
 
 for _, option in ipairs({
-    {Name = "Ice Outline", Key = "outline", Description = "Frozen character highlight"},
-    {Name = "Ice Aura", Key = "aura", Description = "Glowing snow particles around your body"},
-    {Name = "Frozen Trail", Key = "trail", Description = "Leaves an icy trail while moving"},
+    {Name = "Void Outline", Key = "outline", Description = "Violet VOR character highlight"},
+    {Name = "Void Aura", Key = "aura", Description = "Glowing purple void particles around your body"},
+    {Name = "Void Trail", Key = "trail", Description = "Leaves a dark-violet energy trail while moving"},
     {Name = "Body Glow", Key = "glow", Description = "Soft colored light around your character"},
-    {Name = "Frozen Angel Wings", Key = "wings", Description = "Layered glowing ice-feather wings with a gentle living motion"},
-    {Name = "Frozen Halo", Key = "halo", Description = "Floating rotating ice halo with snow sparkle glow"},
-    {Name = "Codex Nameplate", Key = "nameplate", Description = "Locally changes your overhead in-game name to Codex; your Roblox account name is untouched"},
+    {Name = "VOR Void Wings", Key = "wings", Description = "Layered violet energy wings with a gentle living motion"},
+    {Name = "VOR Void Halo", Key = "halo", Description = "Floating rotating void halo with purple motes"},
+    {Name = "VOR Nameplate", Key = "nameplate", Description = "Locally changes your overhead in-game name to VOR; your Roblox account name is untouched"},
 }) do
     VisualSection:AddToggle({
         Name = option.Name,
@@ -7058,13 +7112,13 @@ for _, option in ipairs({
     })
 end
 
-VisualInfoSection:AddLabel("The wings and halo are asset-free local neon geometry, so they match every frozen color preset.")
-VisualInfoSection:AddLabel("Codex Nameplate is local-only and restores your real display name when disabled.")
+VisualInfoSection:AddLabel("VOR wings, halo, and armor use asset-free local geometry, so every purple preset stays compatible.")
+VisualInfoSection:AddLabel("VOR Nameplate is local-only and restores your real display name when disabled.")
 
 local catalogOutfitId = ""
 local originalAvatarDescription = nil
 local activeCatalogDescription = nil
-local frozenOutfitControl
+local voidArmorControl
 
 local function getCharacterHumanoid()
     local character = LocalPlayer.Character
@@ -7152,7 +7206,7 @@ OutfitSection:AddButton({
                 end)
                 description = ok and fetched or nil
             end
-            if frozenOutfitControl then frozenOutfitControl:Set(false) end
+            if voidArmorControl then voidArmorControl:Set(false) end
             if applyLocalDescription(description, "Your Roblox avatar restored") then
                 originalAvatarDescription = nil
             end
@@ -7160,36 +7214,36 @@ OutfitSection:AddButton({
     end,
 })
 
-frozenOutfitControl = FrozenPresetSection:AddToggle({
-    Name = "Frozen Codex Armor",
-    Description = "Layered ice armor, chest core, circlet crown, bracers, boots, and snowfall",
+voidArmorControl = VoidArmorSection:AddToggle({
+    Name = "VOR Void Armor",
+    Description = "Blackened metal armor, violet core, crown spikes, bracers, boots, void motes, and orbiting shards",
     Flag = "codex_tools_frozen_everest_outfit",
     Callback = function(enabled)
-        visualState.frozenOutfit = enabled
+        visualState.voidArmor = enabled
         if enabled then
-            visualColor = VISUAL_COLORS["Glacier Blue"]
+            visualColor = VISUAL_COLORS["Void Purple"]
         end
         applyCharacterVisuals()
-        outfitStatusLabel.Text = enabled and "Outfit: Frozen Codex armor equipped" or "Outfit: Frozen preset removed"
+        outfitStatusLabel.Text = enabled and "Outfit: VOR Void Armor equipped" or "Outfit: VOR Void Armor removed"
         outfitStatusLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
     end,
 })
 
-FrozenPresetSection:AddButton({
-    Name = "Equip Full Codex Armor",
-    Description = "Enables the complete layered frozen armor preset in one click",
+VoidArmorSection:AddButton({
+    Name = "Equip Full VOR Armor",
+    Description = "Equips the complete black-metal and violet-energy armor preset in one click",
     Persist = false,
     Callback = function()
-        frozenOutfitControl:Set(true)
-        Window:Notify("Frozen Preset", "Codex frozen armor equipped locally", 4)
+        voidArmorControl:Set(true)
+        Window:Notify("VOR Void Armor", "VOR Void Armor equipped locally", 4)
     end,
 })
 
-FrozenPresetSection:AddLabel("Marketplace previews and the frozen preset are cosmetic only; they do not add items to your Roblox inventory.")
+VoidArmorSection:AddLabel("Marketplace previews and VOR Void Armor are cosmetic only; they do not add items to your Roblox inventory.")
 
 track(LocalPlayer.PlayerGui.DescendantAdded:Connect(function(descendant)
     if visualState.nameplate and descendant:IsA("TextLabel") then
-        task.defer(applyCodexNameplate)
+        task.defer(applyVorNameplate)
     end
 end))
 
@@ -7613,7 +7667,7 @@ task.spawn(function()
             state.refreshSoulRingStatus()
         end
         if visualState.nameplate and isDue("codexNameplate", 0.25) then
-            applyCodexNameplate()
+            applyVorNameplate()
         end
         if state.discordReminder and isDue("discordReminder", 1) then
             local remaining = math.max(0, math.ceil(nextDiscordReminderAt - os.clock()))
@@ -7921,7 +7975,7 @@ track(gui.Destroying:Connect(function()
     state.specialPriority = false
     stopEnemyTween()
     clearCharacterVisuals()
-    restoreCodexNameplate()
+    restoreVorNameplate()
     if state.autoRebirth and remotes.SetAutoRebirth then
         pcall(function()
             remotes.SetAutoRebirth:FireServer(false, autoRebirthFloor)
