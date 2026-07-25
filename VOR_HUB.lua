@@ -10,9 +10,12 @@ local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContentProvider = game:GetService("ContentProvider")
+local GuiService = game:GetService("GuiService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- Masked, serialized tab transitions prevent overlapping cards, blank flashes, and mobile tap races.
 -- Change these values to customize the hub and welcome screen.
 local SETTINGS = {
     GuiName = "CodexHub",
@@ -35,6 +38,10 @@ local SETTINGS = {
     IntroPianoVolume = 0.52,
     IntroMusicDuration = 5, -- The music gets its own exact playback window.
     IntroPianoPlaybackSpeed = 1,
+    IntroLogoSpinSpeed = 52, -- Degrees per second; positive values spin the floating blue spiral clockwise.
+    MinimizedStyleDefault = "Minimize Bar", -- "Minimize Bar" or "Spiral Circle". Saved profiles can override this.
+    MinimizedCircleSize = 66,
+    MinimizedCircleSpinSpeed = 52,
     InterfaceSoundsEnabled = true,
     ToggleClickSoundId = "rbxasset://sounds/volume_slider.ogg",
     ToggleClickVolume = 0.24,
@@ -51,9 +58,14 @@ local SETTINGS = {
     PlayerHeadshotEnabled = true,
     -- The decal is currently restricted, so use its public thumbnail until Asset Access is set to Open Use.
     ProfileLogoImageId = "rbxthumb://type=Asset&id=151878913&w=420&h=420", -- Clear to restore the Roblox avatar.
-    PanelBackgroundImageId = "rbxthumb://type=Asset&id=12862074936&w=768&h=432",
+    PanelBackgroundImageId = "rbxthumb://type=Asset&id=287316330&w=768&h=432",
     SectionBackgroundImageId = "rbxthumb://type=Asset&id=134413735110455&w=768&h=432",
     StatusBackgroundImageId = "rbxthumb://type=Asset&id=2847346557&w=768&h=432",
+}
+
+local PANEL_BACKGROUNDS = {
+    ["VOR Void (287316330)"] = "rbxthumb://type=Asset&id=287316330&w=768&h=432",
+    ["VOR Purple (13223834035)"] = "rbxthumb://type=Asset&id=13223834035&w=768&h=432",
 }
 
 -- Shared category art stays outside individual game builders so future supported
@@ -739,8 +751,9 @@ create("UIGradient", {
     }),
 }, main)
 
+local panelBackground
 do
-    local panelBackground = create("ImageLabel", {
+    panelBackground = create("ImageLabel", {
         Name = "PanelBackground",
         Position = UDim2.fromOffset(1, 1),
         Size = UDim2.new(1, -2, 1, -2),
@@ -769,7 +782,131 @@ do
     }, panelBackground)
 end
 
-local uiScale = create("UIScale", {Scale = 1}, main)
+local HUB_DESIGN_SIZE = Vector2.new(850, 560)
+local HUB_MIN_SCALE = 0.32
+local HUB_EDGE_PADDING = 12
+
+-- Viewport fitting and open/close animation must remain separate. The old
+-- version animated the responsive UIScale back to 1, which made the desktop
+-- size return after the intro, minimize button, or visibility toggle on mobile.
+local uiScale = create("UIScale", {Name = "ResponsiveViewportScale", Scale = 1}, main)
+local uiScaleAnimation = create("NumberValue", {
+    Name = "ResponsiveAnimationFactor",
+    Value = 1,
+}, main)
+local responsiveViewportScale = 1
+
+local function getSafeViewportBounds()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        return nil
+    end
+
+    local viewport = camera.ViewportSize
+    local topLeftInset = Vector2.new(0, 0)
+    local bottomRightInset = Vector2.new(0, 0)
+    pcall(function()
+        topLeftInset, bottomRightInset = GuiService:GetGuiInset()
+    end)
+
+    -- Some mobile executors do not report rounded-corner/device cutout insets.
+    local touchEdge = UserInputService.TouchEnabled and HUB_EDGE_PADDING or 0
+    return viewport,
+        math.max(0, topLeftInset.X) + touchEdge,
+        math.max(0, topLeftInset.Y) + touchEdge,
+        math.max(0, bottomRightInset.X) + touchEdge,
+        math.max(0, bottomRightInset.Y) + touchEdge
+end
+
+local function applyMainScale()
+    uiScale.Scale = responsiveViewportScale * math.max(0.01, uiScaleAnimation.Value)
+end
+
+track(uiScaleAnimation:GetPropertyChangedSignal("Value"):Connect(applyMainScale))
+applyMainScale()
+
+local MINIMIZE_BAR_STYLE = "Minimize Bar"
+local MINIMIZE_CIRCLE_STYLE = "Spiral Circle"
+local minimizedStyle = SETTINGS.MinimizedStyleDefault == MINIMIZE_CIRCLE_STYLE
+    and MINIMIZE_CIRCLE_STYLE
+    or MINIMIZE_BAR_STYLE
+
+local function normalizeMinimizeStyle(value)
+    local text = string.lower(tostring(value or ""))
+    if string.find(text, "circle", 1, true) or string.find(text, "spiral", 1, true) then
+        return MINIMIZE_CIRCLE_STYLE
+    end
+    return MINIMIZE_BAR_STYLE
+end
+
+-- Optional compact restore button. It is separate from the main window so the
+-- desktop/mobile responsive scale cannot stretch the circle or make it oval.
+local minimizedCircle = create("CanvasGroup", {
+    Name = "VorMinimizedCircle",
+    Active = true,
+    Visible = false,
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(SETTINGS.MinimizedCircleSize, SETTINGS.MinimizedCircleSize),
+    BackgroundColor3 = COLORS.shell,
+    BackgroundTransparency = 0.04,
+    BorderSizePixel = 0,
+    GroupTransparency = 1,
+    ClipsDescendants = false,
+    ZIndex = 260,
+}, gui)
+addCorner(minimizedCircle, math.floor(SETTINGS.MinimizedCircleSize * 0.5))
+local minimizedCircleStroke = addStroke(minimizedCircle, COLORS.accent, 2.2, 0.04)
+minimizedCircleStroke.LineJoinMode = Enum.LineJoinMode.Round
+
+local minimizedCircleGlow = create("Frame", {
+    Name = "CircleGlow",
+    Active = false,
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.new(1, 12, 1, 12),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 259,
+}, minimizedCircle)
+addCorner(minimizedCircleGlow, math.floor((SETTINGS.MinimizedCircleSize + 12) * 0.5))
+addStroke(minimizedCircleGlow, COLORS.accent, 7, 0.72)
+
+local minimizedCircleScale = create("UIScale", {
+    Name = "CircleAnimationScale",
+    Scale = 0.72,
+}, minimizedCircle)
+
+local minimizedCircleLogo = create("ImageLabel", {
+    Name = "SpinningSpiral",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.new(1, -12, 1, -12),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    Image = tostring(SETTINGS.ProfileLogoImageId or ""),
+    ImageTransparency = 0,
+    ScaleType = Enum.ScaleType.Fit,
+    ZIndex = 262,
+}, minimizedCircle)
+
+local minimizedCircleHitbox = create("TextButton", {
+    Name = "RestoreHitbox",
+    Active = true,
+    AutoButtonColor = false,
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    Text = "",
+    ZIndex = 264,
+}, minimizedCircle)
+
+track(RunService.RenderStepped:Connect(function(deltaTime)
+    if minimizedCircle.Visible then
+        local spinSpeed = math.max(0, tonumber(SETTINGS.MinimizedCircleSpinSpeed) or 52)
+        minimizedCircleLogo.Rotation = (minimizedCircleLogo.Rotation + spinSpeed * deltaTime) % 360
+    end
+end))
 
 local icicleLayer = create("Frame", {
     Name = "FrozenOuterEdge",
@@ -1436,6 +1573,114 @@ local pageHolder = create("Frame", {
     ClipsDescendants = true,
 }, main)
 
+
+-- Complex CanvasGroup cross-fades can briefly stack text and controls on mobile.
+-- A fast glass curtain covers the content for the exact frame in which pages swap,
+-- then reveals the next page with a small directional slide. Only one transition
+-- is allowed at a time, so rapid taps are queued instead of fighting each other.
+local function makeTransitionCurtain(parent, name, position, size, zIndex)
+    local curtain = create("CanvasGroup", {
+        Name = name,
+        Position = position,
+        Size = size,
+        BackgroundColor3 = Color3.fromRGB(7, 3, 14),
+        BackgroundTransparency = 0.035,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        Visible = false,
+        ZIndex = zIndex,
+    }, parent)
+    addCorner(curtain, 6)
+    addStroke(curtain, COLORS.accentDark, 1, 0.58)
+    create("UIGradient", {
+        Rotation = 0,
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(7, 3, 14)),
+            ColorSequenceKeypoint.new(0.48, Color3.fromRGB(22, 8, 37)),
+            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(7, 3, 14)),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 0.02),
+            NumberSequenceKeypoint.new(0.50, 0.00),
+            NumberSequenceKeypoint.new(1.00, 0.02),
+        }),
+    }, curtain)
+
+    local sweep = create("Frame", {
+        Name = "AccentSweep",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0, -8, 0.5, 0),
+        Size = UDim2.new(0, 3, 1, 20),
+        BackgroundColor3 = COLORS.toggleOnBright,
+        BackgroundTransparency = 1,
+        Visible = false,
+        BorderSizePixel = 0,
+        ZIndex = zIndex + 2,
+    }, curtain)
+    addCorner(sweep, 2)
+    addStroke(sweep, SNOW_WHITE, 1, 0.32)
+    return curtain, sweep
+end
+
+local function waitForTween(tween, fallback)
+    if tween then
+        local ok = pcall(function()
+            tween.Completed:Wait()
+        end)
+        if ok then
+            return
+        end
+    end
+    task.wait(fallback or 0)
+end
+
+local function runMaskedSwap(curtain, sweep, direction, swapCallback)
+    direction = direction or 1
+    curtain.Visible = true
+    curtain.GroupTransparency = 1
+    sweep.BackgroundTransparency = 1
+    sweep.Position = direction > 0 and UDim2.new(0, -8, 0.5, 0) or UDim2.new(1, 8, 0.5, 0)
+
+    local coverTween = fluidTween(
+        curtain,
+        0.085,
+        {GroupTransparency = 0.04},
+        Enum.EasingStyle.Quad,
+        Enum.EasingDirection.Out
+    )
+    waitForTween(coverTween, 0.085)
+
+    swapCallback()
+
+    sweep.BackgroundTransparency = 0.10
+    fluidTween(
+        sweep,
+        0.22,
+        {Position = direction > 0 and UDim2.new(1, 8, 0.5, 0) or UDim2.new(0, -8, 0.5, 0)},
+        Enum.EasingStyle.Quint,
+        Enum.EasingDirection.Out
+    )
+    local revealTween = fluidTween(
+        curtain,
+        0.22,
+        {GroupTransparency = 1},
+        Enum.EasingStyle.Quint,
+        Enum.EasingDirection.Out
+    )
+    waitForTween(revealTween, 0.22)
+
+    curtain.Visible = false
+    sweep.BackgroundTransparency = 1
+end
+
+local pageTransitionCurtain, pageTransitionSweep = makeTransitionCurtain(
+    pageHolder,
+    "PageTransitionCurtain",
+    UDim2.fromScale(0, 0),
+    UDim2.fromScale(1, 1),
+    90
+)
+
 local notificationGui = create("ScreenGui", {
     Name = SETTINGS.GuiName .. "_Notifications",
     ResetOnSpawn = false,
@@ -1699,12 +1944,16 @@ local Window = {
     Main = main,
     Pages = {},
     ActivePage = nil,
+    PageOrderCounter = 0,
+    PageTransitioning = false,
+    QueuedPageName = nil,
     Minimized = false,
     PersistentControls = {},
 }
 
 local hubVisible = true
 local hubVisibilityToken = 0
+gui:SetAttribute("MinimizedStyle", minimizedStyle)
 
 local function hubEffectsActive()
     return hubVisible and not Window.Minimized
@@ -1717,17 +1966,40 @@ function Window:SetVisible(visible)
     if hubVisible then
         gui.Enabled = true
         snowGui.Enabled = SETTINGS.SnowEnabled and not self.Minimized
-        main.Visible = true
-        if self.ClampToViewport then
-            self:ClampToViewport(Window.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560))
+
+        if self.Minimized and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
+            main.Visible = false
+            minimizedCircle.Visible = true
+            minimizedCircle.GroupTransparency = 1
+            minimizedCircleScale.Scale = 0.82
+            if self.ClampMinimizedCircle then
+                self:ClampMinimizedCircle()
+            end
+            fluidTween(minimizedCircle, 0.22, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
+            fluidTween(minimizedCircleScale, 0.26, {Scale = 1}, Enum.EasingStyle.Back)
+        else
+            minimizedCircle.Visible = false
+            main.Visible = true
+            if self.ClampToViewport then
+                self:ClampToViewport(self.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560))
+            end
+            main.GroupTransparency = math.max(main.GroupTransparency, 0.82)
+            if self.UpdateScale then
+                self:UpdateScale()
+            end
+            uiScaleAnimation.Value = math.min(uiScaleAnimation.Value, 0.955)
+            fluidTween(main, 0.24, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
+            fluidTween(uiScaleAnimation, 0.28, {Value = 1}, Enum.EasingStyle.Back)
         end
-        main.GroupTransparency = math.max(main.GroupTransparency, 0.82)
-        uiScale.Scale = math.min(uiScale.Scale, 0.955)
-        fluidTween(main, 0.24, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
-        fluidTween(uiScale, 0.28, {Scale = 1}, Enum.EasingStyle.Back)
     else
-        fluidTween(main, 0.18, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-        fluidTween(uiScale, 0.18, {Scale = 0.955}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        if minimizedCircle.Visible then
+            fluidTween(minimizedCircle, 0.18, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            fluidTween(minimizedCircleScale, 0.18, {Scale = 0.88}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        end
+        if main.Visible then
+            fluidTween(main, 0.18, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            fluidTween(uiScaleAnimation, 0.18, {Value = 0.955}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        end
         task.delay(0.19, function()
             if token == hubVisibilityToken and not hubVisible then
                 gui.Enabled = false
@@ -2866,6 +3138,9 @@ function Window:AddPage(name)
         return self.Pages[name]
     end
 
+    self.PageOrderCounter = (self.PageOrderCounter or 0) + 1
+    local pageOrder = self.PageOrderCounter
+
     local navRow = create("Frame", {
         Size = UDim2.fromOffset(48, 44),
         BackgroundColor3 = COLORS.surface,
@@ -2936,6 +3211,7 @@ function Window:AddPage(name)
 
     local page = setmetatable({
         Name = name,
+        Order = pageOrder,
         Frame = pageFrame,
         NavRow = navRow,
         NavAccent = accent,
@@ -2973,57 +3249,112 @@ function Window:AddPage(name)
     return page
 end
 
+local function animatePageNavigation(window, target)
+    for _, page in pairs(window.Pages) do
+        local active = page == target
+        page.NavAccent.Visible = true
+        fluidTween(page.NavAccent, 0.22, {
+            BackgroundTransparency = active and 0 or 1,
+            Size = active and UDim2.fromOffset(4, 24) or UDim2.fromOffset(4, 8),
+        }, Enum.EasingStyle.Quart)
+        fluidTween(page.NavRow, 0.22, {
+            BackgroundColor3 = active and Color3.fromRGB(39, 15, 67) or COLORS.surface,
+            BackgroundTransparency = active and 0.08 or 1,
+        }, Enum.EasingStyle.Quart)
+        fluidTween(page.NavStroke, 0.22, {
+            Color = active and COLORS.toggleOnBright or COLORS.accentDark,
+            Transparency = active and 0.06 or 1,
+            Thickness = active and 1.6 or 1,
+        }, Enum.EasingStyle.Quart)
+        fluidTween(page.NavText, 0.22, {
+            TextColor3 = active and COLORS.text or COLORS.muted,
+        }, Enum.EasingStyle.Quart)
+        page.NavText.TextStrokeColor3 = SNOW_WHITE
+        page.NavText.TextStrokeTransparency = active and 0.72 or 1
+    end
+end
+
 function Window:SelectPage(name)
     local target = self.Pages[name]
     if not target then
         return false
     end
 
-    local previous = self.ActivePage
-    self.ActivePage = target
-    for _, page in pairs(self.Pages) do
-        local active = page == target
-        if active then
-            page.Frame.Visible = true
-            if page ~= previous then
-                page.Frame.Position = UDim2.fromOffset(14, 0)
-                page.Frame.GroupTransparency = 1
-                fluidTween(page.Frame, 0.26, {
-                    Position = UDim2.fromOffset(0, 0),
-                    GroupTransparency = 0,
-                }, Enum.EasingStyle.Quint)
-            else
-                page.Frame.Position = UDim2.fromOffset(0, 0)
-                page.Frame.GroupTransparency = 0
-            end
-        elseif page.Frame.Visible then
-            fluidTween(page.Frame, 0.16, {
-                Position = UDim2.fromOffset(-10, 0),
-                GroupTransparency = 1,
-            }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-            task.delay(0.17, function()
-                if self.ActivePage ~= page and page.Frame.Parent then
-                    page.Frame.Visible = false
-                    page.Frame.Position = UDim2.fromOffset(0, 0)
-                end
-            end)
-        end
-        page.NavAccent.Visible = active
-        fluidTween(page.NavRow, 0.18, {
-            BackgroundColor3 = active and Color3.fromRGB(39, 15, 67) or COLORS.surface,
-            BackgroundTransparency = active and 0.08 or 1,
-        })
-        fluidTween(page.NavStroke, 0.18, {
-            Color = active and COLORS.toggleOnBright or COLORS.accentDark,
-            Transparency = active and 0.06 or 1,
-            Thickness = active and 1.6 or 1,
-        })
-        fluidTween(page.NavText, 0.18, {TextColor3 = active and COLORS.text or COLORS.muted})
-        page.NavText.TextStrokeColor3 = SNOW_WHITE
-        page.NavText.TextStrokeTransparency = active and 0.72 or 1
+    if self.PageTransitioning then
+        self.QueuedPageName = name
+        return true
+    end
+    if self.ActivePage == target then
+        return true
     end
 
+    local previous = self.ActivePage
+    local direction = 1
+    if previous and (target.Order or 0) < (previous.Order or 0) then
+        direction = -1
+    end
+
+    self.ActivePage = target
+    animatePageNavigation(self, target)
     searchBox.Text = ""
+
+    -- The first page appears immediately during construction. Every later change
+    -- uses the masked transition so no half-faded controls can overlap.
+    if not previous then
+        for _, page in pairs(self.Pages) do
+            page.Frame.Visible = page == target
+            page.Frame.Position = UDim2.fromOffset(0, 0)
+            page.Frame.GroupTransparency = page == target and 0 or 1
+            page.Frame.ZIndex = page == target and 3 or 1
+        end
+        return true
+    end
+
+    self.PageTransitioning = true
+    task.spawn(function()
+        runMaskedSwap(pageTransitionCurtain, pageTransitionSweep, direction, function()
+            -- Cancel all page movement before changing visibility. This is what
+            -- prevents a rapid mobile tap from leaving a stale frame on screen.
+            for _, page in pairs(self.Pages) do
+                local staleTween = activeTweens[page.Frame]
+                if staleTween then
+                    pcall(function()
+                        staleTween:Cancel()
+                    end)
+                    activeTweens[page.Frame] = nil
+                end
+                page.Frame.Visible = page == target
+                page.Frame.GroupTransparency = page == target and 0 or 1
+                page.Frame.ZIndex = page == target and 3 or 1
+                page.Frame.Position = page == target
+                    and UDim2.fromOffset(10 * direction, 0)
+                    or UDim2.fromOffset(0, 0)
+            end
+
+            fluidTween(
+                target.Frame,
+                0.24,
+                {Position = UDim2.fromOffset(0, 0)},
+                Enum.EasingStyle.Quint,
+                Enum.EasingDirection.Out
+            )
+        end)
+
+        if target.Frame.Parent then
+            target.Frame.Visible = true
+            target.Frame.Position = UDim2.fromOffset(0, 0)
+            target.Frame.GroupTransparency = 0
+            target.Frame.ZIndex = 3
+        end
+
+        self.PageTransitioning = false
+        local queuedName = self.QueuedPageName
+        self.QueuedPageName = nil
+        if queuedName and self.Pages[queuedName] and self.ActivePage ~= self.Pages[queuedName] then
+            self:SelectPage(queuedName)
+        end
+    end)
+
     return true
 end
 
@@ -3617,14 +3948,40 @@ function Window:PlayIntro()
 
     local introPianoSound = SETTINGS.IntroPianoEnabled and hubMusic or nil
 
+    local INTRO_DESIGN_SIZE = Vector2.new(900, 620)
     local introContent = create("Frame", {
         Name = "FloatingIntroContent",
-        Position = UDim2.fromOffset(0, 6),
-        Size = UDim2.fromScale(1, 1),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(INTRO_DESIGN_SIZE.X, INTRO_DESIGN_SIZE.Y),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 501,
     }, intro)
+    local introContentScale = create("UIScale", {
+        Name = "ResponsiveIntroScale",
+        Scale = 1,
+    }, introContent)
+    local introSafeCenter = Vector2.new(0, 0)
+
+    local function updateIntroLayout()
+        local viewport, leftInset, topInset, rightInset, bottomInset = getSafeViewportBounds()
+        if not viewport then
+            return
+        end
+        local availableWidth = math.max(1, viewport.X - leftInset - rightInset - 16)
+        local availableHeight = math.max(1, viewport.Y - topInset - bottomInset - 16)
+        introContentScale.Scale = math.clamp(math.min(
+            availableWidth / INTRO_DESIGN_SIZE.X,
+            availableHeight / INTRO_DESIGN_SIZE.Y
+        ), 0.38, 1)
+        introSafeCenter = Vector2.new(
+            leftInset + (viewport.X - leftInset - rightInset) * 0.5,
+            topInset + (viewport.Y - topInset - bottomInset) * 0.5
+        )
+        introContent.Position = UDim2.fromOffset(introSafeCenter.X, introSafeCenter.Y + 6)
+    end
+    updateIntroLayout()
 
     local introGlow = create("ImageLabel", {
         Name = "VorBloom",
@@ -3663,6 +4020,22 @@ function Window:PlayIntro()
         ScaleType = Enum.ScaleType.Fit,
         ZIndex = 503,
     }, introLogo)
+
+    -- Rotate the decal itself so the parent frame can keep handling the floating motion.
+    -- RenderStepped keeps the clockwise rotation smooth at any frame rate.
+    local introLogoSpinSpeed = math.max(0, tonumber(SETTINGS.IntroLogoSpinSpeed) or 52)
+    local introLogoSpinConnection
+    introLogoSpinConnection = RunService.RenderStepped:Connect(function(deltaTime)
+        if not introLogoImage.Parent then
+            if introLogoSpinConnection then
+                introLogoSpinConnection:Disconnect()
+                introLogoSpinConnection = nil
+            end
+            return
+        end
+
+        introLogoImage.Rotation = (introLogoImage.Rotation + introLogoSpinSpeed * math.min(deltaTime, 0.05)) % 360
+    end)
 
     local introFlakes = {}
     local introRandom = Random.new(2026)
@@ -3799,7 +4172,7 @@ function Window:PlayIntro()
     local contentFloat = TweenService:Create(
         introContent,
         TweenInfo.new(1.20, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        {Position = UDim2.fromOffset(0, -10)}
+        {Position = UDim2.fromOffset(introSafeCenter.X, introSafeCenter.Y - 10)}
     )
     contentFloat:Play()
     TweenService:Create(introGlow, TweenInfo.new(fadeInDuration * 1.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -3831,11 +4204,14 @@ function Window:PlayIntro()
     task.wait(holdDuration)
     if main.Parent then
         -- Assemble the real interface pieces, rather than simply zooming in one flat window.
+        if Window.UpdateScale then
+            Window:UpdateScale()
+        end
         local finalHubPosition = main.Position
         main.Visible = true
-        uiScale.Scale = 0.92
+        uiScaleAnimation.Value = 0.92
         main.Position = UDim2.new(finalHubPosition.X.Scale, finalHubPosition.X.Offset, finalHubPosition.Y.Scale, finalHubPosition.Y.Offset + 14)
-        TweenService:Create(uiScale, TweenInfo.new(0.76, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        TweenService:Create(uiScaleAnimation, TweenInfo.new(0.76, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Value = 1}):Play()
         TweenService:Create(main, TweenInfo.new(0.76, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = finalHubPosition}):Play()
 
         local assemblyParts = {
@@ -3903,6 +4279,10 @@ function Window:PlayIntro()
     backgroundOut.Completed:Wait()
     task.wait(0.35) -- finish the gentle audio tail after the screen has cleared.
 
+    if introLogoSpinConnection then
+        introLogoSpinConnection:Disconnect()
+        introLogoSpinConnection = nil
+    end
     if intro.Parent then
         intro:Destroy()
     end
@@ -3925,12 +4305,11 @@ track(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 end))
 
 function Window:ClampToViewport(targetSize, targetPosition)
-    local camera = workspace.CurrentCamera
-    if not camera then
+    local viewport, leftInset, topInset, rightInset, bottomInset = getSafeViewportBounds()
+    if not viewport then
         return main.Position
     end
 
-    local viewport = camera.ViewportSize
     local size = targetSize or main.Size
     local position = targetPosition or main.Position
     local scale = math.max(0.01, uiScale.Scale)
@@ -3940,15 +4319,20 @@ function Window:ClampToViewport(targetSize, targetPosition)
     local anchorY = viewport.Y * position.Y.Scale + position.Y.Offset
     local margin = 8
 
-    local minimumX = visualWidth * main.AnchorPoint.X + margin
-    local maximumX = viewport.X - visualWidth * (1 - main.AnchorPoint.X) - margin
-    local minimumY = visualHeight * main.AnchorPoint.Y + margin
-    local maximumY = viewport.Y - visualHeight * (1 - main.AnchorPoint.Y) - margin
+    local safeLeft = leftInset + margin
+    local safeTop = topInset + margin
+    local safeRight = viewport.X - rightInset - margin
+    local safeBottom = viewport.Y - bottomInset - margin
+
+    local minimumX = safeLeft + visualWidth * main.AnchorPoint.X
+    local maximumX = safeRight - visualWidth * (1 - main.AnchorPoint.X)
+    local minimumY = safeTop + visualHeight * main.AnchorPoint.Y
+    local maximumY = safeBottom - visualHeight * (1 - main.AnchorPoint.Y)
     if minimumX > maximumX then
-        minimumX, maximumX = viewport.X * 0.5, viewport.X * 0.5
+        minimumX, maximumX = (safeLeft + safeRight) * 0.5, (safeLeft + safeRight) * 0.5
     end
     if minimumY > maximumY then
-        minimumY, maximumY = viewport.Y * 0.5, viewport.Y * 0.5
+        minimumY, maximumY = (safeTop + safeBottom) * 0.5, (safeTop + safeBottom) * 0.5
     end
 
     main.Position = UDim2.fromOffset(
@@ -3956,6 +4340,26 @@ function Window:ClampToViewport(targetSize, targetPosition)
         math.clamp(anchorY, minimumY, maximumY)
     )
     return main.Position
+end
+
+function Window:ClampMinimizedCircle(targetPosition)
+    local viewport, leftInset, topInset, rightInset, bottomInset = getSafeViewportBounds()
+    if not viewport then
+        return minimizedCircle.Position
+    end
+
+    local position = targetPosition or minimizedCircle.Position
+    local diameter = math.max(44, tonumber(SETTINGS.MinimizedCircleSize) or 66)
+    local radius = diameter * 0.5
+    local margin = 8
+    local x = viewport.X * position.X.Scale + position.X.Offset
+    local y = viewport.Y * position.Y.Scale + position.Y.Offset
+
+    minimizedCircle.Position = UDim2.fromOffset(
+        math.clamp(x, leftInset + margin + radius, viewport.X - rightInset - margin - radius),
+        math.clamp(y, topInset + margin + radius, viewport.Y - bottomInset - margin - radius)
+    )
+    return minimizedCircle.Position
 end
 
 function Window:BeginDrag(input)
@@ -4001,35 +4405,190 @@ track(UserInputService.InputEnded:Connect(function(input)
     end
 end))
 
-track(minimizeButton.MouseButton1Click:Connect(function()
-    Window.Minimized = not Window.Minimized
-    minimizeButton.Text = Window.Minimized and "+" or "-"
-    playToggleClick(not Window.Minimized)
+local minimizedAnimatedContent = {sidebar, searchFrame, pageHolder, welcomeCard, avatarCard, contentBackdrop, icicleLayer}
+local minimizeTransitionToken = 0
+
+local function setMainContentVisible(visible)
+    for _, object in ipairs(minimizedAnimatedContent) do
+        object.Visible = visible and (object ~= avatarCard or SETTINGS.AvatarPreviewEnabled) or false
+    end
+end
+
+function Window:GetMinimizeStyle()
+    return minimizedStyle
+end
+
+function Window:SetMinimizeStyle(value)
+    local normalized = normalizeMinimizeStyle(value)
+    if minimizedStyle == normalized then
+        gui:SetAttribute("MinimizedStyle", minimizedStyle)
+        return minimizedStyle
+    end
+
+    minimizedStyle = normalized
+    gui:SetAttribute("MinimizedStyle", minimizedStyle)
+    if self.Minimized then
+        self:SetMinimized(true, true)
+    end
+    return minimizedStyle
+end
+
+function Window:SetMinimized(value, forceRefresh)
+    value = value == true
+    if self.Minimized == value and not forceRefresh then
+        return
+    end
+
+    minimizeTransitionToken += 1
+    local token = minimizeTransitionToken
+    self.Minimized = value
+    minimizeButton.Text = value and "+" or "-"
+    playToggleClick(not value)
     snowGui.Enabled = SETTINGS.SnowEnabled and hubEffectsActive()
     setHubMusicVisible(hubEffectsActive(), false)
-    gui:SetAttribute("HubEffectsPaused", Window.Minimized)
-    local animatedContent = {sidebar, searchFrame, pageHolder, welcomeCard, avatarCard, contentBackdrop, icicleLayer}
-    local targetSize = Window.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560)
-    Window:ClampToViewport(targetSize)
-    main.ClipsDescendants = true
-    if not Window.Minimized then
-        for _, object in ipairs(animatedContent) do
-            object.Visible = object ~= avatarCard or SETTINGS.AvatarPreviewEnabled
+    gui:SetAttribute("HubEffectsPaused", value)
+    gui:SetAttribute("MinimizedStyle", minimizedStyle)
+
+    if value and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
+        -- Place the compact button where the hub currently lives, then let the
+        -- user drag it anywhere inside the safe mobile/desktop viewport.
+        minimizedCircle.Position = main.Position
+        self:ClampMinimizedCircle()
+        minimizedCircle.Visible = true
+        minimizedCircle.GroupTransparency = 1
+        minimizedCircleScale.Scale = 0.70
+        fluidTween(minimizedCircle, 0.20, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
+        fluidTween(minimizedCircleScale, 0.26, {Scale = 1}, Enum.EasingStyle.Back)
+
+        if main.Visible then
+            fluidTween(main, 0.17, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            fluidTween(uiScaleAnimation, 0.17, {Value = 0.90}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
         end
-    end
-    fluidTween(main, Window.Minimized and 0.22 or 0.30, {Size = targetSize}, Enum.EasingStyle.Quint)
-    fluidTween(uiScale, 0.24, {Scale = Window.Minimized and 0.985 or 1}, Enum.EasingStyle.Back)
-    task.delay(Window.Minimized and 0.23 or 0.31, function()
-        if main.Parent then
-            if Window.Minimized then
-                for _, object in ipairs(animatedContent) do
-                    object.Visible = false
-                end
+        task.delay(0.18, function()
+            if token == minimizeTransitionToken and self.Minimized and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
+                main.Visible = false
+                main.Size = UDim2.fromOffset(850, 560)
+                main.GroupTransparency = 0
+                uiScaleAnimation.Value = 1
+                main.ClipsDescendants = false
+                setMainContentVisible(true)
             end
+        end)
+        return
+    end
+
+    if value then
+        -- Original full-width minimize bar. This remains the default and keeps
+        -- the exact PC behavior that was already working.
+        if minimizedCircle.Visible then
+            main.Position = minimizedCircle.Position
+            fluidTween(minimizedCircle, 0.15, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            fluidTween(minimizedCircleScale, 0.15, {Scale = 0.80}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            task.delay(0.16, function()
+                if token == minimizeTransitionToken and minimizedStyle == MINIMIZE_BAR_STYLE then
+                    minimizedCircle.Visible = false
+                end
+            end)
+        end
+
+        main.Visible = true
+        main.GroupTransparency = 0
+        uiScaleAnimation.Value = math.min(uiScaleAnimation.Value, 0.985)
+        setMainContentVisible(true)
+        local targetSize = UDim2.fromOffset(850, 46)
+        self:ClampToViewport(targetSize)
+        main.ClipsDescendants = true
+        fluidTween(main, 0.22, {Size = targetSize}, Enum.EasingStyle.Quint)
+        fluidTween(uiScaleAnimation, 0.24, {Value = 0.985}, Enum.EasingStyle.Back)
+        task.delay(0.23, function()
+            if token == minimizeTransitionToken and self.Minimized and minimizedStyle == MINIMIZE_BAR_STYLE and main.Parent then
+                setMainContentVisible(false)
+                main.ClipsDescendants = false
+                self:ClampToViewport(targetSize)
+            end
+        end)
+        return
+    end
+
+    -- Restore from either compact style. When restoring from the circle, the
+    -- full hub opens from the circle's dragged position and is then clamped.
+    local restoringFromCircle = minimizedCircle.Visible
+    if restoringFromCircle then
+        main.Position = minimizedCircle.Position
+        fluidTween(minimizedCircle, 0.16, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        fluidTween(minimizedCircleScale, 0.16, {Scale = 0.76}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        task.delay(0.17, function()
+            if token == minimizeTransitionToken and not self.Minimized then
+                minimizedCircle.Visible = false
+            end
+        end)
+    end
+
+    main.Visible = true
+    main.Size = restoringFromCircle and UDim2.fromOffset(850, 560) or main.Size
+    main.GroupTransparency = restoringFromCircle and 1 or 0
+    uiScaleAnimation.Value = restoringFromCircle and 0.88 or math.min(uiScaleAnimation.Value, 0.985)
+    setMainContentVisible(true)
+    local targetSize = UDim2.fromOffset(850, 560)
+    self:ClampToViewport(targetSize)
+    main.ClipsDescendants = true
+    fluidTween(main, 0.30, {Size = targetSize, GroupTransparency = 0}, Enum.EasingStyle.Quint)
+    fluidTween(uiScaleAnimation, 0.28, {Value = 1}, Enum.EasingStyle.Back)
+    task.delay(0.31, function()
+        if token == minimizeTransitionToken and not self.Minimized and main.Parent then
             main.ClipsDescendants = false
-            Window:ClampToViewport(targetSize)
+            self:ClampToViewport(targetSize)
         end
     end)
+end
+
+track(minimizeButton.MouseButton1Click:Connect(function()
+    Window:SetMinimized(not Window.Minimized)
+end))
+
+-- Dragging the compact circle does not restore it. A tap/click without a drag
+-- restores the full hub, which is especially important for mobile users.
+local circleDragging = false
+local circleDragMoved = false
+local circleDragStart = nil
+local circleDragPosition = nil
+
+track(minimizedCircleHitbox.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        circleDragging = true
+        circleDragMoved = false
+        circleDragStart = input.Position
+        circleDragPosition = minimizedCircle.Position
+    end
+end))
+
+track(UserInputService.InputChanged:Connect(function(input)
+    if circleDragging and circleDragStart and circleDragPosition
+        and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - circleDragStart
+        if delta.Magnitude > 5 then
+            circleDragMoved = true
+        end
+        Window:ClampMinimizedCircle(UDim2.new(
+            circleDragPosition.X.Scale,
+            circleDragPosition.X.Offset + delta.X,
+            circleDragPosition.Y.Scale,
+            circleDragPosition.Y.Offset + delta.Y
+        ))
+    end
+end))
+
+track(UserInputService.InputEnded:Connect(function(input)
+    if circleDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        local shouldRestore = not circleDragMoved
+        circleDragging = false
+        circleDragMoved = false
+        circleDragStart = nil
+        circleDragPosition = nil
+        if shouldRestore and Window.Minimized and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
+            Window:SetMinimized(false)
+        end
+    end
 end))
 
 track(closeButton.MouseButton1Click:Connect(function()
@@ -4050,21 +4609,44 @@ track(closeButton.MouseLeave:Connect(function()
 end))
 
 function Window:UpdateScale()
-    local camera = workspace.CurrentCamera
-    if not camera then
+    local viewport, leftInset, topInset, rightInset, bottomInset = getSafeViewportBounds()
+    if not viewport then
         return
     end
-    local viewport = camera.ViewportSize
-    uiScale.Scale = math.clamp(math.min((viewport.X - 30) / 850, (viewport.Y - 30) / 560), 0.55, 1)
-    self:ClampToViewport(self.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560))
+
+    local availableWidth = math.max(1, viewport.X - leftInset - rightInset - 16)
+    local availableHeight = math.max(1, viewport.Y - topInset - bottomInset - 16)
+    responsiveViewportScale = math.clamp(math.min(
+        availableWidth / HUB_DESIGN_SIZE.X,
+        availableHeight / HUB_DESIGN_SIZE.Y
+    ), HUB_MIN_SCALE, 1)
+    applyMainScale()
+    if self.Minimized and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
+        self:ClampMinimizedCircle()
+    else
+        self:ClampToViewport(self.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560))
+    end
 end
 
-Window:UpdateScale()
-if workspace.CurrentCamera then
-    track(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-        Window:UpdateScale()
-    end))
+local viewportSizeConnection = nil
+local function bindViewportScaleWatcher()
+    if viewportSizeConnection then
+        viewportSizeConnection:Disconnect()
+        viewportSizeConnection = nil
+    end
+
+    local camera = workspace.CurrentCamera
+    if camera then
+        viewportSizeConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+            Window:UpdateScale()
+        end)
+        track(viewportSizeConnection)
+    end
+    Window:UpdateScale()
 end
+
+bindViewportScaleWatcher()
+track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindViewportScaleWatcher))
 
 task.spawn(function()
     local experienceName = "Unknown Game"
@@ -4128,66 +4710,129 @@ create("UIListLayout", {
     SortOrder = Enum.SortOrder.LayoutOrder,
 }, categoryButtonsHolder)
 
+local categoryTransitionCurtain, categoryTransitionSweep = makeTransitionCurtain(
+    HomePage.Frame,
+    "CategoryTransitionCurtain",
+    UDim2.fromOffset(0, 104),
+    UDim2.new(1, 0, 1, -104),
+    80
+)
+
 local homeCategories = {}
 local activeHomeCategory = nil
-local categoryTransitionToken = 0
+local categoryTransitioning = false
+local queuedHomeCategory = nil
+
+local function animateHomeCategoryButtons(selected)
+    for _, category in pairs(homeCategories) do
+        local active = category == selected
+        fluidTween(category.Button, 0.24, {
+            BackgroundTransparency = active and 0.02 or 0.16,
+            BackgroundColor3 = active and Color3.fromRGB(40, 15, 68) or COLORS.surface2,
+            ImageTransparency = active and 0.02 or 0.14,
+        }, Enum.EasingStyle.Quart)
+        fluidTween(category.Label, 0.22, {
+            TextColor3 = active and SNOW_WHITE or COLORS.sectionMuted,
+            TextTransparency = active and 0 or 0.08,
+        }, Enum.EasingStyle.Quart)
+        fluidTween(category.Stroke, 0.22, {
+            Color = active and COLORS.accentDark or COLORS.line,
+            Thickness = active and 2 or 1,
+            Transparency = active and 0.02 or 0.34,
+        }, Enum.EasingStyle.Quart)
+
+        category.Accent.Visible = true
+        category.SelectedGlow.Visible = true
+        fluidTween(category.Accent, 0.24, {
+            BackgroundTransparency = active and 0 or 1,
+            Size = active and UDim2.new(0.68, 0, 0, 4) or UDim2.new(0.18, 0, 0, 4),
+        }, Enum.EasingStyle.Quart)
+        fluidTween(category.SelectedGlow, 0.26, {
+            BackgroundTransparency = active and 0.76 or 1,
+            Size = active and UDim2.new(1, 10, 1, 10) or UDim2.new(0.92, 0, 0.92, 0),
+        }, Enum.EasingStyle.Quart)
+    end
+end
 
 local function selectHomeCategory(name)
     local selected = homeCategories[name]
     if not selected then
         return false
     end
-    categoryTransitionToken += 1
-    local transitionToken = categoryTransitionToken
-    local previous = activeHomeCategory
-    activeHomeCategory = selected
-    for _, category in pairs(homeCategories) do
-        local active = category == selected
-        if active then
-            category.Frame.Visible = true
-            if category ~= previous then
-                category.Frame.Position = UDim2.fromOffset(12, 112)
-                category.Frame.GroupTransparency = 1
-                fluidTween(category.Frame, 0.27, {
-                    Position = UDim2.fromOffset(0, 104),
-                    GroupTransparency = 0,
-                }, Enum.EasingStyle.Quint)
-            else
-                category.Frame.Position = UDim2.fromOffset(0, 104)
-                category.Frame.GroupTransparency = 0
-            end
-        elseif category.Frame.Visible then
-            fluidTween(category.Frame, 0.16, {
-                Position = UDim2.fromOffset(-10, 100),
-                GroupTransparency = 1,
-            }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-            task.delay(0.17, function()
-                if transitionToken == categoryTransitionToken and activeHomeCategory ~= category and category.Frame.Parent then
-                    category.Frame.Visible = false
-                    category.Frame.Position = UDim2.fromOffset(0, 104)
-                end
-            end)
-        end
-        fluidTween(category.Button, 0.19, {
-            BackgroundTransparency = active and 0.02 or 0.16,
-            BackgroundColor3 = active and Color3.fromRGB(40, 15, 68) or COLORS.surface2,
-            ImageTransparency = active and 0.02 or 0.14,
-        })
-        fluidTween(category.Label, 0.18, {
-            TextColor3 = active and SNOW_WHITE or COLORS.sectionMuted,
-            TextTransparency = active and 0 or 0.08,
-        })
-        fluidTween(category.Stroke, 0.18, {
-            Color = active and COLORS.accentDark or COLORS.line,
-            Thickness = active and 2 or 1,
-            Transparency = active and 0.02 or 0.34,
-        })
-        category.Accent.Visible = active
-        category.SelectedGlow.Visible = active
+
+    if categoryTransitioning then
+        queuedHomeCategory = name
+        return true
     end
+    if activeHomeCategory == selected then
+        return true
+    end
+
+    local previous = activeHomeCategory
+    local direction = 1
+    if previous and (selected.Order or 0) < (previous.Order or 0) then
+        direction = -1
+    end
+
+    activeHomeCategory = selected
+    animateHomeCategoryButtons(selected)
     HomePage.SearchItems = selected.SearchItems
     searchBox.Text = ""
     HomePage.Frame:SetAttribute("ActiveCategory", name)
+
+    if not previous then
+        for _, category in pairs(homeCategories) do
+            category.Frame.Visible = category == selected
+            category.Frame.Position = UDim2.fromOffset(0, 104)
+            category.Frame.GroupTransparency = category == selected and 0 or 1
+            category.Frame.ZIndex = category == selected and 3 or 1
+        end
+        return true
+    end
+
+    categoryTransitioning = true
+    task.spawn(function()
+        runMaskedSwap(categoryTransitionCurtain, categoryTransitionSweep, direction, function()
+            for _, category in pairs(homeCategories) do
+                local staleTween = activeTweens[category.Frame]
+                if staleTween then
+                    pcall(function()
+                        staleTween:Cancel()
+                    end)
+                    activeTweens[category.Frame] = nil
+                end
+                category.Frame.Visible = category == selected
+                category.Frame.GroupTransparency = category == selected and 0 or 1
+                category.Frame.ZIndex = category == selected and 3 or 1
+                category.Frame.Position = category == selected
+                    and UDim2.fromOffset(10 * direction, 104)
+                    or UDim2.fromOffset(0, 104)
+            end
+
+            fluidTween(
+                selected.Frame,
+                0.24,
+                {Position = UDim2.fromOffset(0, 104)},
+                Enum.EasingStyle.Quint,
+                Enum.EasingDirection.Out
+            )
+        end)
+
+        if selected.Frame.Parent then
+            selected.Frame.Visible = true
+            selected.Frame.Position = UDim2.fromOffset(0, 104)
+            selected.Frame.GroupTransparency = 0
+            selected.Frame.ZIndex = 3
+        end
+
+        categoryTransitioning = false
+        local queuedName = queuedHomeCategory
+        queuedHomeCategory = nil
+        if queuedName and homeCategories[queuedName] and activeHomeCategory ~= homeCategories[queuedName] then
+            selectHomeCategory(queuedName)
+        end
+    end)
+
     return true
 end
 
@@ -4216,9 +4861,9 @@ local function addHomeCategory(name, order, assetId)
         Position = UDim2.fromScale(0.5, 0.5),
         Size = UDim2.new(1, 10, 1, 10),
         BackgroundColor3 = COLORS.accent,
-        BackgroundTransparency = 0.76,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Visible = false,
+        Visible = true,
         ZIndex = 20,
     }, button)
     addCorner(selectedGlow, 8)
@@ -4262,8 +4907,9 @@ local function addHomeCategory(name, order, assetId)
         Position = UDim2.new(0.5, 0, 1, -1),
         Size = UDim2.new(0.68, 0, 0, 4),
         BackgroundColor3 = COLORS.toggleOnBright,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Visible = false,
+        Visible = true,
         ZIndex = 25,
     }, button)
     addCorner(accent, 3)
@@ -4329,6 +4975,7 @@ local function addHomeCategory(name, order, assetId)
 
     local category = setmetatable({
         Name = name,
+        Order = order,
         Frame = frame,
         Button = button,
         Label = label,
@@ -8048,6 +8695,8 @@ local basketballState = {
     ForceNextShot = false,
     LastMeterValue = 0,
     WasMeterVisible = false,
+    MobileShootHeld = false,
+    MobileReleaseMethod = "None",
     LastStatusUpdate = 0,
     LastAssistUpdate = 0,
     LastSteal = 0,
@@ -8154,6 +8803,415 @@ end
 local function sendShootKey(isDown)
     return sendBasketballKey(Enum.KeyCode.E, isDown)
 end
+
+local function isTouchPrimary()
+    if not UserInputService.TouchEnabled then
+        return false
+    end
+
+    local preferredInput
+    pcall(function()
+        preferredInput = UserInputService.PreferredInput
+    end)
+
+    if preferredInput ~= nil then
+        return preferredInput == Enum.PreferredInput.Touch
+    end
+
+    return not UserInputService.KeyboardEnabled
+end
+
+local activeTouchInputs = {}
+local mobileShootButton = nil
+local mobileShootTouch = nil
+local mobileShootVirtualPress = false
+local lastMobileShootScan = 0
+
+local function pointInsideGui(guiObject, point)
+    if not guiObject or not guiObject.Parent or not guiObject:IsA("GuiObject") then
+        return false
+    end
+
+    local position = guiObject.AbsolutePosition
+    local size = guiObject.AbsoluteSize
+    return point.X >= position.X
+        and point.Y >= position.Y
+        and point.X <= position.X + size.X
+        and point.Y <= position.Y + size.Y
+end
+
+local function isGuiActuallyVisible(guiObject)
+    local current = guiObject
+    while current do
+        if current:IsA("GuiObject") and not current.Visible then
+            return false
+        end
+        if current:IsA("LayerCollector") and not current.Enabled then
+            return false
+        end
+        current = current.Parent
+    end
+    return true
+end
+
+local function containsShootWord(value)
+    local lowered = string.lower(tostring(value or ""))
+    return string.find(lowered, "shoot", 1, true) ~= nil
+        or string.find(lowered, "shot", 1, true) ~= nil
+        or string.find(lowered, "release", 1, true) ~= nil
+end
+
+local function actionInfoUsesShoot(actionName, actionInfo)
+    if containsShootWord(actionName) then
+        return true
+    end
+
+    local function inspect(value, depth)
+        if depth > 4 then
+            return false
+        end
+        if value == Enum.KeyCode.E then
+            return true
+        end
+        if type(value) == "string" and containsShootWord(value) then
+            return true
+        end
+        if type(value) == "table" then
+            for key, child in pairs(value) do
+                if inspect(key, depth + 1) or inspect(child, depth + 1) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    return inspect(actionInfo, 0)
+end
+
+local function scoreShootButton(button)
+    if not button:IsA("GuiButton") or not isGuiActuallyVisible(button) then
+        return -math.huge
+    end
+    if gui and button:IsDescendantOf(gui) then
+        return -math.huge
+    end
+
+    local score = 0
+    local signature = button.Name
+    if button:IsA("TextButton") then
+        signature = signature .. " " .. button.Text
+    end
+
+    local ancestor = button.Parent
+    for _ = 1, 3 do
+        if not ancestor then
+            break
+        end
+        signature = signature .. " " .. ancestor.Name
+        ancestor = ancestor.Parent
+    end
+
+    if containsShootWord(signature) then
+        score += 150
+    end
+
+    for attributeName, attributeValue in pairs(button:GetAttributes()) do
+        if containsShootWord(attributeName) or containsShootWord(attributeValue) or attributeValue == "E" then
+            score += 80
+        end
+    end
+
+    for _, descendant in ipairs(button:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            if containsShootWord(descendant.Text) then
+                score += 110
+                break
+            end
+        end
+    end
+
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+    if viewport then
+        local center = button.AbsolutePosition + button.AbsoluteSize * 0.5
+        if center.X >= viewport.X * 0.52 then
+            score += 10
+        end
+        if center.Y >= viewport.Y * 0.35 then
+            score += 8
+        end
+    end
+
+    if button.AbsoluteSize.X >= 42 and button.AbsoluteSize.Y >= 42 then
+        score += 5
+    end
+
+    return score
+end
+
+local function findMobileShootButton(forceScan)
+    if mobileShootButton and mobileShootButton.Parent and isGuiActuallyVisible(mobileShootButton) then
+        return mobileShootButton
+    end
+
+    local now = os.clock()
+    if not forceScan and now - lastMobileShootScan < 0.35 then
+        return nil
+    end
+    lastMobileShootScan = now
+
+    local bestButton = nil
+    local bestScore = -math.huge
+
+    -- Games that use ContextActionService normally expose the correct touch
+    -- button here. Matching the E binding keeps the desktop control untouched.
+    local okActions, actionInfo = pcall(function()
+        return ContextActionService:GetAllBoundActionInfo()
+    end)
+    if okActions and type(actionInfo) == "table" then
+        for actionName, info in pairs(actionInfo) do
+            if actionInfoUsesShoot(actionName, info) then
+                local okButton, actionButton = pcall(function()
+                    return ContextActionService:GetButton(actionName)
+                end)
+                if okButton and actionButton and actionButton:IsA("GuiButton")
+                    and isGuiActuallyVisible(actionButton) then
+                    mobileShootButton = actionButton
+                    return actionButton
+                end
+            end
+        end
+    end
+
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui then
+        for _, descendant in ipairs(playerGui:GetDescendants()) do
+            if descendant:IsA("GuiButton") then
+                local score = scoreShootButton(descendant)
+                if score > bestScore then
+                    bestScore = score
+                    bestButton = descendant
+                end
+            end
+        end
+    end
+
+    if bestScore >= 100 then
+        mobileShootButton = bestButton
+    else
+        mobileShootButton = nil
+    end
+    return mobileShootButton
+end
+
+local function captureMobileShootTouch()
+    if not UserInputService.TouchEnabled then
+        return nil, nil
+    end
+
+    local button = findMobileShootButton(true)
+    if not button then
+        return nil, nil
+    end
+
+    if mobileShootTouch and activeTouchInputs[mobileShootTouch]
+        and pointInsideGui(button, mobileShootTouch.Position) then
+        basketballState.MobileShootHeld = true
+        return button, mobileShootTouch
+    end
+
+    for touch in pairs(activeTouchInputs) do
+        if touch.UserInputType == Enum.UserInputType.Touch
+            and touch.UserInputState ~= Enum.UserInputState.End
+            and touch.UserInputState ~= Enum.UserInputState.Cancel
+            and pointInsideGui(button, touch.Position) then
+            mobileShootTouch = touch
+            basketballState.MobileShootHeld = true
+            return button, touch
+        end
+    end
+
+    return button, nil
+end
+
+local function fireInputSignal(signal, ...)
+    if not signal then
+        return false
+    end
+
+    if type(firesignal) == "function" then
+        local ok = pcall(firesignal, signal, ...)
+        if ok then
+            return true
+        end
+    end
+
+    if type(getconnections) == "function" then
+        local okConnections, connections = pcall(getconnections, signal)
+        if okConnections and type(connections) == "table" then
+            local fired = false
+            for _, connection in ipairs(connections) do
+                local callback
+                pcall(function()
+                    callback = connection.Function
+                end)
+                if type(callback) == "function" then
+                    local ok = pcall(callback, ...)
+                    fired = fired or ok
+                end
+            end
+            return fired
+        end
+    end
+
+    return false
+end
+
+local function releaseMobileShootInput()
+    if not UserInputService.TouchEnabled then
+        return false, nil
+    end
+
+    local button, touch = captureMobileShootTouch()
+    if not button then
+        return false, nil
+    end
+
+    local center = button.AbsolutePosition + button.AbsoluteSize * 0.5
+    local released = false
+    local methods = {}
+
+    -- Custom mobile controls commonly listen to the button signals directly.
+    if touch then
+        if fireInputSignal(button.InputEnded, touch) then
+            released = true
+            table.insert(methods, "Touch")
+        end
+        if fireInputSignal(UserInputService.TouchEnded, touch, false) then
+            released = true
+            table.insert(methods, "TouchService")
+        end
+        if fireInputSignal(UserInputService.InputEnded, touch, false) then
+            released = true
+            table.insert(methods, "InputService")
+        end
+    end
+
+    if fireInputSignal(button.MouseButton1Up, center.X, center.Y) then
+        released = true
+        table.insert(methods, "ButtonUp")
+    end
+
+    -- This fallback handles touch buttons implemented through mouse-compatible
+    -- GuiButton events. It does not replace the normal E release on PC.
+    if VirtualInputManager then
+        local okMouse = pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(
+                math.floor(center.X),
+                math.floor(center.Y),
+                0,
+                false,
+                game,
+                0
+            )
+        end)
+        if okMouse then
+            released = true
+            table.insert(methods, "VirtualButtonUp")
+        end
+    end
+
+    basketballState.MobileShootHeld = false
+    mobileShootTouch = nil
+    mobileShootVirtualPress = false
+
+    return released, (#methods > 0 and table.concat(methods, "+") or nil)
+end
+
+local function pressMobileShootInput()
+    if not UserInputService.TouchEnabled then
+        return false
+    end
+
+    local button = findMobileShootButton(true)
+    if not button then
+        return false
+    end
+
+    local center = button.AbsolutePosition + button.AbsoluteSize * 0.5
+    local pressed = fireInputSignal(button.MouseButton1Down, center.X, center.Y)
+
+    if VirtualInputManager then
+        local okMouse = pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(
+                math.floor(center.X),
+                math.floor(center.Y),
+                0,
+                true,
+                game,
+                0
+            )
+        end)
+        pressed = pressed or okMouse
+    end
+
+    mobileShootVirtualPress = pressed
+    basketballState.MobileShootHeld = pressed
+    return pressed
+end
+
+local function pressShootInput()
+    if isTouchPrimary() and pressMobileShootInput() then
+        basketballState.MobileReleaseMethod = "Mobile button"
+        return true
+    end
+
+    local pressed = sendShootKey(true)
+    if pressed then
+        basketballState.MobileReleaseMethod = "Keyboard E"
+    end
+    return pressed
+end
+
+local function releaseShootInput()
+    local mobileReleased, mobileMethod = false, nil
+    if isTouchPrimary() or basketballState.MobileShootHeld or mobileShootTouch then
+        mobileReleased, mobileMethod = releaseMobileShootInput()
+    end
+
+    -- Always send the desktop release too. On PC this remains the original
+    -- behavior; on mobile it is a harmless fallback for executors that map E.
+    local keyboardReleased = sendShootKey(false)
+
+    if mobileReleased then
+        basketballState.MobileReleaseMethod = mobileMethod or "Mobile touch"
+    elseif keyboardReleased then
+        basketballState.MobileReleaseMethod = "Keyboard E"
+    else
+        basketballState.MobileReleaseMethod = "Unsupported"
+    end
+
+    return mobileReleased or keyboardReleased, basketballState.MobileReleaseMethod
+end
+
+track(UserInputService.TouchStarted:Connect(function(touch)
+    activeTouchInputs[touch] = true
+
+    local button = findMobileShootButton(false)
+    if button and pointInsideGui(button, touch.Position) then
+        mobileShootButton = button
+        mobileShootTouch = touch
+        basketballState.MobileShootHeld = true
+    end
+end))
+
+track(UserInputService.TouchEnded:Connect(function(touch)
+    activeTouchInputs[touch] = nil
+    if touch == mobileShootTouch then
+        mobileShootTouch = nil
+        basketballState.MobileShootHeld = false
+    end
+end))
 
 local keyPulseBusy = {}
 local function pulseBasketballKey(keyCode, holdTime)
@@ -8542,7 +9600,7 @@ end
 
 local autoGreenControl = AutoShotSection:AddToggle({
     Name = "Auto Green Jumpshots",
-    Description = "Releases E early enough for the game's delayed meter read to reach full power",
+    Description = "Releases the active PC E key or mobile Shoot touch at the calibrated meter point",
     Default = false,
     Flag = "basketball_auto_green",
     Callback = function(value)
@@ -8570,26 +9628,26 @@ AutoShotSection:AddSlider({
     end,
 })
 
-AutoShotSection:AddLabel("The game reads the meter 0.10 seconds after E is released. Start at 0.78; adjust only if your connection consistently lands early or late.")
+AutoShotSection:AddLabel("PC: hold E. Mobile: hold the game's Shoot button. VOR releases the active input at the calibrated point. Start at 0.78; adjust only if your connection lands early or late.")
 
 AutoShotSection:AddButton({
     Name = "Test One Perfect Shot",
-    Description = "Presses E and auto-releases the next detected meter cycle",
+    Description = "Presses the PC E key or mobile Shoot button, then auto-releases the next detected meter cycle",
     Callback = function()
         playToggleClick(true)
         basketballState.ForceNextShot = true
         basketballState.ReleasedThisShot = false
         releaseStatusLabel.Text = "Release: Test shot armed"
-        if not sendShootKey(true) then
+        if not pressShootInput() then
             basketballState.ForceNextShot = false
-            releaseStatusLabel.Text = "Release: This executor cannot simulate the E key"
+            releaseStatusLabel.Text = "Release: This executor cannot press E or the mobile Shoot button"
             releaseStatusLabel.TextColor3 = COLORS.warning
             return
         end
         task.delay(1.25, function()
             if basketballState.ForceNextShot then
                 basketballState.ForceNextShot = false
-                sendShootKey(false)
+                releaseShootInput()
                 if releaseStatusLabel.Parent then
                     releaseStatusLabel.Text = "Release: No valid shot meter appeared"
                     releaseStatusLabel.TextColor3 = COLORS.warning
@@ -9154,6 +10212,9 @@ track(RunService.RenderStepped:Connect(function()
 
     if startedNewShot or value <= 0.02 or (visible and value + 0.08 < basketballState.LastMeterValue) then
         basketballState.ReleasedThisShot = false
+        if startedNewShot and UserInputService.TouchEnabled then
+            captureMobileShootTouch()
+        end
     end
 
     if visible and rising and value >= basketballState.Calibration
@@ -9161,14 +10222,16 @@ track(RunService.RenderStepped:Connect(function()
         and (basketballState.AutoGreen or basketballState.ForceNextShot) then
         basketballState.ReleasedThisShot = true
         basketballState.ForceNextShot = false
-        if sendShootKey(false) then
+        local released, releaseMethod = releaseShootInput()
+        if released then
             releaseStatusLabel.Text = string.format(
-                "Release: Fired at %.0f%% visual for the delayed full-power read",
+                "Release: %s fired at %.0f%% visual for the delayed full-power read",
+                releaseMethod or "Input",
                 value * 100
             )
             releaseStatusLabel.TextColor3 = COLORS.success
         else
-            releaseStatusLabel.Text = "Release: E key release is unsupported by this executor"
+            releaseStatusLabel.Text = "Release: PC E and mobile Shoot release are unsupported by this executor"
             releaseStatusLabel.TextColor3 = COLORS.warning
         end
     end
@@ -9212,7 +10275,7 @@ track(gui.Destroying:Connect(function()
     basketballState.LooseBallMagnet = false
     basketballState.GoalAimLock = false
     setGuardHeld(false)
-    sendShootKey(false)
+    releaseShootInput()
     for keyCode in pairs(fallbackVirtualKeys) do
         sendBasketballKey(keyCode, false)
     end
@@ -9231,6 +10294,7 @@ track(gui.Destroying:Connect(function()
 end))
 
 gui:SetAttribute("BasketballShotMeterPath", "PlayerGui.Visual.Shooting")
+gui:SetAttribute("BasketballAutoGreenPlatforms", "PC E + Mobile Shoot Touch")
 gui:SetAttribute("BasketballReleaseCalibration", basketballState.Calibration)
 gui:SetAttribute("BasketballShootingDecal", CATEGORY_DECALS.Shooting)
 gui:SetAttribute("BasketballPlayerDecal", CATEGORY_DECALS.Player)
@@ -9345,6 +10409,22 @@ local frozenPresets = {
     ["Imperial Plum"] = Color3.fromRGB(119, 44, 143),
 }
 
+local panelBackgroundControl = AppearanceSection:AddDropdown({
+    Name = "UI Background",
+    Flag = "vor_panel_background",
+    Options = {"VOR Void (287316330)", "VOR Purple (13223834035)"},
+    Default = "VOR Void (287316330)",
+    Callback = function(value)
+        local image = PANEL_BACKGROUNDS[value]
+        if image then
+            SETTINGS.PanelBackgroundImageId = image
+            if panelBackground and panelBackground.Parent then
+                panelBackground.Image = image
+            end
+        end
+    end,
+})
+
 local frozenAccentControl = AppearanceSection:AddDropdown({
     Name = "VOR Accent Color",
     Flag = "frozen_accent_preset",
@@ -9370,11 +10450,22 @@ local transparencyControl = AppearanceSection:AddSlider({
     end,
 })
 
+local minimizedStyleControl = AppearanceSection:AddDropdown({
+    Name = "Minimized Style",
+    Flag = "hub_minimized_style",
+    Options = {MINIMIZE_BAR_STYLE, MINIMIZE_CIRCLE_STYLE},
+    Default = minimizedStyle,
+    Callback = function(value)
+        Window:SetMinimizeStyle(value)
+    end,
+})
+
 AppearanceSection:AddButton({
     Name = "Reset VOR Theme",
     Description = "Restore the obsidian glass and signature VOR violet accent",
     Persist = false,
     Callback = function()
+        panelBackgroundControl:Set("VOR Void (287316330)")
         frozenAccentControl:Set("VOR Violet")
         transparencyControl:Set(0.24)
     end,
