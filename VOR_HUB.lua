@@ -1847,8 +1847,7 @@ local statusMinimized = false
 local statusFlakes = {}
 local statusRandom = Random.new()
 local statusSymbols = {utf8.char(0x25C6), utf8.char(0x25C7), utf8.char(0x2726), utf8.char(0x2727)}
-local statusParticleCount = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 6 or 0
-for index = 1, statusParticleCount do
+for index = 1, (ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 6 or 0) do
     local flake = makeLabel(statusFrame, statusSymbols[((index - 1) % #statusSymbols) + 1], UDim2.fromOffset(0, 0), UDim2.fromOffset(24, 24), COLORS.toggleOnBright, statusRandom:NextInteger(13, 22), Enum.Font.GothamBold)
     flake.Name = "StatusVorParticle" .. index
     flake.TextXAlignment = Enum.TextXAlignment.Center
@@ -2100,18 +2099,18 @@ loadPlayerHeadshot()
 track(LocalPlayer.CharacterAppearanceLoaded:Connect(loadPlayerHeadshot))
 
 local avatarFloatClock = 0
-local avatarFrameAccumulator = 0
+SETTINGS.AvatarFrameAccumulator = 0
 track(RunService.RenderStepped:Connect(function(deltaTime)
     if not SETTINGS.AvatarPreviewEnabled or not hubVisible or not main.Visible or not sidebar.Visible or not avatarCard.Visible then
         return
     end
 
-    avatarFrameAccumulator += deltaTime
-    if avatarFrameAccumulator < (1 / 15) then
+    SETTINGS.AvatarFrameAccumulator += deltaTime
+    if SETTINGS.AvatarFrameAccumulator < (1 / 15) then
         return
     end
-    avatarFloatClock = avatarFloatClock + math.min(avatarFrameAccumulator, 0.05)
-    avatarFrameAccumulator = 0
+    avatarFloatClock = avatarFloatClock + math.min(SETTINGS.AvatarFrameAccumulator, 0.05)
+    SETTINGS.AvatarFrameAccumulator = 0
     local verticalFloat = math.sin(avatarFloatClock * 1.75) * 3
     local horizontalFloat = math.sin(avatarFloatClock * 0.82) * 2
     local sway = math.sin(avatarFloatClock * 0.95) * 1.8
