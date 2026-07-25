@@ -168,6 +168,14 @@ end
 -- Blox Fruits profiles use its UniverseId so the same setup follows the player between seas.
 -- Every other integration remains isolated by PlaceId.
 SETTINGS.IsBloxFruits = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
+if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
+    -- Blox Fruits already has a large translucent HUD. Layering a second
+    -- animated intro, particle storm, and many blended decals over it causes
+    -- severe GPU overdraw on some clients. The VOR shell remains branded and
+    -- purple, but this integration opens immediately in its lean presentation.
+    SETTINGS.IntroEnabled = false
+    SETTINGS.SnowEnabled = false
+end
 SETTINGS.ConfigScopeId = SETTINGS.IsBloxFruits and game.GameId or game.PlaceId
 local CONFIG_ROOT = SETTINGS.IsBloxFruits
     and ("VORHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
@@ -209,12 +217,17 @@ local COLORS = {
 }
 
 local UI_FONT = Enum.Font.GothamBold
-local hubTransparencyValue = 0.24
+local hubTransparencyValue = SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering and 0.06 or 0.24
 
 local function create(className, properties, parent)
     local object = Instance.new(className)
     for property, value in pairs(properties or {}) do
         object[property] = property == "Font" and UI_FONT or value
+    end
+    if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
+        if object:IsA("UIGradient") or object:IsA("UIStroke") then
+            object.Enabled = false
+        end
     end
     object.Parent = parent
     return object
@@ -793,7 +806,7 @@ create("UIGradient", {
 }, main)
 
 local panelBackground
-do
+if not (SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering) then
     panelBackground = create("ImageLabel", {
         Name = "PanelBackground",
         Position = UDim2.fromOffset(1, 1),
@@ -1057,15 +1070,17 @@ do
     end
 
     local iceRandom = Random.new(20260721)
-    for index = 1, 13 do
-        local evenPosition = (index - 0.5) / 13
-        local xScale = math.clamp(evenPosition + iceRandom:NextNumber(-0.024, 0.024), 0.040, 0.960)
-        makeIcicle(index, xScale, 1, iceRandom:NextInteger(5, 9), iceRandom:NextInteger(13, 36))
-    end
+    if not (SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering) then
+        for index = 1, 13 do
+            local evenPosition = (index - 0.5) / 13
+            local xScale = math.clamp(evenPosition + iceRandom:NextNumber(-0.024, 0.024), 0.040, 0.960)
+            makeIcicle(index, xScale, 1, iceRandom:NextInteger(5, 9), iceRandom:NextInteger(13, 36))
+        end
 
-    local topPositions = {0.075, 0.115, 0.165, 0.835, 0.885, 0.925}
-    for index, xScale in ipairs(topPositions) do
-        makeIcicle(13 + index, xScale, 0, iceRandom:NextInteger(5, 8), iceRandom:NextInteger(9, 20))
+        local topPositions = {0.075, 0.115, 0.165, 0.835, 0.885, 0.925}
+        for index, xScale in ipairs(topPositions) do
+            makeIcicle(13 + index, xScale, 0, iceRandom:NextInteger(5, 8), iceRandom:NextInteger(9, 20))
+        end
     end
 
     local function makeSideCrystal(index, side, yScale, scale)
@@ -2128,6 +2143,9 @@ track(LocalPlayer.CharacterAppearanceLoaded:Connect(loadPlayerHeadshot))
 SETTINGS.AvatarFloatClock = 0
 SETTINGS.AvatarFrameAccumulator = 0
 track(RunService.RenderStepped:Connect(function(deltaTime)
+    if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
+        return
+    end
     if not SETTINGS.AvatarPreviewEnabled or not hubVisible or not main.Visible or not sidebar.Visible or not avatarCard.Visible then
         return
     end
@@ -2150,7 +2168,7 @@ track(RunService.RenderStepped:Connect(function(deltaTime)
 end))
 
 local function startSnowfall()
-    if not SETTINGS.SnowEnabled then
+    if not SETTINGS.SnowEnabled or (SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering) then
         return
     end
 
@@ -2314,7 +2332,12 @@ local function applyFrozenAccent(newAccent)
 end
 
 local function applyHubTransparency(value)
-    hubTransparencyValue = math.clamp(tonumber(value) or 0.24, 0.10, 0.80)
+    hubTransparencyValue = math.clamp(tonumber(value) or 0.24, 0.04, 0.80)
+    if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
+        -- Cap transparency in the large integration to prevent multiple
+        -- full-screen blended layers from stalling the renderer.
+        hubTransparencyValue = math.min(hubTransparencyValue, 0.12)
+    end
     local offsets = {
         CodexHub = 0.00,
         Header = 0.06,
@@ -2481,7 +2504,7 @@ local function makeControlRow(section, height)
         LayoutOrder = section.NextOrder,
         Size = UDim2.new(1, 0, 0, height),
         BackgroundColor3 = COLORS.sectionRow,
-        BackgroundTransparency = 0.18,
+        BackgroundTransparency = SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering and 0.02 or 0.18,
         BorderSizePixel = 0,
         ClipsDescendants = true,
     }, section.Body)
@@ -3091,7 +3114,7 @@ function PageMethods:AddSection(title, side)
         Size = UDim2.new(1, -4, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = Color3.fromRGB(11, 7, 20),
-        BackgroundTransparency = 0.04,
+        BackgroundTransparency = SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering and 0 or 0.04,
         BorderSizePixel = 0,
         ClipsDescendants = true,
     }, parentColumn)
@@ -3099,33 +3122,35 @@ function PageMethods:AddSection(title, side)
     addVorTrim(card, 6, 3, 0.04)
     addVorCornerArmor(card, 4, 14, 0.38)
 
-    local sectionTexture = create("ImageLabel", {
-        Name = "SectionBackground",
-        Position = UDim2.fromOffset(0, 0),
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        Image = SETTINGS.SectionBackgroundImageId,
-        ImageColor3 = Color3.fromRGB(75, 37, 118),
-        ImageTransparency = 0.54,
-        ScaleType = Enum.ScaleType.Crop,
-        ZIndex = 1,
-    }, card)
-    addCorner(sectionTexture, 6)
-    create("UIGradient", {
-        Name = "SectionTextureShade",
-        Rotation = 0,
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(115, 61, 172)),
-            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(62, 27, 100)),
-            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(20, 9, 34)),
-        }),
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0.00, 0.18),
-            NumberSequenceKeypoint.new(0.52, 0.10),
-            NumberSequenceKeypoint.new(1.00, 0.24),
-        }),
-    }, sectionTexture)
+    if not (SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering) then
+        local sectionTexture = create("ImageLabel", {
+            Name = "SectionBackground",
+            Position = UDim2.fromOffset(0, 0),
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Image = SETTINGS.SectionBackgroundImageId,
+            ImageColor3 = Color3.fromRGB(75, 37, 118),
+            ImageTransparency = 0.54,
+            ScaleType = Enum.ScaleType.Crop,
+            ZIndex = 1,
+        }, card)
+        addCorner(sectionTexture, 6)
+        create("UIGradient", {
+            Name = "SectionTextureShade",
+            Rotation = 0,
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0.00, Color3.fromRGB(115, 61, 172)),
+                ColorSequenceKeypoint.new(0.50, Color3.fromRGB(62, 27, 100)),
+                ColorSequenceKeypoint.new(1.00, Color3.fromRGB(20, 9, 34)),
+            }),
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 0.18),
+                NumberSequenceKeypoint.new(0.52, 0.10),
+                NumberSequenceKeypoint.new(1.00, 0.24),
+            }),
+        }, sectionTexture)
+    end
 
     local sectionContent = create("Frame", {
         Name = "SectionContent",
@@ -10495,8 +10520,9 @@ function Window:BuildBloxFruitsFeatures()
             AutoAwaken = false,
             SelectedRaid = "Flame",
             AutoAttack = false,
-            AttackInterval = 0.12,
+            AttackInterval = 0,
             LastAttack = 0,
+            LastInputFallback = 0,
             WeaponType = "Sword",
             AutoBuso = false,
             LastBuso = 0,
@@ -10737,28 +10763,35 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function attackOnce()
-            if os.clock() - state.LastAttack < state.AttackInterval then
+            local now = os.clock()
+            if state.AttackInterval > 0 and now - state.LastAttack < state.AttackInterval then
                 return false
             end
-            state.LastAttack = os.clock()
+            state.LastAttack = now
             local tool = equipSelectedTool()
             if tool then
                 pcall(function()
                     tool:Activate()
                 end)
             end
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:Button1Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
-                VirtualUser:Button1Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
-            end)
-            pcall(function()
-                local VirtualInputManager = game:GetService("VirtualInputManager")
-                local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
-                local x, y = math.floor(viewport.X * 0.5), math.floor(viewport.Y * 0.5)
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-            end)
+            -- Tool activation has no added delay. The virtual click is only a
+            -- compatibility fallback, so throttle that expensive path while
+            -- still activating the weapon every Heartbeat.
+            if now - state.LastInputFallback >= 0.08 then
+                state.LastInputFallback = now
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                    VirtualUser:Button1Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                end)
+                pcall(function()
+                    local VirtualInputManager = game:GetService("VirtualInputManager")
+                    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+                    local x, y = math.floor(viewport.X * 0.5), math.floor(viewport.Y * 0.5)
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                end)
+            end
             gui:SetAttribute("BloxLastAttackAt", os.clock())
             gui:SetAttribute("BloxAttackCount", (tonumber(gui:GetAttribute("BloxAttackCount")) or 0) + 1)
             return true
@@ -11594,12 +11627,12 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
         AttackSection:AddSlider({
-            Name = "Attack Interval",
+            Name = "Extra Attack Delay",
             Flag = "blox_attack_interval",
-            Min = 0.05,
+            Min = 0,
             Max = 0.50,
             Step = 0.01,
-            Default = 0.12,
+            Default = 0,
             Callback = function(value)
                 state.AttackInterval = value
             end,
@@ -11940,6 +11973,9 @@ function Window:BuildBloxFruitsFeatures()
             if not state.Alive then
                 return
             end
+            if state.AutoAttack then
+                attackOnce()
+            end
             gatherStep()
             if state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
                 applyNoclip()
@@ -11974,21 +12010,12 @@ function Window:BuildBloxFruitsFeatures()
                         stepAutoLevel()
                     elseif state.AutoChest then
                         stepChest()
-                    elseif state.GatherEnemies and state.AutoAttack and state.Gathered > 0 then
-                        attackOnce()
                     elseif state.AutoAttack then
-                        -- Auto Attack also works as a standalone toggle. Previously
-                        -- it only fired while another farm mode supplied a target,
-                        -- which made the switch appear broken by itself.
                         local nearbyEnemy, nearbyDistance = nearestEnemy(nil, true)
                         if nearbyEnemy and nearbyDistance then
                             state.CurrentEnemyName = normalizeEnemyName(nearbyEnemy.Name)
                             targetLabel.Text = string.format("Target: %s | %.0f studs", state.CurrentEnemyName, nearbyDistance)
                         end
-                        -- Keep sending the normal attack input even before an
-                        -- enemy reaches melee range. This mirrors holding click
-                        -- and makes the standalone toggle immediately observable.
-                        attackOnce()
                     end
 
                     if state.AutoBuso and os.clock() - state.LastBuso >= 2 then
