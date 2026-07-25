@@ -1845,10 +1845,10 @@ end
 
 local statusMinimized = false
 local statusFlakes = {}
-local statusRandom = Random.new()
-local statusSymbols = {utf8.char(0x25C6), utf8.char(0x25C7), utf8.char(0x2726), utf8.char(0x2727)}
+SETTINGS.StatusParticleRandom = Random.new()
+SETTINGS.StatusParticleSymbols = {utf8.char(0x25C6), utf8.char(0x25C7), utf8.char(0x2726), utf8.char(0x2727)}
 for index = 1, (ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 6 or 0) do
-    local flake = makeLabel(statusFrame, statusSymbols[((index - 1) % #statusSymbols) + 1], UDim2.fromOffset(0, 0), UDim2.fromOffset(24, 24), COLORS.toggleOnBright, statusRandom:NextInteger(13, 22), Enum.Font.GothamBold)
+    local flake = makeLabel(statusFrame, SETTINGS.StatusParticleSymbols[((index - 1) % #SETTINGS.StatusParticleSymbols) + 1], UDim2.fromOffset(0, 0), UDim2.fromOffset(24, 24), COLORS.toggleOnBright, SETTINGS.StatusParticleRandom:NextInteger(13, 22), Enum.Font.GothamBold)
     flake.Name = "StatusVorParticle" .. index
     flake.TextXAlignment = Enum.TextXAlignment.Center
     flake.TextTransparency = 0.18
@@ -1858,8 +1858,8 @@ for index = 1, (ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 
     table.insert(statusFlakes, flake)
     task.spawn(function()
         while statusGui.Parent and flake.Parent do
-            flake.Position = UDim2.fromOffset(statusRandom:NextInteger(4, 332), statusRandom:NextInteger(-35, -10))
-            flake.Rotation = statusRandom:NextInteger(-35, 35)
+            flake.Position = UDim2.fromOffset(SETTINGS.StatusParticleRandom:NextInteger(4, 332), SETTINGS.StatusParticleRandom:NextInteger(-35, -10))
+            flake.Rotation = SETTINGS.StatusParticleRandom:NextInteger(-35, 35)
             while statusGui.Parent and flake.Parent and (not statusGui.Enabled or statusMinimized) do
                 flake.Visible = false
                 task.wait(0.35)
@@ -1868,13 +1868,13 @@ for index = 1, (ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 
                 break
             end
             flake.Visible = true
-            local tween = TweenService:Create(flake, TweenInfo.new(statusRandom:NextNumber(4.2, 7.2), Enum.EasingStyle.Linear), {
-                Position = UDim2.fromOffset(statusRandom:NextInteger(4, 332), 240),
-                Rotation = flake.Rotation + statusRandom:NextInteger(80, 220),
+            local tween = TweenService:Create(flake, TweenInfo.new(SETTINGS.StatusParticleRandom:NextNumber(4.2, 7.2), Enum.EasingStyle.Linear), {
+                Position = UDim2.fromOffset(SETTINGS.StatusParticleRandom:NextInteger(4, 332), 240),
+                Rotation = flake.Rotation + SETTINGS.StatusParticleRandom:NextInteger(80, 220),
             })
             tween:Play()
             tween.Completed:Wait()
-            task.wait(statusRandom:NextNumber(0.08, 0.55))
+            task.wait(SETTINGS.StatusParticleRandom:NextNumber(0.08, 0.55))
         end
     end)
 end
@@ -2098,7 +2098,7 @@ end
 loadPlayerHeadshot()
 track(LocalPlayer.CharacterAppearanceLoaded:Connect(loadPlayerHeadshot))
 
-local avatarFloatClock = 0
+SETTINGS.AvatarFloatClock = 0
 SETTINGS.AvatarFrameAccumulator = 0
 track(RunService.RenderStepped:Connect(function(deltaTime)
     if not SETTINGS.AvatarPreviewEnabled or not hubVisible or not main.Visible or not sidebar.Visible or not avatarCard.Visible then
@@ -2109,12 +2109,12 @@ track(RunService.RenderStepped:Connect(function(deltaTime)
     if SETTINGS.AvatarFrameAccumulator < (1 / 15) then
         return
     end
-    avatarFloatClock = avatarFloatClock + math.min(SETTINGS.AvatarFrameAccumulator, 0.05)
+    SETTINGS.AvatarFloatClock = SETTINGS.AvatarFloatClock + math.min(SETTINGS.AvatarFrameAccumulator, 0.05)
     SETTINGS.AvatarFrameAccumulator = 0
-    local verticalFloat = math.sin(avatarFloatClock * 1.75) * 3
-    local horizontalFloat = math.sin(avatarFloatClock * 0.82) * 2
-    local sway = math.sin(avatarFloatClock * 0.95) * 1.8
-    local glowPulse = (math.sin(avatarFloatClock * 1.45) + 1) * 0.5
+    local verticalFloat = math.sin(SETTINGS.AvatarFloatClock * 1.75) * 3
+    local horizontalFloat = math.sin(SETTINGS.AvatarFloatClock * 0.82) * 2
+    local sway = math.sin(SETTINGS.AvatarFloatClock * 0.95) * 1.8
+    local glowPulse = (math.sin(SETTINGS.AvatarFloatClock * 1.45) + 1) * 0.5
 
     avatarImage.Position = UDim2.new(0.5, horizontalFloat, 0, 4 + verticalFloat)
     avatarImage.Rotation = sway
