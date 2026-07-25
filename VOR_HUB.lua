@@ -160,11 +160,11 @@ end
 -- Keep the legacy storage path so existing profiles and autoload selections survive the rebrand.
 -- Blox Fruits profiles use its UniverseId so the same setup follows the player between seas.
 -- Every other integration remains isolated by PlaceId.
-local IS_BLOX_FRUITS = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
-local CONFIG_SCOPE_ID = IS_BLOX_FRUITS and game.GameId or game.PlaceId
-local CONFIG_ROOT = IS_BLOX_FRUITS
-    and ("SolixHub/Configs/VOR/" .. tostring(CONFIG_SCOPE_ID))
-    or ("SolixHub/Configs/" .. tostring(CONFIG_SCOPE_ID))
+SETTINGS.IsBloxFruits = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
+SETTINGS.ConfigScopeId = SETTINGS.IsBloxFruits and game.GameId or game.PlaceId
+local CONFIG_ROOT = SETTINGS.IsBloxFruits
+    and ("SolixHub/Configs/VOR/" .. tostring(SETTINGS.ConfigScopeId))
+    or ("SolixHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
 local PROFILE_FOLDER = CONFIG_ROOT .. "/Profiles"
 local AUTOLOAD_FILE = CONFIG_ROOT .. "/autoload.json"
 local ACCESS_FILE = "SolixHub/Configs/access.json"
@@ -3434,12 +3434,12 @@ function Window:GetProfileNames()
     return names
 end
 
-local function profileScopeMatches(metadata)
+function Window:ProfileScopeMatches(metadata)
     if type(metadata) ~= "table" then
         return false
     end
     if metadata.scopeId ~= nil then
-        return tonumber(metadata.scopeId) == CONFIG_SCOPE_ID
+        return tonumber(metadata.scopeId) == SETTINGS.ConfigScopeId
     end
     if metadata.placeId ~= nil then
         return tonumber(metadata.placeId) == game.PlaceId
@@ -3471,7 +3471,7 @@ function Window:SaveProfile(name)
         ensureFolder(PROFILE_FOLDER)
         local encoded = HttpService:JSONEncode({
             version = 2,
-            scopeId = CONFIG_SCOPE_ID,
+            scopeId = SETTINGS.ConfigScopeId,
             placeId = game.PlaceId,
             universeId = game.GameId,
             profile = profile,
@@ -3506,7 +3506,7 @@ function Window:LoadProfile(name)
     if not ok or type(data) ~= "table" or type(data.values) ~= "table" then
         return false, "Profile data is invalid"
     end
-    if not profileScopeMatches(data) then
+    if not self:ProfileScopeMatches(data) then
         return false, "Profile belongs to a different game"
     end
 
@@ -3561,7 +3561,7 @@ function Window:SetAutoLoad(enabled, name)
         ensureFolder(CONFIG_ROOT)
         writefile(AUTOLOAD_FILE, HttpService:JSONEncode({
             enabled = enabled == true,
-            scopeId = CONFIG_SCOPE_ID,
+            scopeId = SETTINGS.ConfigScopeId,
             placeId = game.PlaceId,
             universeId = game.GameId,
             profile = profile,
@@ -3588,7 +3588,7 @@ function Window:GetAutoLoad()
     if not ok or type(metadata) ~= "table" then
         return false, ""
     end
-    if not profileScopeMatches(metadata) then
+    if not self:ProfileScopeMatches(metadata) then
         return false, ""
     end
     return metadata.enabled == true, sanitizeProfileName(metadata.profile)
@@ -10366,7 +10366,7 @@ local function buildAnimeExpeditionsFeatures()
     end
 end
 
-local function buildBloxFruitsFeatures()
+function Window:BuildBloxFruitsFeatures()
     local loaded, moduleOrError = pcall(loadCodexGameModule, "blox_fruits.lua")
     if not loaded then
         local HomePage = Window:AddPage("Home")
@@ -10429,7 +10429,7 @@ elseif ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits" then
     gui:SetAttribute("GameSupported", true)
     gui:SetAttribute("GameSupportKey", ACTIVE_GAME_SUPPORT.Key)
     gui:SetAttribute("SupportedUniverseId", ACTIVE_GAME_SUPPORT.UniverseId)
-    buildBloxFruitsFeatures()
+    Window:BuildBloxFruitsFeatures()
 else
     statusGui.Enabled = false
     gui:SetAttribute("GameSupported", false)
@@ -10659,9 +10659,9 @@ ProfilesSection:AddButton({
 })
 
 AutoLoadSection:AddLabel(
-    IS_BLOX_FRUITS
-        and ("Storage is shared across Blox Fruits seas (UniverseId " .. tostring(CONFIG_SCOPE_ID) .. ")")
-        or ("Storage is isolated to PlaceId " .. tostring(CONFIG_SCOPE_ID))
+    SETTINGS.IsBloxFruits
+        and ("Storage is shared across Blox Fruits seas (UniverseId " .. tostring(SETTINGS.ConfigScopeId) .. ")")
+        or ("Storage is isolated to PlaceId " .. tostring(SETTINGS.ConfigScopeId))
 )
 AutoLoadSection:AddLabel("Only toggles, dropdowns, sliders, and inputs are saved.")
 
