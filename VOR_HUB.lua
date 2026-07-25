@@ -52,10 +52,15 @@ local SETTINGS = {
     HubOpenPlaybackSpeed = 1.42,
     HubClosePlaybackSpeed = 0.68,
     ToggleKey = Enum.KeyCode.RightControl,
+    -- Keep the polished VOR shell, but avoid repeating expensive gradients,
+    -- corner armor, strokes, and UIScale objects on every individual control.
+    -- Large games such as Blox Fruits can expose hundreds of controls at once;
+    -- a clean flat row treatment keeps the menu responsive when it opens.
+    LightweightRendering = true,
     SnowEnabled = true,
     -- Keep the animated background lightweight. The old 52-label storm created
     -- 52 concurrent tweens (plus 52 glow images) whenever the hub opened.
-    SnowflakeCount = 12,
+    SnowflakeCount = 8,
     AvatarPreviewEnabled = true,
     PlayerHeadshotEnabled = true,
     -- The decal is currently restricted, so use its public thumbnail until Asset Access is set to Open Use.
@@ -232,8 +237,16 @@ end
 -- Shared VOR armor treatment. Applying this at the component-constructor level
 -- keeps every supported game visually consistent without touching its controls.
 local function addVorTrim(parent, radius, innerInset, outerTransparency)
-    local outerStroke = addStroke(parent, Color3.fromRGB(59, 43, 76), 2.2, outerTransparency or 0.10)
+    local outerStroke = addStroke(
+        parent,
+        SETTINGS.LightweightRendering and COLORS.accentDark or Color3.fromRGB(59, 43, 76),
+        SETTINGS.LightweightRendering and 1.25 or 2.2,
+        SETTINGS.LightweightRendering and math.max(outerTransparency or 0.10, 0.18) or (outerTransparency or 0.10)
+    )
     outerStroke.LineJoinMode = Enum.LineJoinMode.Miter
+    if SETTINGS.LightweightRendering then
+        return outerStroke, nil, nil
+    end
     create("UIGradient", {
         Name = "VorMetalEdge",
         Rotation = 24,
@@ -273,6 +286,9 @@ local function addVorTrim(parent, radius, innerInset, outerTransparency)
 end
 
 local function addVorCornerArmor(parent, inset, size, transparency)
+    if SETTINGS.LightweightRendering then
+        return
+    end
     local offset = inset or 5
     local span = size or 17
     local alpha = transparency or 0.08
@@ -949,11 +965,19 @@ do
             Name = "Icicle" .. tostring(index),
             AnchorPoint = Vector2.new(0.5, 0),
             Position = UDim2.new(xScale, 0, yScale, -1),
-            Size = UDim2.fromOffset(width + 10, height + 8),
-            BackgroundTransparency = 1,
+            Size = SETTINGS.LightweightRendering
+                and UDim2.fromOffset(math.max(4, width), math.max(7, height))
+                or UDim2.fromOffset(width + 10, height + 8),
+            BackgroundColor3 = COLORS.accent,
+            BackgroundTransparency = SETTINGS.LightweightRendering and 0.18 or 1,
             BorderSizePixel = 0,
             ZIndex = 82,
         }, icicleLayer)
+
+        if SETTINGS.LightweightRendering then
+            addCorner(icicle, math.max(2, math.floor(width * 0.42)))
+            return
+        end
 
         local glow = create("Frame", {
             Name = "SoftGlow",
@@ -1045,6 +1069,9 @@ do
     end
 
     local function makeSideCrystal(index, side, yScale, scale)
+        if SETTINGS.LightweightRendering then
+            return
+        end
         local leftSide = side == "Left"
         local holder = create("Frame", {
             Name = side .. "CrystalCluster" .. tostring(index),
@@ -2459,31 +2486,35 @@ local function makeControlRow(section, height)
         ClipsDescendants = true,
     }, section.Body)
     addCorner(row, 5)
-    addStroke(row, COLORS.accentDark, 1, 0.30)
-    local rowAccent = create("Frame", {
-        Name = "VorRowAccent",
-        Position = UDim2.fromOffset(0, 7),
-        Size = UDim2.new(0, 2, 1, -14),
-        BackgroundColor3 = COLORS.accent,
-        BackgroundTransparency = 0.38,
-        BorderSizePixel = 0,
-        ZIndex = 2,
-    }, row)
-    addCorner(rowAccent, 2)
-    create("UIGradient", {
-        Rotation = 90,
-        Color = ColorSequence.new(COLORS.toggleOnBright, COLORS.accentDark),
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.16),
-            NumberSequenceKeypoint.new(0.5, 0.02),
-            NumberSequenceKeypoint.new(1, 0.48),
-        }),
-    }, rowAccent)
+    if not SETTINGS.LightweightRendering then
+        addStroke(row, COLORS.accentDark, 1, 0.30)
+        local rowAccent = create("Frame", {
+            Name = "VorRowAccent",
+            Position = UDim2.fromOffset(0, 7),
+            Size = UDim2.new(0, 2, 1, -14),
+            BackgroundColor3 = COLORS.accent,
+            BackgroundTransparency = 0.38,
+            BorderSizePixel = 0,
+            ZIndex = 2,
+        }, row)
+        addCorner(rowAccent, 2)
+        create("UIGradient", {
+            Rotation = 90,
+            Color = ColorSequence.new(COLORS.toggleOnBright, COLORS.accentDark),
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.16),
+                NumberSequenceKeypoint.new(0.5, 0.02),
+                NumberSequenceKeypoint.new(1, 0.48),
+            }),
+        }, rowAccent)
+    end
     return row
 end
 
 local function attachControlMotion(button, row, hoverTransparency)
-    attachFluidScale(button, row, 1.006, 0.994)
+    if not SETTINGS.LightweightRendering then
+        attachFluidScale(button, row, 1.006, 0.994)
+    end
     track(button.MouseEnter:Connect(function()
         fluidTween(row, 0.16, {BackgroundTransparency = hoverTransparency or 0.18})
     end))
@@ -2581,14 +2612,17 @@ function SectionMethods:AddToggle(options)
     }, row)
     addCorner(trackFrame, 12)
     local trackStroke = addStroke(trackFrame, COLORS.offTrack:Lerp(COLORS.sectionText, 0.35), 1.4, 0.48)
-    local onGradient = create("UIGradient", {
-        Enabled = false,
-        Rotation = 0,
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, COLORS.toggleOn),
-            ColorSequenceKeypoint.new(1, COLORS.toggleOnBright),
-        }),
-    }, trackFrame)
+    local onGradient = nil
+    if not SETTINGS.LightweightRendering then
+        onGradient = create("UIGradient", {
+            Enabled = false,
+            Rotation = 0,
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, COLORS.toggleOn),
+                ColorSequenceKeypoint.new(1, COLORS.toggleOnBright),
+            }),
+        }, trackFrame)
+    end
 
     local onLabel = create("TextLabel", {
         Position = UDim2.fromOffset(4, 0),
@@ -2630,7 +2664,9 @@ function SectionMethods:AddToggle(options)
         state = value == true
         local trackColor = state and COLORS.toggleOn or COLORS.offTrack
         local knobPosition = state and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
-        onGradient.Enabled = state
+        if onGradient then
+            onGradient.Enabled = state
+        end
         fluidTween(trackFrame, 0.18, {BackgroundColor3 = trackColor})
         fluidTween(trackStroke, 0.18, {
             Color = state and COLORS.toggleOnStroke or COLORS.offTrack:Lerp(COLORS.sectionText, 0.35),
@@ -10682,7 +10718,10 @@ function Window:BuildBloxFruitsFeatures()
                     end
                 end
             end
-            return state.WeaponType == "Best Available" and fallback or nil
+            -- Some Blox Fruits tools expose an empty or localized ToolTip.
+            -- Falling back to the first usable tool keeps Auto Attack working
+            -- instead of silently doing nothing when metadata is unavailable.
+            return fallback
         end
 
         local function equipSelectedTool()
@@ -10713,6 +10752,15 @@ function Window:BuildBloxFruitsFeatures()
                 VirtualUser:Button1Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
                 VirtualUser:Button1Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
             end)
+            pcall(function()
+                local VirtualInputManager = game:GetService("VirtualInputManager")
+                local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+                local x, y = math.floor(viewport.X * 0.5), math.floor(viewport.Y * 0.5)
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+            end)
+            gui:SetAttribute("BloxLastAttackAt", os.clock())
+            gui:SetAttribute("BloxAttackCount", (tonumber(gui:GetAttribute("BloxAttackCount")) or 0) + 1)
             return true
         end
 
@@ -11532,6 +11580,7 @@ function Window:BuildBloxFruitsFeatures()
             Default = false,
             Callback = function(enabled)
                 state.AutoAttack = enabled
+                gui:SetAttribute("BloxAutoAttack", enabled)
             end,
         })
         AttackSection:AddDropdown({
@@ -11926,6 +11975,19 @@ function Window:BuildBloxFruitsFeatures()
                     elseif state.AutoChest then
                         stepChest()
                     elseif state.GatherEnemies and state.AutoAttack and state.Gathered > 0 then
+                        attackOnce()
+                    elseif state.AutoAttack then
+                        -- Auto Attack also works as a standalone toggle. Previously
+                        -- it only fired while another farm mode supplied a target,
+                        -- which made the switch appear broken by itself.
+                        local nearbyEnemy, nearbyDistance = nearestEnemy(nil, true)
+                        if nearbyEnemy and nearbyDistance then
+                            state.CurrentEnemyName = normalizeEnemyName(nearbyEnemy.Name)
+                            targetLabel.Text = string.format("Target: %s | %.0f studs", state.CurrentEnemyName, nearbyDistance)
+                        end
+                        -- Keep sending the normal attack input even before an
+                        -- enemy reaches melee range. This mirrors holding click
+                        -- and makes the standalone toggle immediately observable.
                         attackOnce()
                     end
 
