@@ -20,8 +20,8 @@ local LocalPlayer = Players.LocalPlayer
 local SETTINGS = {
     GuiName = "CodexHub",
     Title = "VOR Hub",
-    Discord = "discord.gg/MbergFzz56",
-    DiscordInviteURL = "https://discord.gg/MbergFzz56",
+    Discord = "discord.gg/w7gXUUZEp",
+    DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
     AccessKeyHash = 1961304013, -- FNV-1a hash of the current Discord key; the plain key is never shown in the hub.
     RememberKey = true,
     Creator = "Vor",
@@ -53,7 +53,9 @@ local SETTINGS = {
     HubClosePlaybackSpeed = 0.68,
     ToggleKey = Enum.KeyCode.RightControl,
     SnowEnabled = true,
-    SnowflakeCount = 52,
+    -- Keep the animated background lightweight. The old 52-label storm created
+    -- 52 concurrent tweens (plus 52 glow images) whenever the hub opened.
+    SnowflakeCount = 12,
     AvatarPreviewEnabled = true,
     PlayerHeadshotEnabled = true,
     -- The decal is currently restricted, so use its public thumbnail until Asset Access is set to Open Use.
@@ -151,9 +153,9 @@ local function loadCodexGameModule(fileName)
     local url = "https://raw.githubusercontent.com/" .. repository .. "/" .. commit .. "/" .. tostring(fileName)
     local source = game:HttpGet(url)
     local chunk, compileError = loadstring(source)
-    assert(chunk, "Codex game module compile failed: " .. tostring(compileError))
+    assert(chunk, "VOR game module compile failed: " .. tostring(compileError))
     local module = chunk()
-    assert(type(module) == "function", "Codex game module did not return a builder")
+    assert(type(module) == "function", "VOR game module did not return a builder")
     return module
 end
 
@@ -607,6 +609,14 @@ local hubMusic = create("Sound", {
 local hubMusicTween = nil
 local hubMusicVisibilityToken = 0
 
+task.spawn(function()
+    local ok = pcall(function()
+        ContentProvider:PreloadAsync({hubMusic})
+    end)
+    SETTINGS.HubMusicPreloaded = ok
+    gui:SetAttribute("HubMusicPreloaded", ok)
+end)
+
 local function setHubMusicVisible(visible, restart)
     if not SETTINGS.IntroPianoEnabled or tostring(SETTINGS.IntroPianoSoundId or "") == "" or not hubMusic.Parent then
         return
@@ -619,9 +629,6 @@ local function setHubMusicVisible(visible, restart)
     end
 
     if visible then
-        pcall(function()
-            ContentProvider:PreloadAsync({hubMusic})
-        end)
         if restart then
             hubMusic.TimePosition = 0
         end
@@ -660,7 +667,9 @@ local snowGui = create("ScreenGui", {
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     DisplayOrder = 999,
-    Enabled = SETTINGS.SnowEnabled,
+    -- The intro owns the screen during startup; do not run a second particle
+    -- storm underneath it. Global particles resume after the intro finishes.
+    Enabled = SETTINGS.SnowEnabled and not SETTINGS.IntroEnabled,
 }, gui.Parent)
 
 local snowLayer = create("Frame", {
@@ -671,7 +680,7 @@ local snowLayer = create("Frame", {
     BorderSizePixel = 0,
 }, snowGui)
 
-local main = create("CanvasGroup", {
+local main = create("Frame", {
     Name = "CodexHub",
     Active = true,
     Visible = false,
@@ -680,7 +689,6 @@ local main = create("CanvasGroup", {
     Size = UDim2.fromOffset(850, 560),
     BackgroundColor3 = COLORS.shell,
     BackgroundTransparency = hubTransparencyValue,
-    GroupTransparency = 0,
     BorderSizePixel = 0,
     ClipsDescendants = false,
 }, gui)
@@ -1835,10 +1843,12 @@ for index, key in ipairs({"General", "AFK", "Special", "Multi", "Farm", "Weapon"
     statusWidgetLabels[key] = row
 end
 
+local statusMinimized = false
 local statusFlakes = {}
 local statusRandom = Random.new()
 local statusSymbols = {utf8.char(0x25C6), utf8.char(0x25C7), utf8.char(0x2726), utf8.char(0x2727)}
-for index = 1, 10 do
+local statusParticleCount = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "Revive" and 6 or 0
+for index = 1, statusParticleCount do
     local flake = makeLabel(statusFrame, statusSymbols[((index - 1) % #statusSymbols) + 1], UDim2.fromOffset(0, 0), UDim2.fromOffset(24, 24), COLORS.toggleOnBright, statusRandom:NextInteger(13, 22), Enum.Font.GothamBold)
     flake.Name = "StatusVorParticle" .. index
     flake.TextXAlignment = Enum.TextXAlignment.Center
@@ -1851,7 +1861,15 @@ for index = 1, 10 do
         while statusGui.Parent and flake.Parent do
             flake.Position = UDim2.fromOffset(statusRandom:NextInteger(4, 332), statusRandom:NextInteger(-35, -10))
             flake.Rotation = statusRandom:NextInteger(-35, 35)
-            local tween = TweenService:Create(flake, TweenInfo.new(statusRandom:NextNumber(3.4, 6.4), Enum.EasingStyle.Linear), {
+            while statusGui.Parent and flake.Parent and (not statusGui.Enabled or statusMinimized) do
+                flake.Visible = false
+                task.wait(0.35)
+            end
+            if not statusGui.Parent or not flake.Parent then
+                break
+            end
+            flake.Visible = true
+            local tween = TweenService:Create(flake, TweenInfo.new(statusRandom:NextNumber(4.2, 7.2), Enum.EasingStyle.Linear), {
                 Position = UDim2.fromOffset(statusRandom:NextInteger(4, 332), 240),
                 Rotation = flake.Rotation + statusRandom:NextInteger(80, 220),
             })
@@ -1862,7 +1880,6 @@ for index = 1, 10 do
     end)
 end
 
-local statusMinimized = false
 local statusDragging = false
 local statusDragMoved = false
 local statusDragStart = nil
@@ -2000,12 +2017,10 @@ function Window:SetVisible(visible)
             if self.ClampToViewport then
                 self:ClampToViewport(self.Minimized and UDim2.fromOffset(850, 46) or UDim2.fromOffset(850, 560))
             end
-            main.GroupTransparency = math.max(main.GroupTransparency, 0.82)
             if self.UpdateScale then
                 self:UpdateScale()
             end
-            uiScaleAnimation.Value = math.min(uiScaleAnimation.Value, 0.955)
-            fluidTween(main, 0.24, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
+            uiScaleAnimation.Value = math.min(uiScaleAnimation.Value, 0.975)
             fluidTween(uiScaleAnimation, 0.28, {Value = 1}, Enum.EasingStyle.Back)
         end
     else
@@ -2014,8 +2029,7 @@ function Window:SetVisible(visible)
             fluidTween(minimizedCircleScale, 0.18, {Scale = 0.88}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
         end
         if main.Visible then
-            fluidTween(main, 0.18, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-            fluidTween(uiScaleAnimation, 0.18, {Value = 0.955}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            fluidTween(uiScaleAnimation, 0.18, {Value = 0.975}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
         end
         task.delay(0.19, function()
             if token == hubVisibilityToken and not hubVisible then
@@ -2086,12 +2100,18 @@ loadPlayerHeadshot()
 track(LocalPlayer.CharacterAppearanceLoaded:Connect(loadPlayerHeadshot))
 
 local avatarFloatClock = 0
+local avatarFrameAccumulator = 0
 track(RunService.RenderStepped:Connect(function(deltaTime)
     if not SETTINGS.AvatarPreviewEnabled or not hubVisible or not main.Visible or not sidebar.Visible or not avatarCard.Visible then
         return
     end
 
-    avatarFloatClock = avatarFloatClock + math.min(deltaTime, 0.05)
+    avatarFrameAccumulator += deltaTime
+    if avatarFrameAccumulator < (1 / 15) then
+        return
+    end
+    avatarFloatClock = avatarFloatClock + math.min(avatarFrameAccumulator, 0.05)
+    avatarFrameAccumulator = 0
     local verticalFloat = math.sin(avatarFloatClock * 1.75) * 3
     local horizontalFloat = math.sin(avatarFloatClock * 0.82) * 2
     local sway = math.sin(avatarFloatClock * 0.95) * 1.8
@@ -2116,7 +2136,7 @@ local function startSnowfall()
         utf8.char(0x2727),
         utf8.char(0x2756),
     }
-    local count = math.clamp(math.floor(tonumber(SETTINGS.SnowflakeCount) or 52), 18, 64)
+    local count = math.clamp(math.floor(tonumber(SETTINGS.SnowflakeCount) or 12), 6, 24)
 
     for index = 1, count do
         local flake = create("TextLabel", {
@@ -2135,25 +2155,30 @@ local function startSnowfall()
             Visible = false,
             ZIndex = 2,
         }, snowLayer)
-        create("ImageLabel", {
-            Name = "VorGlow",
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.fromScale(1.45, 1.45),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            Image = "rbxasset://textures/particles/sparkles_main.dds",
-            ImageColor3 = COLORS.accent,
-            ImageTransparency = 0.34,
-            ZIndex = 1,
-        }, flake)
+        -- Only the larger accent particles need a second glow object. Text
+        -- stroke supplies the glow for the rest, cutting the animated object
+        -- count by more than half without flattening the VOR look.
+        if index % 5 == 0 then
+            create("ImageLabel", {
+                Name = "VorGlow",
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.fromScale(1.45, 1.45),
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                Image = "rbxasset://textures/particles/sparkles_main.dds",
+                ImageColor3 = COLORS.accent,
+                ImageTransparency = 0.34,
+                ZIndex = 1,
+            }, flake)
+        end
 
         task.spawn(function()
             task.wait(random:NextNumber(0, 2.5))
             while snowGui.Parent do
                 while snowGui.Parent and not hubEffectsActive() do
                     flake.Visible = false
-                    task.wait(0.15)
+                    task.wait(0.35)
                 end
                 if not snowGui.Parent then
                     break
@@ -3186,11 +3211,10 @@ function Window:AddPage(name)
         ZIndex = 5,
     }, navRow)
 
-    local pageFrame = create("CanvasGroup", {
+    local pageFrame = create("Frame", {
         Name = name .. "Page",
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
-        GroupTransparency = 1,
         BorderSizePixel = 0,
         Visible = false,
     }, pageHolder)
@@ -3321,7 +3345,6 @@ function Window:SelectPage(name)
         for _, page in pairs(self.Pages) do
             page.Frame.Visible = page == target
             page.Frame.Position = UDim2.fromOffset(0, 0)
-            page.Frame.GroupTransparency = page == target and 0 or 1
             page.Frame.ZIndex = page == target and 3 or 1
         end
         return true
@@ -3341,7 +3364,6 @@ function Window:SelectPage(name)
                     activeTweens[page.Frame] = nil
                 end
                 page.Frame.Visible = page == target
-                page.Frame.GroupTransparency = page == target and 0 or 1
                 page.Frame.ZIndex = page == target and 3 or 1
                 page.Frame.Position = page == target
                     and UDim2.fromOffset(10 * direction, 0)
@@ -3360,7 +3382,6 @@ function Window:SelectPage(name)
         if target.Frame.Parent then
             target.Frame.Visible = true
             target.Frame.Position = UDim2.fromOffset(0, 0)
-            target.Frame.GroupTransparency = 0
             target.Frame.ZIndex = 3
         end
 
@@ -4320,6 +4341,8 @@ function Window:PlayIntro()
     if intro.Parent then
         intro:Destroy()
     end
+    snowGui.Enabled = SETTINGS.SnowEnabled and hubVisible and not Window.Minimized
+    setHubMusicVisible(hubVisible and not Window.Minimized, false)
 end
 
 track(UserInputService.InputBegan:Connect(function(input)
@@ -4495,14 +4518,12 @@ function Window:SetMinimized(value, forceRefresh)
         fluidTween(minimizedCircleScale, 0.26, {Scale = 1}, Enum.EasingStyle.Back)
 
         if main.Visible then
-            fluidTween(main, 0.17, {GroupTransparency = 1}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
             fluidTween(uiScaleAnimation, 0.17, {Value = 0.90}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
         end
         task.delay(0.18, function()
             if token == minimizeTransitionToken and self.Minimized and minimizedStyle == MINIMIZE_CIRCLE_STYLE then
                 main.Visible = false
                 main.Size = UDim2.fromOffset(850, 560)
-                main.GroupTransparency = 0
                 uiScaleAnimation.Value = 1
                 main.ClipsDescendants = false
                 setMainContentVisible(true)
@@ -4526,7 +4547,6 @@ function Window:SetMinimized(value, forceRefresh)
         end
 
         main.Visible = true
-        main.GroupTransparency = 0
         uiScaleAnimation.Value = math.min(uiScaleAnimation.Value, 0.985)
         setMainContentVisible(true)
         local targetSize = UDim2.fromOffset(850, 46)
@@ -4560,13 +4580,12 @@ function Window:SetMinimized(value, forceRefresh)
 
     main.Visible = true
     main.Size = restoringFromCircle and UDim2.fromOffset(850, 560) or main.Size
-    main.GroupTransparency = restoringFromCircle and 1 or 0
     uiScaleAnimation.Value = restoringFromCircle and 0.88 or math.min(uiScaleAnimation.Value, 0.985)
     setMainContentVisible(true)
     local targetSize = UDim2.fromOffset(850, 560)
     self:ClampToViewport(targetSize)
     main.ClipsDescendants = true
-    fluidTween(main, 0.30, {Size = targetSize, GroupTransparency = 0}, Enum.EasingStyle.Quint)
+    fluidTween(main, 0.30, {Size = targetSize}, Enum.EasingStyle.Quint)
     fluidTween(uiScaleAnimation, 0.28, {Value = 1}, Enum.EasingStyle.Back)
     task.delay(0.31, function()
         if token == minimizeTransitionToken and not self.Minimized and main.Parent then
@@ -4699,7 +4718,11 @@ end)
 
 -- BUILD YOUR MENU BELOW THIS LINE.
 -- Game controls stay inside Home categories; Settings remains configuration-only.
-local function createCategoryHomePage()
+local function createCategoryHomePage(options)
+options = options or {}
+local textOnlyTabs = options.TextOnly == true
+local categoryBarHeight = textOnlyTabs and 54 or 96
+local categoryContentTop = categoryBarHeight + 8
 local HomePage = Window:AddPage("Home")
 
 -- Home uses large frozen decal cards. The images work as the category tabs while
@@ -4709,7 +4732,7 @@ HomePage.RightColumn.Visible = false
 
 local categoryBar = create("Frame", {
     Name = "HomeCategoryBar",
-    Size = UDim2.new(1, 0, 0, 96),
+    Size = UDim2.new(1, 0, 0, categoryBarHeight),
     BackgroundColor3 = COLORS.surface,
     BackgroundTransparency = math.min(0.86, hubTransparencyValue + 0.08),
     BorderSizePixel = 0,
@@ -4723,11 +4746,16 @@ addVorCornerArmor(categoryBar, 4, 15, 0.38)
 -- GuiObjects, so placing a UIListLayout directly on categoryBar makes Roblox
 -- count those decorative frames as extra tab cards and pushes the real tabs
 -- beyond the right edge.
-local categoryButtonsHolder = create("Frame", {
+local categoryButtonsHolder = create(textOnlyTabs and "ScrollingFrame" or "Frame", {
     Name = "CategoryButtonsHolder",
     Size = UDim2.fromScale(1, 1),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
+    CanvasSize = textOnlyTabs and UDim2.fromOffset(0, 0) or nil,
+    AutomaticCanvasSize = textOnlyTabs and Enum.AutomaticSize.X or nil,
+    ScrollingDirection = textOnlyTabs and Enum.ScrollingDirection.X or nil,
+    ScrollBarThickness = textOnlyTabs and 3 or 0,
+    ScrollBarImageColor3 = textOnlyTabs and COLORS.accent or COLORS.line,
     ZIndex = 20,
 }, categoryBar)
 create("UIPadding", {
@@ -4738,7 +4766,7 @@ create("UIPadding", {
 }, categoryButtonsHolder)
 create("UIListLayout", {
     FillDirection = Enum.FillDirection.Horizontal,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    HorizontalAlignment = textOnlyTabs and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center,
     VerticalAlignment = Enum.VerticalAlignment.Center,
     Padding = UDim.new(0, 6),
     SortOrder = Enum.SortOrder.LayoutOrder,
@@ -4747,8 +4775,8 @@ create("UIListLayout", {
 local categoryTransitionCurtain, categoryTransitionSweep = makeTransitionCurtain(
     HomePage.Frame,
     "CategoryTransitionCurtain",
-    UDim2.fromOffset(0, 104),
-    UDim2.new(1, 0, 1, -104),
+    UDim2.fromOffset(0, categoryContentTop),
+    UDim2.new(1, 0, 1, -categoryContentTop),
     80
 )
 
@@ -4817,8 +4845,7 @@ local function selectHomeCategory(name)
     if not previous then
         for _, category in pairs(homeCategories) do
             category.Frame.Visible = category == selected
-            category.Frame.Position = UDim2.fromOffset(0, 104)
-            category.Frame.GroupTransparency = category == selected and 0 or 1
+            category.Frame.Position = UDim2.fromOffset(0, categoryContentTop)
             category.Frame.ZIndex = category == selected and 3 or 1
         end
         return true
@@ -4836,17 +4863,16 @@ local function selectHomeCategory(name)
                     activeTweens[category.Frame] = nil
                 end
                 category.Frame.Visible = category == selected
-                category.Frame.GroupTransparency = category == selected and 0 or 1
                 category.Frame.ZIndex = category == selected and 3 or 1
                 category.Frame.Position = category == selected
-                    and UDim2.fromOffset(10 * direction, 104)
-                    or UDim2.fromOffset(0, 104)
+                    and UDim2.fromOffset(10 * direction, categoryContentTop)
+                    or UDim2.fromOffset(0, categoryContentTop)
             end
 
             fluidTween(
                 selected.Frame,
                 0.24,
-                {Position = UDim2.fromOffset(0, 104)},
+                {Position = UDim2.fromOffset(0, categoryContentTop)},
                 Enum.EasingStyle.Quint,
                 Enum.EasingDirection.Out
             )
@@ -4854,8 +4880,7 @@ local function selectHomeCategory(name)
 
         if selected.Frame.Parent then
             selected.Frame.Visible = true
-            selected.Frame.Position = UDim2.fromOffset(0, 104)
-            selected.Frame.GroupTransparency = 0
+            selected.Frame.Position = UDim2.fromOffset(0, categoryContentTop)
             selected.Frame.ZIndex = 3
         end
 
@@ -4874,14 +4899,14 @@ local function addHomeCategory(name, order, assetId)
     local button = create("ImageButton", {
         Name = name .. "Tab",
         LayoutOrder = order,
-        Size = UDim2.fromOffset(142, 84),
+        Size = UDim2.fromOffset(textOnlyTabs and math.max(132, math.min(210, #name * 10 + 42)) or 142, textOnlyTabs and 42 or 84),
         AutoButtonColor = false,
         BackgroundColor3 = COLORS.surface2,
         BackgroundTransparency = 0.16,
         BorderSizePixel = 0,
-        Image = "rbxthumb://type=Asset&id=" .. tostring(assetId) .. "&w=420&h=420",
+        Image = textOnlyTabs and "" or ("rbxthumb://type=Asset&id=" .. tostring(assetId) .. "&w=420&h=420"),
         ImageColor3 = Color3.fromRGB(255, 255, 255),
-        ImageTransparency = 0.14,
+        ImageTransparency = textOnlyTabs and 1 or 0.14,
         ScaleType = Enum.ScaleType.Crop,
         ZIndex = 21,
     }, categoryButtonsHolder)
@@ -4904,11 +4929,11 @@ local function addHomeCategory(name, order, assetId)
 
     local caption = create("Frame", {
         Name = "Caption",
-        AnchorPoint = Vector2.new(0, 1),
-        Position = UDim2.fromScale(0, 1),
-        Size = UDim2.new(1, 0, 0, 28),
+        AnchorPoint = textOnlyTabs and Vector2.zero or Vector2.new(0, 1),
+        Position = textOnlyTabs and UDim2.fromScale(0, 0) or UDim2.fromScale(0, 1),
+        Size = textOnlyTabs and UDim2.fromScale(1, 1) or UDim2.new(1, 0, 0, 28),
         BackgroundColor3 = Color3.fromRGB(10, 5, 18),
-        BackgroundTransparency = 0.14,
+        BackgroundTransparency = textOnlyTabs and 0.42 or 0.14,
         BorderSizePixel = 0,
         ZIndex = 23,
     }, button)
@@ -4930,7 +4955,7 @@ local function addHomeCategory(name, order, assetId)
         Font = Enum.Font.GothamBold,
         Text = name,
         TextColor3 = COLORS.sectionText,
-        TextSize = 13,
+        TextSize = textOnlyTabs and 16 or 13,
         TextStrokeColor3 = Color3.fromRGB(3, 1, 8),
         TextStrokeTransparency = 0.22,
         ZIndex = 24,
@@ -4938,7 +4963,7 @@ local function addHomeCategory(name, order, assetId)
 
     local accent = create("Frame", {
         AnchorPoint = Vector2.new(0.5, 1),
-        Position = UDim2.new(0.5, 0, 1, -1),
+        Position = UDim2.new(0.5, 0, 1, textOnlyTabs and -2 or -1),
         Size = UDim2.new(0.68, 0, 0, 4),
         BackgroundColor3 = COLORS.toggleOnBright,
         BackgroundTransparency = 1,
@@ -4968,12 +4993,11 @@ local function addHomeCategory(name, order, assetId)
     attachFluidScale(button, button, 1.018, 0.965)
     attachPressRipple(button, button)
 
-    local frame = create("CanvasGroup", {
+    local frame = create("Frame", {
         Name = name .. "Category",
-        Position = UDim2.fromOffset(0, 104),
-        Size = UDim2.new(1, 0, 1, -104),
+        Position = UDim2.fromOffset(0, categoryContentTop),
+        Size = UDim2.new(1, 0, 1, -categoryContentTop),
         BackgroundTransparency = 1,
-        GroupTransparency = 1,
         BorderSizePixel = 0,
         Visible = false,
     }, HomePage.Frame)
@@ -10367,32 +10391,1644 @@ local function buildAnimeExpeditionsFeatures()
 end
 
 function Window:BuildBloxFruitsFeatures()
-    local loaded, moduleOrError = pcall(loadCodexGameModule, "blox_fruits.lua")
-    if not loaded then
-        local HomePage = Window:AddPage("Home")
-        local errorSection = HomePage:AddSection("Blox Fruits", "Left")
-        errorSection:AddLabel("The Blox Fruits adapter could not be loaded.")
-        errorSection:AddLabel(tostring(moduleOrError))
-        Window:Notify("VOR Hub", "Blox Fruits adapter failed to load", 5)
-        return
-    end
-
     local built, buildError = xpcall(function()
-        moduleOrError({
-            Window = Window,
-            CreateCategoryHomePage = createCategoryHomePage,
-            CategoryDecals = CATEGORY_DECALS,
-            Colors = COLORS,
-            Track = track,
-            Gui = gui,
+        local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local RunService = game:GetService("RunService")
+        local TweenService = game:GetService("TweenService")
+        local TeleportService = game:GetService("TeleportService")
+        local VirtualUser = game:GetService("VirtualUser")
+        local Lighting = game:GetService("Lighting")
+        local HttpService = game:GetService("HttpService")
+        local LocalPlayer = Players.LocalPlayer
+
+        local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage({TextOnly = true})
+        local FarmingPage = addHomeCategory("Farming", 1)
+        local CombatPage = addHomeCategory("Combat", 2)
+        local MasteryPage = addHomeCategory("Mastery", 3)
+        local ShopPage = addHomeCategory("Shop", 4)
+        local SeaPage = addHomeCategory("Sea & Raids", 5)
+        local PlayerPage = addHomeCategory("Player", 6)
+        selectHomeCategory("Farming")
+
+        local LevelSection = FarmingPage:AddSection("Auto Level", "Left")
+        local FarmSettingsSection = FarmingPage:AddSection("Farm Settings", "Left")
+        local WorldFarmSection = FarmingPage:AddSection("World Farming", "Right")
+        local FarmStatusSection = FarmingPage:AddSection("Live Farm Status", "Right")
+
+        local ExploitSection = CombatPage:AddSection("Exploit Options", "Left")
+        local AttackSection = CombatPage:AddSection("Attack Controller", "Right")
+        local BossSection = CombatPage:AddSection("Boss Farming", "Right")
+
+        local StatsSection = MasteryPage:AddSection("Auto Stats", "Left")
+        local FightingStyleSection = MasteryPage:AddSection("Fighting Styles", "Right")
+        local FruitSection = ShopPage:AddSection("Fruit Utilities", "Left")
+        local TravelSection = ShopPage:AddSection("Travel", "Right")
+
+        local RaidSection = SeaPage:AddSection("Raid Automation", "Left")
+        local SeaStatusSection = SeaPage:AddSection("Sea & Event Status", "Right")
+
+        local PlayerStateSection = PlayerPage:AddSection("Player State", "Left")
+        local VisualSection = PlayerPage:AddSection("Visuals", "Right")
+        local SessionSection = PlayerPage:AddSection("Session", "Right")
+
+        local function safeRequire(instance)
+            if not instance then
+                return nil
+            end
+            local ok, result = pcall(require, instance)
+            return ok and result or nil
+        end
+
+        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        local CommF = Remotes and Remotes:FindFirstChild("CommF_")
+        local Redeem = Remotes and Remotes:FindFirstChild("Redeem")
+        local Quests = safeRequire(ReplicatedStorage:FindFirstChild("Quests")) or {}
+        local Guide = safeRequire(ReplicatedStorage:FindFirstChild("GuideModule"))
+
+        local state = {
+            Alive = true,
+            Status = "Native Blox Fruits module ready",
+            LastError = nil,
+            AutoFarmLevel = false,
+            AutoChest = false,
+            AutoBoss = false,
+            SelectedBoss = "None",
+            AutoRaid = false,
+            AutoStartRaid = false,
+            AutoBuyRaidChip = false,
+            AutoAwaken = false,
+            SelectedRaid = "Flame",
+            AutoAttack = false,
+            AttackInterval = 0.12,
+            LastAttack = 0,
+            WeaponType = "Sword",
+            AutoBuso = false,
+            LastBuso = 0,
+            GatherEnemies = false,
+            GatherRange = 5000,
+            GatherDistance = 2,
+            GatherQuestOnly = true,
+            Gathered = 0,
+            AutoMagnet = false,
+            MagnetRange = 300,
+            TweenSpeed = 300,
+            FarmDistance = 7,
+            FarmHeight = 0,
+            CurrentEnemyName = nil,
+            CurrentQuestName = nil,
+            MoveTween = nil,
+            MoveGoal = nil,
+            LastQuestRequest = 0,
+            LastChestScan = 0,
+            LastGatherScan = 0,
+            LastStat = 0,
+            AutoStats = false,
+            StatBatch = 1,
+            StatIndex = 0,
+            Stats = {
+                Melee = false,
+                Defense = false,
+                Sword = false,
+                Gun = false,
+                ["Demon Fruit"] = false,
+            },
+            AutoGacha = false,
+            LastGacha = 0,
+            GachaInterval = 120,
+            AutoStoreFruit = false,
+            LastStore = 0,
+            SelectedLocation = "None",
+            SelectedNPC = "None",
+            Noclip = false,
+            InfiniteEnergy = false,
+            WalkOnWater = false,
+            AntiAfk = false,
+            EnemyESP = false,
+            PlayerESP = false,
+            FpsBoost = false,
+            OriginalCollision = setmetatable({}, {__mode = "k"}),
+            GraphicsBackup = setmetatable({}, {__mode = "k"}),
+            WaterPlatform = nil,
+        }
+
+        local statusLabel = FarmStatusSection:AddLabel("Status: Initializing...")
+        local questLabel = FarmStatusSection:AddLabel("Quest: Reading live quest data...")
+        local targetLabel = FarmStatusSection:AddLabel("Target: None")
+        local gatherLabel = ExploitSection:AddLabel("Gathered enemies: 0")
+        ExploitSection:AddLabel("Target filter: active quest, boss, or raid target only")
+        local raidLabel = SeaStatusSection:AddLabel("Raid: Idle")
+        local seaLabel = SeaStatusSection:AddLabel("Sea: Detecting...")
+        local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
+
+        local function setStatus(message, success)
+            state.Status = tostring(message)
+            statusLabel.Text = "Status: " .. state.Status
+            statusLabel.TextColor3 = success == false and COLORS.error or (success == true and COLORS.success or COLORS.muted)
+        end
+
+        local function setError(message)
+            state.LastError = tostring(message)
+            setStatus(state.LastError, false)
+        end
+
+        local function character()
+            local value = LocalPlayer.Character
+            if not value or not value.Parent then
+                return nil
+            end
+            return value
+        end
+
+        local function rootPart()
+            local value = character()
+            return value and value:FindFirstChild("HumanoidRootPart") or nil
+        end
+
+        local function humanoid()
+            local value = character()
+            return value and value:FindFirstChildOfClass("Humanoid") or nil
+        end
+
+        local function invoke(command, ...)
+            if not CommF then
+                return false, "CommF_ is unavailable"
+            end
+            local arguments = table.pack(...)
+            local ok, result = pcall(function()
+                return CommF:InvokeServer(command, table.unpack(arguments, 1, arguments.n))
+            end)
+            if not ok then
+                state.LastError = tostring(result)
+                return false, result
+            end
+            return true, result
+        end
+
+        local function normalizeEnemyName(value)
+            local name = tostring(value or "")
+            name = name:gsub("%s*%[Lv[^%]]*%]", "")
+            name = name:gsub("%s*%[Boss%]", "")
+            name = name:gsub("%s+$", "")
+            return name
+        end
+
+        local function modelRoot(model)
+            if not model or not model.Parent then
+                return nil
+            end
+            return model.PrimaryPart
+                or model:FindFirstChild("HumanoidRootPart")
+                or model:FindFirstChildWhichIsA("BasePart")
+        end
+
+        local function modelAlive(model)
+            local targetHumanoid = model and model:FindFirstChildOfClass("Humanoid")
+            return targetHumanoid ~= nil and targetHumanoid.Health > 0
+        end
+
+        local function enemyMatches(model, targetName)
+            return string.lower(normalizeEnemyName(model and model.Name)) == string.lower(normalizeEnemyName(targetName))
+        end
+
+        local function nearestEnemy(targetName, anyEnemy)
+            local root = rootPart()
+            local enemies = workspace:FindFirstChild("Enemies")
+            if not root or not enemies then
+                return nil
+            end
+            local best = nil
+            local bestDistance = math.huge
+            for _, enemy in ipairs(enemies:GetChildren()) do
+                local enemyRoot = modelRoot(enemy)
+                if enemyRoot and modelAlive(enemy) and (anyEnemy or enemyMatches(enemy, targetName)) then
+                    local distance = (enemyRoot.Position - root.Position).Magnitude
+                    if distance < bestDistance then
+                        best = enemy
+                        bestDistance = distance
+                    end
+                end
+            end
+            return best, bestDistance
+        end
+
+        local function cancelMove()
+            if state.MoveTween then
+                pcall(function()
+                    state.MoveTween:Cancel()
+                end)
+                state.MoveTween = nil
+            end
+            state.MoveGoal = nil
+        end
+
+        local function moveTo(targetCFrame)
+            local root = rootPart()
+            if not root or typeof(targetCFrame) ~= "CFrame" then
+                return false
+            end
+            local distance = (root.Position - targetCFrame.Position).Magnitude
+            if distance <= 3 then
+                cancelMove()
+                root.CFrame = targetCFrame
+                return true
+            end
+            if state.MoveGoal and (state.MoveGoal - targetCFrame.Position).Magnitude < 5 and state.MoveTween then
+                return true
+            end
+            cancelMove()
+            state.MoveGoal = targetCFrame.Position
+            local duration = distance / math.max(state.TweenSpeed, 1)
+            if duration <= 0.08 then
+                root.CFrame = targetCFrame
+                state.MoveGoal = nil
+                return true
+            end
+            state.MoveTween = TweenService:Create(
+                root,
+                TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                {CFrame = targetCFrame}
+            )
+            state.MoveTween:Play()
+            return true
+        end
+
+        local function positionAtEnemy(enemy)
+            local enemyRoot = modelRoot(enemy)
+            if not enemyRoot then
+                return nil
+            end
+            local position = (enemyRoot.CFrame * CFrame.new(0, state.FarmHeight, -state.FarmDistance)).Position
+            return CFrame.lookAt(position, enemyRoot.Position)
+        end
+
+        local function selectedTool()
+            local char = character()
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            local selected = string.lower(state.WeaponType)
+            local fallback = nil
+            for _, container in ipairs({char, backpack}) do
+                if container then
+                    for _, tool in ipairs(container:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            fallback = fallback or tool
+                            local weaponType = tostring(tool:GetAttribute("WeaponType") or tool.ToolTip or "")
+                            local lowered = string.lower(weaponType)
+                            if selected == "best available"
+                                or lowered == selected
+                                or (selected == "blox fruit" and string.find(lowered, "fruit", 1, true)) then
+                                return tool
+                            end
+                        end
+                    end
+                end
+            end
+            return state.WeaponType == "Best Available" and fallback or nil
+        end
+
+        local function equipSelectedTool()
+            local tool = selectedTool()
+            local char = character()
+            local hum = humanoid()
+            if tool and char and hum and tool.Parent ~= char then
+                pcall(function()
+                    hum:EquipTool(tool)
+                end)
+            end
+            return tool
+        end
+
+        local function attackOnce()
+            if os.clock() - state.LastAttack < state.AttackInterval then
+                return false
+            end
+            state.LastAttack = os.clock()
+            local tool = equipSelectedTool()
+            if tool then
+                pcall(function()
+                    tool:Activate()
+                end)
+            end
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                VirtualUser:Button1Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+            end)
+            return true
+        end
+
+        local function currentLevel()
+            local data = LocalPlayer:FindFirstChild("Data")
+            local level = data and data:FindFirstChild("Level")
+            return level and tonumber(level.Value) or 0
+        end
+
+        local function currentPoints()
+            local data = LocalPlayer:FindFirstChild("Data")
+            local points = data and data:FindFirstChild("Points")
+            return points and tonumber(points.Value) or 0
+        end
+
+        local function questNpcData(internalQuestName)
+            local npcList = Guide and Guide.Data and Guide.Data.NPCList
+            if type(npcList) ~= "table" then
+                return nil
+            end
+            for _, data in pairs(npcList) do
+                if type(data) == "table" and data.InternalQuestName == internalQuestName then
+                    return data
+                end
+            end
+            return nil
+        end
+
+        local function bestQuest()
+            local level = currentLevel()
+            local best = nil
+            for internalName, questList in pairs(Quests) do
+                if type(questList) == "table" then
+                    for index, quest in pairs(questList) do
+                        if type(quest) == "table" and type(quest.LevelReq) == "number" and quest.LevelReq <= level then
+                            local enemyName = nil
+                            if type(quest.Task) == "table" then
+                                enemyName = next(quest.Task)
+                            end
+                            if enemyName then
+                                local candidate = {
+                                    InternalName = internalName,
+                                    Index = tonumber(index) or index,
+                                    LevelReq = quest.LevelReq,
+                                    DisplayName = tostring(quest.Name or enemyName),
+                                    EnemyName = tostring(enemyName),
+                                    Npc = questNpcData(internalName),
+                                }
+                                local candidateBoss = string.find(candidate.EnemyName, "Boss", 1, true) ~= nil
+                                local bestBoss = best and string.find(best.EnemyName, "Boss", 1, true) ~= nil
+                                if not best
+                                    or candidate.LevelReq > best.LevelReq
+                                    or (candidate.LevelReq == best.LevelReq and bestBoss and not candidateBoss) then
+                                    best = candidate
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            return best
+        end
+
+        local function questVisible()
+            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            local main = playerGui and playerGui:FindFirstChild("Main")
+            local quest = main and main:FindFirstChild("Quest")
+            return quest and quest.Visible == true, quest
+        end
+
+        local function questMatches(questGui, enemyName)
+            if not questGui then
+                return false
+            end
+            local lowered = string.lower(normalizeEnemyName(enemyName))
+            local sawText = false
+            for _, descendant in ipairs(questGui:GetDescendants()) do
+                if descendant:IsA("TextLabel") and descendant.Text ~= "" then
+                    sawText = true
+                    if string.find(string.lower(descendant.Text), lowered, 1, true) then
+                        return true
+                    end
+                end
+            end
+            return not sawText
+        end
+
+        local function enemySpawn(enemyName)
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local spawns = origin and origin:FindFirstChild("EnemySpawns")
+            if not spawns then
+                return nil
+            end
+            local root = rootPart()
+            local best = nil
+            local bestDistance = math.huge
+            for _, descendant in ipairs(spawns:GetDescendants()) do
+                if descendant:IsA("BasePart") and enemyMatches(descendant, enemyName) then
+                    local distance = root and (descendant.Position - root.Position).Magnitude or 0
+                    if distance < bestDistance then
+                        best = descendant
+                        bestDistance = distance
+                    end
+                end
+            end
+            return best
+        end
+
+        local function stepAutoLevel()
+            local quest = bestQuest()
+            if not quest then
+                setError("No level quest was found for this sea")
+                return
+            end
+            state.CurrentQuestName = quest.DisplayName
+            state.CurrentEnemyName = quest.EnemyName
+            questLabel.Text = string.format("Quest: %s (Lv. %s)", quest.DisplayName, tostring(quest.LevelReq))
+
+            local visible, questGui = questVisible()
+            if visible and not questMatches(questGui, quest.EnemyName) then
+                if os.clock() - state.LastQuestRequest >= 1 then
+                    state.LastQuestRequest = os.clock()
+                    invoke("AbandonQuest")
+                end
+                return
+            end
+
+            if not visible then
+                local npcPosition = quest.Npc and quest.Npc.Position
+                if typeof(npcPosition) ~= "Vector3" then
+                    setError("Quest giver data is still loading")
+                    return
+                end
+                local root = rootPart()
+                local target = CFrame.new(npcPosition + Vector3.new(0, 3, 0))
+                moveTo(target)
+                if root and (root.Position - npcPosition).Magnitude <= 18 and os.clock() - state.LastQuestRequest >= 1 then
+                    state.LastQuestRequest = os.clock()
+                    local ok, result = invoke("StartQuest", quest.InternalName, quest.Index)
+                    setStatus(ok and ("Started " .. quest.DisplayName) or tostring(result), ok)
+                end
+                return
+            end
+
+            local enemy, distance = nearestEnemy(quest.EnemyName, false)
+            if enemy then
+                targetLabel.Text = string.format("Target: %s | %.0f studs", normalizeEnemyName(enemy.Name), distance or 0)
+                local targetCFrame = positionAtEnemy(enemy)
+                if targetCFrame then
+                    moveTo(targetCFrame)
+                end
+                if state.AutoAttack and distance and distance <= math.max(25, state.FarmDistance + 12) then
+                    attackOnce()
+                end
+                setStatus("Farming " .. normalizeEnemyName(enemy.Name), true)
+                return
+            end
+
+            local spawn = enemySpawn(quest.EnemyName)
+            if spawn then
+                targetLabel.Text = "Target: Waiting at " .. normalizeEnemyName(spawn.Name) .. " spawn"
+                moveTo(CFrame.new(spawn.Position + Vector3.new(0, math.max(5, state.FarmHeight), 0)))
+                setStatus("Waiting for quest enemies to spawn", nil)
+            else
+                setError("Enemy spawn data is still loading")
+            end
+        end
+
+        local function bossNames()
+            local names = {"None"}
+            local seen = {None = true}
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local spawns = origin and origin:FindFirstChild("EnemySpawns")
+            if spawns then
+                for _, descendant in ipairs(spawns:GetDescendants()) do
+                    if descendant:IsA("BasePart") and string.find(descendant.Name, "[Boss]", 1, true) then
+                        local name = normalizeEnemyName(descendant.Name)
+                        if name ~= "" and not seen[name] then
+                            seen[name] = true
+                            table.insert(names, name)
+                        end
+                    end
+                end
+            end
+            local enemies = workspace:FindFirstChild("Enemies")
+            if enemies then
+                for _, enemy in ipairs(enemies:GetChildren()) do
+                    if string.find(enemy.Name, "[Boss]", 1, true) then
+                        local name = normalizeEnemyName(enemy.Name)
+                        if name ~= "" and not seen[name] then
+                            seen[name] = true
+                            table.insert(names, name)
+                        end
+                    end
+                end
+            end
+            table.sort(names, function(left, right)
+                if left == "None" then
+                    return true
+                end
+                if right == "None" then
+                    return false
+                end
+                return string.lower(left) < string.lower(right)
+            end)
+            return names
+        end
+
+        local function stepBossFarm()
+            if state.SelectedBoss == "None" then
+                setError("Choose a boss first")
+                return
+            end
+            state.CurrentEnemyName = state.SelectedBoss
+            local enemy, distance = nearestEnemy(state.SelectedBoss, false)
+            if enemy then
+                targetLabel.Text = string.format("Boss: %s | %.0f studs", state.SelectedBoss, distance or 0)
+                local targetCFrame = positionAtEnemy(enemy)
+                if targetCFrame then
+                    moveTo(targetCFrame)
+                end
+                if state.AutoAttack and distance and distance <= math.max(30, state.FarmDistance + 15) then
+                    attackOnce()
+                end
+                setStatus("Farming boss " .. state.SelectedBoss, true)
+                return
+            end
+            local spawn = enemySpawn(state.SelectedBoss)
+            if spawn then
+                moveTo(CFrame.new(spawn.Position + Vector3.new(0, 8, 0)))
+                setStatus("Waiting for " .. state.SelectedBoss .. " to spawn", nil)
+            else
+                setError("Boss spawn is unavailable in this sea")
+            end
+        end
+
+        local function loadedEnemies()
+            local enemies = workspace:FindFirstChild("Enemies")
+            return enemies and enemies:GetChildren() or {}
+        end
+
+        local function raidActive()
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local locations = origin and origin:FindFirstChild("Locations")
+            if not locations then
+                return false
+            end
+            for _, child in ipairs(locations:GetChildren()) do
+                if string.find(string.lower(child.Name), "island", 1, true)
+                    and string.find(child.Name, "1", 1, true) then
+                    return true
+                end
+            end
+            return false
+        end
+
+        local function fireRaidButton()
+            if type(fireclickdetector) ~= "function" then
+                return false, "fireclickdetector is unavailable"
+            end
+            local map = workspace:FindFirstChild("Map")
+            if not map then
+                return false, "Map is unavailable"
+            end
+            for _, descendant in ipairs(map:GetDescendants()) do
+                if descendant:IsA("ClickDetector") then
+                    local path = string.lower(descendant:GetFullName())
+                    if string.find(path, "raid", 1, true) and string.find(path, "button", 1, true) then
+                        local ok, result = pcall(fireclickdetector, descendant)
+                        return ok, result
+                    end
+                end
+            end
+            return false, "Raid start button was not found"
+        end
+
+        local function stepRaid()
+            if not raidActive() then
+                raidLabel.Text = "Raid: Waiting for a raid island"
+                return
+            end
+            local enemy, distance = nearestEnemy(nil, true)
+            if enemy then
+                state.CurrentEnemyName = normalizeEnemyName(enemy.Name)
+                local targetCFrame = positionAtEnemy(enemy)
+                if targetCFrame then
+                    moveTo(targetCFrame)
+                end
+                if state.AutoAttack and distance and distance <= 35 then
+                    attackOnce()
+                end
+                raidLabel.Text = "Raid: Attacking " .. normalizeEnemyName(enemy.Name)
+            else
+                raidLabel.Text = "Raid: Moving to the next island"
+                local origin = workspace:FindFirstChild("_WorldOrigin")
+                local locations = origin and origin:FindFirstChild("Locations")
+                if locations then
+                    local root = rootPart()
+                    local nearest = nil
+                    local nearestDistance = math.huge
+                    for _, location in ipairs(locations:GetChildren()) do
+                        local part = location:IsA("BasePart") and location or location:FindFirstChildWhichIsA("BasePart")
+                        if part and string.find(string.lower(location.Name), "island", 1, true) then
+                            local distanceTo = root and (part.Position - root.Position).Magnitude or 0
+                            if distanceTo < nearestDistance then
+                                nearest = part
+                                nearestDistance = distanceTo
+                            end
+                        end
+                    end
+                    if nearest then
+                        moveTo(nearest.CFrame + Vector3.new(0, 15, 0))
+                    end
+                end
+            end
+        end
+
+        local function gatherStep()
+            local now = os.clock()
+            if now - state.LastGatherScan < 0.08 then
+                return
+            end
+            state.LastGatherScan = now
+            local root = rootPart()
+            if not root then
+                return
+            end
+            local enabled = state.GatherEnemies or (state.AutoMagnet and (state.AutoFarmLevel or state.AutoBoss or state.AutoRaid))
+            if not enabled then
+                state.Gathered = 0
+                return
+            end
+            pcall(function()
+                if type(sethiddenproperty) == "function" then
+                    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                end
+            end)
+            local gathered = 0
+            local gatherRange = state.GatherEnemies and state.GatherRange or state.MagnetRange
+            local targetName = nil
+            if state.GatherQuestOnly or not state.GatherEnemies then
+                targetName = state.CurrentEnemyName
+            end
+            local targetCFrame = root.CFrame * CFrame.new(0, 0, -state.GatherDistance)
+            for _, enemy in ipairs(loadedEnemies()) do
+                local enemyRoot = modelRoot(enemy)
+                if enemyRoot and modelAlive(enemy) and (enemyRoot.Position - root.Position).Magnitude <= gatherRange then
+                    if not targetName or enemyMatches(enemy, targetName) then
+                        pcall(function()
+                            enemyRoot.CFrame = targetCFrame
+                            enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                            enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                        gathered += 1
+                    end
+                end
+            end
+            state.Gathered = gathered
+        end
+
+        local function chestPart()
+            local root = rootPart()
+            if not root then
+                return nil
+            end
+            local best = nil
+            local bestDistance = math.huge
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("BasePart") then
+                    local name = string.lower(descendant.Name .. " " .. (descendant.Parent and descendant.Parent.Name or ""))
+                    if string.find(name, "chest", 1, true) then
+                        local distance = (descendant.Position - root.Position).Magnitude
+                        if distance < bestDistance then
+                            best = descendant
+                            bestDistance = distance
+                        end
+                    end
+                end
+            end
+            return best, bestDistance
+        end
+
+        local function stepChest()
+            if os.clock() - state.LastChestScan < 1 then
+                return
+            end
+            state.LastChestScan = os.clock()
+            local chest, distance = chestPart()
+            if not chest then
+                setStatus("Waiting for a chest", nil)
+                return
+            end
+            moveTo(chest.CFrame + Vector3.new(0, 3, 0))
+            if distance and distance <= 10 and type(firetouchinterest) == "function" then
+                local root = rootPart()
+                if root then
+                    pcall(firetouchinterest, root, chest, 0)
+                    pcall(firetouchinterest, root, chest, 1)
+                end
+            end
+            setStatus("Collecting nearest chest", true)
+        end
+
+        local function enabledStats()
+            local values = {}
+            for _, name in ipairs({"Melee", "Defense", "Sword", "Gun", "Demon Fruit"}) do
+                if state.Stats[name] then
+                    table.insert(values, name)
+                end
+            end
+            return values
+        end
+
+        local function stepStats()
+            if not state.AutoStats or currentPoints() <= 0 or os.clock() - state.LastStat < 0.35 then
+                return
+            end
+            local stats = enabledStats()
+            if #stats == 0 then
+                return
+            end
+            state.LastStat = os.clock()
+            state.StatIndex = state.StatIndex % #stats + 1
+            invoke("AddPoint", stats[state.StatIndex], math.min(state.StatBatch, currentPoints()))
+        end
+
+        local function fruitTools()
+            local result = {}
+            for _, container in ipairs({LocalPlayer:FindFirstChildOfClass("Backpack"), character()}) do
+                if container then
+                    for _, tool in ipairs(container:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            local name = string.lower(tool.Name)
+                            if string.find(name, "fruit", 1, true) or tool:GetAttribute("OriginalName") then
+                                table.insert(result, tool)
+                            end
+                        end
+                    end
+                end
+            end
+            return result
+        end
+
+        local function storeFruits()
+            local stored = 0
+            for _, tool in ipairs(fruitTools()) do
+                local ok = invoke("StoreFruit", tool.Name, tool)
+                if ok then
+                    stored += 1
+                end
+                task.wait(0.15)
+            end
+            return stored
+        end
+
+        local function rollFruitOnce()
+            local checkOk, checkResult = invoke("Cousin", "Check", "DLCBoxData")
+            if not checkOk then
+                return false, checkResult
+            end
+            local timeOk, timeResult = invoke("Cousin", "CheckTime")
+            if not timeOk then
+                return false, timeResult
+            end
+            return invoke("Cousin", "DLCBoxData")
+        end
+
+        local function locationOptions()
+            local result = {"None"}
+            local seen = {None = true}
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local locations = origin and origin:FindFirstChild("Locations")
+            if locations then
+                for _, location in ipairs(locations:GetChildren()) do
+                    if location.Name ~= "" and not seen[location.Name] then
+                        seen[location.Name] = true
+                        table.insert(result, location.Name)
+                    end
+                end
+            end
+            table.sort(result, function(left, right)
+                if left == "None" then
+                    return true
+                end
+                if right == "None" then
+                    return false
+                end
+                return string.lower(left) < string.lower(right)
+            end)
+            return result
+        end
+
+        local function npcOptions()
+            local result = {"None"}
+            local npcs = workspace:FindFirstChild("NPCs")
+            if npcs then
+                for _, npc in ipairs(npcs:GetChildren()) do
+                    table.insert(result, npc.Name)
+                end
+            end
+            table.sort(result)
+            return result
+        end
+
+        local function teleportToLocation(name)
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local locations = origin and origin:FindFirstChild("Locations")
+            local target = locations and locations:FindFirstChild(name)
+            if not target then
+                return false
+            end
+            local targetCFrame = target:IsA("BasePart") and target.CFrame or target:GetPivot()
+            return moveTo(targetCFrame + Vector3.new(0, 8, 0))
+        end
+
+        local function teleportToNpc(name)
+            local npcs = workspace:FindFirstChild("NPCs")
+            local target = npcs and npcs:FindFirstChild(name)
+            if not target then
+                return false
+            end
+            return moveTo(target:GetPivot() * CFrame.new(0, 0, -4))
+        end
+
+        local function applyNoclip()
+            local char = character()
+            if not char then
+                return
+            end
+            for _, descendant in ipairs(char:GetDescendants()) do
+                if descendant:IsA("BasePart") then
+                    if state.OriginalCollision[descendant] == nil then
+                        state.OriginalCollision[descendant] = descendant.CanCollide
+                    end
+                    descendant.CanCollide = false
+                end
+            end
+        end
+
+        local function restoreCollision()
+            for part, original in pairs(state.OriginalCollision) do
+                if part and part.Parent then
+                    part.CanCollide = original
+                end
+            end
+            table.clear(state.OriginalCollision)
+        end
+
+        local function updateEnergy()
+            if not state.InfiniteEnergy then
+                return
+            end
+            local char = character()
+            local energy = char and char:FindFirstChild("Energy")
+            if energy and energy:IsA("NumberValue") then
+                energy.Value = math.max(energy.Value, energy:GetAttribute("MaxValue") or 10000)
+            end
+        end
+
+        local function updateWaterPlatform()
+            if not state.WalkOnWater then
+                if state.WaterPlatform then
+                    state.WaterPlatform:Destroy()
+                    state.WaterPlatform = nil
+                end
+                return
+            end
+            local root = rootPart()
+            if not root then
+                return
+            end
+            if not state.WaterPlatform then
+                local platform = Instance.new("Part")
+                platform.Name = "VOR_WaterPlatform"
+                platform.Size = Vector3.new(30, 1, 30)
+                platform.Anchored = true
+                platform.CanCollide = true
+                platform.Transparency = 1
+                platform.Parent = workspace
+                state.WaterPlatform = platform
+            end
+            state.WaterPlatform.CFrame = CFrame.new(root.Position.X, math.min(root.Position.Y - 3.5, 0), root.Position.Z)
+        end
+
+        local function backup(instance, values)
+            if state.GraphicsBackup[instance] == nil then
+                state.GraphicsBackup[instance] = values
+            end
+        end
+
+        local function optimizeInstance(instance)
+            if instance:IsA("BasePart") then
+                backup(instance, {Material = instance.Material, Reflectance = instance.Reflectance})
+                instance.Material = Enum.Material.Plastic
+                instance.Reflectance = 0
+            elseif instance:IsA("ParticleEmitter") or instance:IsA("Trail") or instance:IsA("Beam")
+                or instance:IsA("Smoke") or instance:IsA("Fire") or instance:IsA("Sparkles") then
+                backup(instance, {Enabled = instance.Enabled})
+                instance.Enabled = false
+            end
+        end
+
+        local function setFpsBoost(enabled)
+            state.FpsBoost = enabled == true
+            if state.FpsBoost then
+                backup(Lighting, {GlobalShadows = Lighting.GlobalShadows, EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale, EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale})
+                Lighting.GlobalShadows = false
+                Lighting.EnvironmentDiffuseScale = 0
+                Lighting.EnvironmentSpecularScale = 0
+                for _, descendant in ipairs(workspace:GetDescendants()) do
+                    pcall(optimizeInstance, descendant)
+                end
+            else
+                for instance, values in pairs(state.GraphicsBackup) do
+                    if instance and instance.Parent then
+                        for property, value in pairs(values) do
+                            pcall(function()
+                                instance[property] = value
+                            end)
+                        end
+                    end
+                end
+                table.clear(state.GraphicsBackup)
+            end
+        end
+
+        local function clearHighlights(name)
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("Highlight") and descendant.Name == name then
+                    descendant:Destroy()
+                end
+            end
+        end
+
+        local function ensureHighlight(model, name, color)
+            if not model or not model.Parent then
+                return
+            end
+            local highlight = model:FindFirstChild(name)
+            if not highlight then
+                highlight = Instance.new("Highlight")
+                highlight.Name = name
+                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                highlight.FillTransparency = 0.72
+                highlight.OutlineTransparency = 0.08
+                highlight.Parent = model
+            end
+            highlight.FillColor = color
+            highlight.OutlineColor = color:Lerp(Color3.new(1, 1, 1), 0.45)
+        end
+
+        local function updateEsp()
+            if state.EnemyESP then
+                for _, enemy in ipairs(loadedEnemies()) do
+                    if modelAlive(enemy) then
+                        ensureHighlight(enemy, "VOR_EnemyESP", COLORS.error)
+                    end
+                end
+            else
+                clearHighlights("VOR_EnemyESP")
+            end
+            if state.PlayerESP then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and player.Character then
+                        ensureHighlight(player.Character, "VOR_PlayerESP", COLORS.accent)
+                    end
+                end
+            else
+                clearHighlights("VOR_PlayerESP")
+            end
+        end
+
+        local bossDropdown
+        bossDropdown = BossSection:AddDropdown({
+            Name = "Boss",
+            Flag = "blox_boss",
+            Options = bossNames(),
+            Default = "None",
+            Callback = function(value)
+                state.SelectedBoss = tostring(value or "None")
+            end,
         })
+
+        LevelSection:AddToggle({
+            Name = "Auto Farm Level",
+            Description = "Reads the live quest table, starts the best quest, and farms its enemy",
+            Flag = "blox_auto_level",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoFarmLevel = enabled
+                if enabled then
+                    state.AutoBoss = false
+                    state.AutoRaid = false
+                else
+                    state.CurrentQuestName = nil
+                    state.CurrentEnemyName = nil
+                    cancelMove()
+                end
+            end,
+        })
+        LevelSection:AddToggle({
+            Name = "Auto Collect Chests",
+            Description = "Moves to the nearest loaded chest and collects it",
+            Flag = "blox_auto_chest",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoChest = enabled
+            end,
+        })
+
+        FarmSettingsSection:AddSlider({
+            Name = "Tween Speed",
+            Flag = "blox_tween_speed",
+            Min = 50,
+            Max = 650,
+            Step = 10,
+            Default = 300,
+            Callback = function(value)
+                state.TweenSpeed = value
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Distance From Enemy",
+            Flag = "blox_farm_distance",
+            Min = 2,
+            Max = 25,
+            Step = 1,
+            Default = 7,
+            Callback = function(value)
+                state.FarmDistance = value
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Height From Enemy",
+            Flag = "blox_farm_height",
+            Min = -10,
+            Max = 35,
+            Step = 1,
+            Default = 0,
+            Callback = function(value)
+                state.FarmHeight = value
+            end,
+        })
+        FarmSettingsSection:AddToggle({
+            Name = "Auto Magnet Quest Enemies",
+            Description = "Stacks matching quest, boss, or raid enemies at your attack position",
+            Flag = "blox_auto_magnet",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoMagnet = enabled
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Magnet Range",
+            Flag = "blox_magnet_range",
+            Min = 50,
+            Max = 1500,
+            Step = 25,
+            Default = 300,
+            Callback = function(value)
+                state.MagnetRange = value
+            end,
+        })
+
+        WorldFarmSection:AddButton({
+            Name = "Refresh Live Quest Data",
+            Description = "Re-reads your current level and best available quest",
+            Callback = function()
+                local quest = bestQuest()
+                if quest then
+                    questLabel.Text = string.format("Quest: %s | %s", quest.DisplayName, quest.EnemyName)
+                    Window:Notify("Blox Fruits", "Best quest: " .. quest.DisplayName, 3)
+                else
+                    setError("No quest data is available yet")
+                end
+            end,
+        })
+
+        ExploitSection:AddToggle({
+            Name = "Enemy Gather Aura",
+            Description = "Pulls every loaded enemy in range directly in front of you",
+            Flag = "blox_enemy_gather",
+            Default = false,
+            Callback = function(enabled)
+                state.GatherEnemies = enabled
+                if not enabled then
+                    state.Gathered = 0
+                end
+            end,
+        })
+        ExploitSection:AddSlider({
+            Name = "Enemy Gather Range",
+            Flag = "blox_gather_range",
+            Min = 50,
+            Max = 30000,
+            Step = 50,
+            Default = 5000,
+            Callback = function(value)
+                state.GatherRange = value
+            end,
+        })
+        ExploitSection:AddSlider({
+            Name = "Gather Distance",
+            Flag = "blox_gather_distance",
+            Min = 1,
+            Max = 20,
+            Step = 1,
+            Default = 2,
+            Callback = function(value)
+                state.GatherDistance = value
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Auto Attack",
+            Description = "Activates the equipped weapon while an automation target is close",
+            Flag = "blox_auto_attack",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoAttack = enabled
+            end,
+        })
+        AttackSection:AddDropdown({
+            Name = "Weapon",
+            Flag = "blox_weapon_type",
+            Options = {"Sword", "Melee", "Gun", "Blox Fruit", "Best Available"},
+            Default = "Sword",
+            Callback = function(value)
+                state.WeaponType = tostring(value)
+                equipSelectedTool()
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Attack Interval",
+            Flag = "blox_attack_interval",
+            Min = 0.05,
+            Max = 0.50,
+            Step = 0.01,
+            Default = 0.12,
+            Callback = function(value)
+                state.AttackInterval = value
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Auto Buso",
+            Description = "Enables Aura when your character does not have it active",
+            Flag = "blox_auto_buso",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoBuso = enabled
+            end,
+        })
+
+        BossSection:AddButton({
+            Name = "Refresh Boss List",
+            Callback = function()
+                bossDropdown:SetOptions(bossNames(), false)
+                Window:Notify("Boss Farm", "Boss list refreshed", 2.5)
+            end,
+        })
+        BossSection:AddToggle({
+            Name = "Auto Farm Selected Boss",
+            Description = "Moves to the boss spawn, waits for it, and attacks when available",
+            Flag = "blox_auto_boss",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoBoss = enabled
+                if enabled then
+                    state.AutoFarmLevel = false
+                    state.AutoRaid = false
+                else
+                    cancelMove()
+                end
+            end,
+        })
+
+        StatsSection:AddToggle({
+            Name = "Auto Stats",
+            Flag = "blox_auto_stats",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoStats = enabled
+            end,
+        })
+        StatsSection:AddSlider({
+            Name = "Points Per Request",
+            Flag = "blox_stat_batch",
+            Min = 1,
+            Max = 100,
+            Step = 1,
+            Default = 1,
+            Callback = function(value)
+                state.StatBatch = value
+            end,
+        })
+        for _, statName in ipairs({"Melee", "Defense", "Sword", "Gun", "Demon Fruit"}) do
+            StatsSection:AddToggle({
+                Name = statName,
+                Flag = "blox_stat_" .. string.lower((statName:gsub("%s+", "_"))),
+                Default = state.Stats[statName] == true,
+                Callback = function(enabled)
+                    state.Stats[statName] = enabled
+                end,
+            })
+        end
+
+        FruitSection:AddButton({
+            Name = "Roll Blox Fruit Once",
+            Callback = function()
+                local ok, result = rollFruitOnce()
+                Window:Notify("Fruit Gacha", ok and "Roll requested" or tostring(result), 3)
+            end,
+        })
+        FruitSection:AddToggle({
+            Name = "Auto Fruit Gacha",
+            Description = "Requests one roll every two minutes",
+            Flag = "blox_auto_gacha",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoGacha = enabled
+            end,
+        })
+        FruitSection:AddButton({
+            Name = "Store Carried Fruits",
+            Callback = function()
+                task.spawn(function()
+                    local stored = storeFruits()
+                    Window:Notify("Fruit Storage", "Store requests sent: " .. tostring(stored), 3)
+                end)
+            end,
+        })
+        FruitSection:AddToggle({
+            Name = "Auto Store Fruits",
+            Flag = "blox_auto_store_fruit",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoStoreFruit = enabled
+            end,
+        })
+
+        local locationDropdown
+        local npcDropdown
+        locationDropdown = TravelSection:AddDropdown({
+            Name = "Island / Location",
+            Flag = "blox_location",
+            Options = locationOptions(),
+            Default = "None",
+            Callback = function(value)
+                state.SelectedLocation = tostring(value or "None")
+            end,
+        })
+        npcDropdown = TravelSection:AddDropdown({
+            Name = "Loaded NPC",
+            Flag = "blox_npc",
+            Options = npcOptions(),
+            Default = "None",
+            Callback = function(value)
+                state.SelectedNPC = tostring(value or "None")
+            end,
+        })
+        TravelSection:AddButton({
+            Name = "Teleport to Selected Location",
+            Callback = function()
+                local ok = state.SelectedLocation ~= "None" and teleportToLocation(state.SelectedLocation)
+                Window:Notify("Travel", ok and ("Traveling to " .. state.SelectedLocation) or "Choose a valid location", 3)
+            end,
+        })
+        TravelSection:AddButton({
+            Name = "Teleport to Selected NPC",
+            Callback = function()
+                local ok = state.SelectedNPC ~= "None" and teleportToNpc(state.SelectedNPC)
+                Window:Notify("Travel", ok and ("Traveling to " .. state.SelectedNPC) or "Choose a loaded NPC", 3)
+            end,
+        })
+        TravelSection:AddButton({
+            Name = "Refresh Travel Lists",
+            Callback = function()
+                locationDropdown:SetOptions(locationOptions(), false)
+                npcDropdown:SetOptions(npcOptions(), false)
+                Window:Notify("Travel", "Locations and NPCs refreshed", 2.5)
+            end,
+        })
+        TravelSection:AddButton({Name = "Travel to First Sea", Callback = function() invoke("TravelMain") end})
+        TravelSection:AddButton({Name = "Travel to Second Sea", Callback = function() invoke("TravelDressrosa") end})
+        TravelSection:AddButton({Name = "Travel to Third Sea", Callback = function() invoke("TravelZou") end})
+
+        local fightingStyles = {
+            {"Superhuman", "BuySuperhuman"},
+            {"Death Step", "BuyDeathStep"},
+            {"Sharkman Karate", "BuySharkmanKarate"},
+            {"Electric Claw", "BuyElectricClaw"},
+            {"Dragon Talon", "BuyDragonTalon"},
+            {"Godhuman", "BuyGodhuman"},
+        }
+        for _, entry in ipairs(fightingStyles) do
+            FightingStyleSection:AddButton({
+                Name = "Check / Buy " .. entry[1],
+                Description = "Uses the game's own purchase endpoint; requirements still apply",
+                Callback = function()
+                    local ok, result = invoke(entry[2], true)
+                    Window:Notify(entry[1], ok and tostring(result or "Request sent") or tostring(result), 3)
+                end,
+            })
+        end
+
+        local raidTypes = {"Flame", "Ice", "Sand", "Dark", "Light", "Magma", "Quake", "Buddha", "Spider", "Rumble", "Phoenix", "Dough"}
+        RaidSection:AddDropdown({
+            Name = "Raid Chip",
+            Flag = "blox_raid_chip",
+            Options = raidTypes,
+            Default = "Flame",
+            Callback = function(value)
+                state.SelectedRaid = tostring(value)
+            end,
+        })
+        RaidSection:AddButton({
+            Name = "Buy Selected Raid Chip",
+            Callback = function()
+                local ok, result = invoke("RaidsNpc", "Select", state.SelectedRaid)
+                Window:Notify("Raid Chip", ok and "Purchase request sent" or tostring(result), 3)
+            end,
+        })
+        RaidSection:AddToggle({
+            Name = "Auto Buy Raid Chip",
+            Flag = "blox_auto_buy_raid_chip",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoBuyRaidChip = enabled
+            end,
+        })
+        RaidSection:AddButton({
+            Name = "Start Raid Once",
+            Callback = function()
+                local ok, result = fireRaidButton()
+                Window:Notify("Raid", ok and "Start button activated" or tostring(result), 3)
+            end,
+        })
+        RaidSection:AddToggle({
+            Name = "Auto Start Raid",
+            Flag = "blox_auto_start_raid",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoStartRaid = enabled
+            end,
+        })
+        RaidSection:AddToggle({
+            Name = "Auto Farm Raid",
+            Flag = "blox_auto_raid",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoRaid = enabled
+                if enabled then
+                    state.AutoFarmLevel = false
+                    state.AutoBoss = false
+                else
+                    cancelMove()
+                end
+            end,
+        })
+        RaidSection:AddToggle({
+            Name = "Auto Awakening",
+            Flag = "blox_auto_awaken",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoAwaken = enabled
+            end,
+        })
+
+        PlayerStateSection:AddToggle({
+            Name = "Noclip",
+            Flag = "blox_noclip",
+            Default = false,
+            Callback = function(enabled)
+                state.Noclip = enabled
+                if not enabled then
+                    restoreCollision()
+                end
+            end,
+        })
+        PlayerStateSection:AddToggle({
+            Name = "Infinite Energy",
+            Flag = "blox_infinite_energy",
+            Default = false,
+            Callback = function(enabled)
+                state.InfiniteEnergy = enabled
+            end,
+        })
+        PlayerStateSection:AddToggle({
+            Name = "Walk on Water",
+            Flag = "blox_walk_water",
+            Default = false,
+            Callback = function(enabled)
+                state.WalkOnWater = enabled
+                if not enabled then
+                    updateWaterPlatform()
+                end
+            end,
+        })
+        PlayerStateSection:AddToggle({
+            Name = "Anti-AFK / Anti-Idle",
+            Flag = "blox_anti_afk",
+            Default = false,
+            Callback = function(enabled)
+                state.AntiAfk = enabled
+            end,
+        })
+
+        VisualSection:AddToggle({
+            Name = "Enemy ESP",
+            Flag = "blox_enemy_esp",
+            Default = false,
+            Callback = function(enabled)
+                state.EnemyESP = enabled
+                updateEsp()
+            end,
+        })
+        VisualSection:AddToggle({
+            Name = "Player ESP",
+            Flag = "blox_player_esp",
+            Default = false,
+            Callback = function(enabled)
+                state.PlayerESP = enabled
+                updateEsp()
+            end,
+        })
+        VisualSection:AddToggle({
+            Name = "Reversible FPS Boost",
+            Description = "Disables world effects and restores them when switched off",
+            Flag = "blox_fps_boost",
+            Default = false,
+            Callback = function(enabled)
+                setFpsBoost(enabled)
+            end,
+        })
+
+        SessionSection:AddButton({
+            Name = "Rejoin Current Server",
+            Callback = function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+            end,
+        })
+        SessionSection:AddButton({
+            Name = "Server Hop",
+            Description = "Finds a different non-full public server",
+            Callback = function()
+                task.spawn(function()
+                    local ok, message = pcall(function()
+                        local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100"
+                        local data = HttpService:JSONDecode(game:HttpGet(url))
+                        for _, server in ipairs(data.data or {}) do
+                            if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                                return
+                            end
+                        end
+                        error("No open server was found")
+                    end)
+                    if not ok then
+                        Window:Notify("Server Hop", tostring(message), 4)
+                    end
+                end)
+            end,
+        })
+
+        track(LocalPlayer.Idled:Connect(function()
+            if state.AntiAfk then
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                    task.wait(0.05)
+                    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                end)
+            end
+        end))
+
+        track(RunService.Heartbeat:Connect(function()
+            if not state.Alive then
+                return
+            end
+            gatherStep()
+            if state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
+                applyNoclip()
+            end
+            updateEnergy()
+            updateWaterPlatform()
+            gatherLabel.Text = "Gathered enemies: " .. tostring(state.Gathered) .. " | Range: " .. tostring(state.GatherRange)
+        end))
+
+        track(workspace.DescendantAdded:Connect(function(descendant)
+            if state.FpsBoost then
+                task.defer(function()
+                    if descendant.Parent then
+                        pcall(optimizeInstance, descendant)
+                    end
+                end)
+            end
+        end))
+
+        task.spawn(function()
+            local lastRaidPurchase = 0
+            local lastRaidStart = 0
+            local lastAwaken = 0
+            local lastEsp = 0
+            while state.Alive do
+                local ok, message = pcall(function()
+                    if state.AutoRaid then
+                        stepRaid()
+                    elseif state.AutoBoss then
+                        stepBossFarm()
+                    elseif state.AutoFarmLevel then
+                        stepAutoLevel()
+                    elseif state.AutoChest then
+                        stepChest()
+                    elseif state.GatherEnemies and state.AutoAttack and state.Gathered > 0 then
+                        attackOnce()
+                    end
+
+                    if state.AutoBuso and os.clock() - state.LastBuso >= 2 then
+                        state.LastBuso = os.clock()
+                        local char = character()
+                        local hasBuso = char and char:FindFirstChild("HasBuso") ~= nil
+                        if char and not hasBuso then
+                            pcall(function()
+                                hasBuso = char:HasTag("Buso")
+                            end)
+                        end
+                        if char and not hasBuso then
+                            invoke("Buso")
+                        end
+                    end
+
+                    stepStats()
+
+                    if state.AutoGacha and os.clock() - state.LastGacha >= state.GachaInterval then
+                        state.LastGacha = os.clock()
+                        rollFruitOnce()
+                    end
+                    if state.AutoStoreFruit and os.clock() - state.LastStore >= 8 then
+                        state.LastStore = os.clock()
+                        task.spawn(storeFruits)
+                    end
+
+                    if state.AutoBuyRaidChip and os.clock() - lastRaidPurchase >= 15 then
+                        lastRaidPurchase = os.clock()
+                        invoke("RaidsNpc", "Select", state.SelectedRaid)
+                    end
+                    if state.AutoStartRaid and not raidActive() and os.clock() - lastRaidStart >= 5 then
+                        lastRaidStart = os.clock()
+                        fireRaidButton()
+                    end
+                    if state.AutoAwaken and os.clock() - lastAwaken >= 4 then
+                        lastAwaken = os.clock()
+                        invoke("Awakener", "Awaken")
+                    end
+
+                    if os.clock() - lastEsp >= 1 then
+                        lastEsp = os.clock()
+                        updateEsp()
+                        local seaName = game.PlaceId == 2753915549 and "First Sea"
+                            or (game.PlaceId == 4442272183 and "Second Sea")
+                            or (game.PlaceId == 7449423635 and "Third Sea")
+                            or (game.PlaceId == 100117331123089 and "Third Sea")
+                            or "Blox Fruits"
+                        seaLabel.Text = "Sea: " .. seaName .. " | Loaded enemies: " .. tostring(#loadedEnemies())
+                        playerLabel.Text = string.format("Player: Level %d | Stat points %d", currentLevel(), currentPoints())
+                    end
+                end)
+                if not ok then
+                    setError(message)
+                end
+                task.wait(0.12)
+            end
+        end)
+
+        local cleaned = false
+        local function cleanup()
+            if cleaned then
+                return
+            end
+            cleaned = true
+            state.Alive = false
+            cancelMove()
+            restoreCollision()
+            state.WalkOnWater = false
+            updateWaterPlatform()
+            if state.FpsBoost then
+                setFpsBoost(false)
+            end
+            clearHighlights("VOR_EnemyESP")
+            clearHighlights("VOR_PlayerESP")
+        end
+
+        if gui then
+            gui:SetAttribute("BloxFruitsModule", true)
+            gui:SetAttribute("BloxFruitsNative", true)
+            gui:SetAttribute("BloxFruitsUniverseId", 994732206)
+            gui:SetAttribute("BloxFruitsRuntimeDependency", "None")
+            gui:SetAttribute("RuntimeDependency", "None")
+            gui:SetAttribute("BloxFruitsEnemyGatherSource", "NativeVOR")
+            track(gui.Destroying:Connect(cleanup))
+        end
+
+        setStatus("Native Blox Fruits functions ready", true)
+        local quest = bestQuest()
+        if quest then
+            questLabel.Text = string.format("Quest: %s | Target: %s", quest.DisplayName, quest.EnemyName)
+        else
+            questLabel.Text = "Quest: Waiting for live quest data"
+        end
     end, debug.traceback)
     if not built then
-        warn("[VOR Hub] Blox Fruits controls failed: " .. tostring(buildError))
+        warn("[VOR Hub] Native Blox Fruits controls failed: " .. tostring(buildError))
         pcall(function()
             gui:SetAttribute("BloxFruitsBuildError", tostring(buildError))
         end)
-        Window:Notify("VOR Hub", "Blox Fruits controls failed: " .. tostring(buildError), 7)
+        Window:Notify("VOR Hub", "Native Blox Fruits controls failed: " .. tostring(buildError), 7)
     end
 end
 
