@@ -8,7 +8,8 @@ $repoDirectory = $PSScriptRoot
 $sourceDirectory = Split-Path $repoDirectory -Parent
 $sourceFiles = @(
     "VOR_HUB.lua",
-    "anime_expeditions.lua"
+    "anime_expeditions.lua",
+    "blox_fruits.lua"
 )
 $git = "C:\Program Files\Git\cmd\git.exe"
 

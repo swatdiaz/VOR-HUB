@@ -113,6 +113,18 @@ local SUPPORTED_GAMES = {
             [84515722934860] = true,
         },
     },
+    BloxFruits = {
+        Key = "BloxFruits",
+        DisplayName = "Blox Fruits",
+        UniverseId = 994732206,
+        RootPlaceId = 2753915549,
+        PlaceIds = {
+            [2753915549] = true,
+            [4442272183] = true,
+            [7449423635] = true,
+            [100117331123089] = true,
+        },
+    },
 }
 
 local function resolveGameSupport()
@@ -146,8 +158,13 @@ local function loadCodexGameModule(fileName)
 end
 
 -- Keep the legacy storage path so existing profiles and autoload selections survive the rebrand.
--- Profiles remain separated by PlaceId so values never carry into another game.
-local CONFIG_ROOT = "SolixHub/Configs/" .. tostring(game.PlaceId)
+-- Blox Fruits profiles use its UniverseId so the same setup follows the player between seas.
+-- Every other integration remains isolated by PlaceId.
+local IS_BLOX_FRUITS = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
+local CONFIG_SCOPE_ID = IS_BLOX_FRUITS and game.GameId or game.PlaceId
+local CONFIG_ROOT = IS_BLOX_FRUITS
+    and ("SolixHub/Configs/VOR/" .. tostring(CONFIG_SCOPE_ID))
+    or ("SolixHub/Configs/" .. tostring(CONFIG_SCOPE_ID))
 local PROFILE_FOLDER = CONFIG_ROOT .. "/Profiles"
 local AUTOLOAD_FILE = CONFIG_ROOT .. "/autoload.json"
 local ACCESS_FILE = "SolixHub/Configs/access.json"
@@ -3417,6 +3434,19 @@ function Window:GetProfileNames()
     return names
 end
 
+local function profileScopeMatches(metadata)
+    if type(metadata) ~= "table" then
+        return false
+    end
+    if metadata.scopeId ~= nil then
+        return tonumber(metadata.scopeId) == CONFIG_SCOPE_ID
+    end
+    if metadata.placeId ~= nil then
+        return tonumber(metadata.placeId) == game.PlaceId
+    end
+    return true
+end
+
 function Window:SaveProfile(name)
     if not hasProfileFileApi() then
         return false, "Executor file API is unavailable"
@@ -3440,8 +3470,10 @@ function Window:SaveProfile(name)
     local ok, message = pcall(function()
         ensureFolder(PROFILE_FOLDER)
         local encoded = HttpService:JSONEncode({
-            version = 1,
+            version = 2,
+            scopeId = CONFIG_SCOPE_ID,
             placeId = game.PlaceId,
+            universeId = game.GameId,
             profile = profile,
             values = values,
         })
@@ -3474,7 +3506,7 @@ function Window:LoadProfile(name)
     if not ok or type(data) ~= "table" or type(data.values) ~= "table" then
         return false, "Profile data is invalid"
     end
-    if data.placeId ~= nil and tonumber(data.placeId) ~= game.PlaceId then
+    if not profileScopeMatches(data) then
         return false, "Profile belongs to a different game"
     end
 
@@ -3529,7 +3561,9 @@ function Window:SetAutoLoad(enabled, name)
         ensureFolder(CONFIG_ROOT)
         writefile(AUTOLOAD_FILE, HttpService:JSONEncode({
             enabled = enabled == true,
+            scopeId = CONFIG_SCOPE_ID,
             placeId = game.PlaceId,
+            universeId = game.GameId,
             profile = profile,
         }))
     end)
@@ -3554,7 +3588,7 @@ function Window:GetAutoLoad()
     if not ok or type(metadata) ~= "table" then
         return false, ""
     end
-    if metadata.placeId ~= nil and tonumber(metadata.placeId) ~= game.PlaceId then
+    if not profileScopeMatches(metadata) then
         return false, ""
     end
     return metadata.enabled == true, sanitizeProfileName(metadata.profile)
@@ -10332,6 +10366,36 @@ local function buildAnimeExpeditionsFeatures()
     end
 end
 
+local function buildBloxFruitsFeatures()
+    local loaded, moduleOrError = pcall(loadCodexGameModule, "blox_fruits.lua")
+    if not loaded then
+        local HomePage = Window:AddPage("Home")
+        local errorSection = HomePage:AddSection("Blox Fruits", "Left")
+        errorSection:AddLabel("The Blox Fruits adapter could not be loaded.")
+        errorSection:AddLabel(tostring(moduleOrError))
+        Window:Notify("VOR Hub", "Blox Fruits adapter failed to load", 5)
+        return
+    end
+
+    local built, buildError = xpcall(function()
+        moduleOrError({
+            Window = Window,
+            CreateCategoryHomePage = createCategoryHomePage,
+            CategoryDecals = CATEGORY_DECALS,
+            Colors = COLORS,
+            Track = track,
+            Gui = gui,
+        })
+    end, debug.traceback)
+    if not built then
+        warn("[VOR Hub] Blox Fruits controls failed: " .. tostring(buildError))
+        pcall(function()
+            gui:SetAttribute("BloxFruitsBuildError", tostring(buildError))
+        end)
+        Window:Notify("VOR Hub", "Blox Fruits controls failed: " .. tostring(buildError), 7)
+    end
+end
+
 local function buildUnsupportedGameShell()
     local HomePage = Window:AddPage("Home")
     local supportSection = HomePage:AddSection("Game Support", "Left")
@@ -10360,6 +10424,12 @@ elseif ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "AnimeExpeditions" the
     gui:SetAttribute("GameSupportKey", ACTIVE_GAME_SUPPORT.Key)
     gui:SetAttribute("SupportedUniverseId", ACTIVE_GAME_SUPPORT.UniverseId)
     buildAnimeExpeditionsFeatures()
+elseif ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits" then
+    statusGui.Enabled = false
+    gui:SetAttribute("GameSupported", true)
+    gui:SetAttribute("GameSupportKey", ACTIVE_GAME_SUPPORT.Key)
+    gui:SetAttribute("SupportedUniverseId", ACTIVE_GAME_SUPPORT.UniverseId)
+    buildBloxFruitsFeatures()
 else
     statusGui.Enabled = false
     gui:SetAttribute("GameSupported", false)
@@ -10588,7 +10658,11 @@ ProfilesSection:AddButton({
     end,
 })
 
-AutoLoadSection:AddLabel("Storage is isolated to PlaceId " .. tostring(game.PlaceId))
+AutoLoadSection:AddLabel(
+    IS_BLOX_FRUITS
+        and ("Storage is shared across Blox Fruits seas (UniverseId " .. tostring(CONFIG_SCOPE_ID) .. ")")
+        or ("Storage is isolated to PlaceId " .. tostring(CONFIG_SCOPE_ID))
+)
 AutoLoadSection:AddLabel("Only toggles, dropdowns, sliders, and inputs are saved.")
 
 local autoLoadControl = nil

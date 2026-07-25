@@ -12,14 +12,16 @@ The loader URL stays the same when `VOR_HUB.lua` is updated on the `main` branch
 
 ## Files
 
-- `VOR_HUB.lua` — complete hub source
-- `loader.lua` — stable one-line loader
-- `update-github.ps1` — copies the parent source file, commits it, and pushes `main`
+- `VOR_HUB.lua` - complete hub source and supported-game router
+- `anime_expeditions.lua` - Anime Expeditions integration
+- `blox_fruits.lua` - Blox Fruits live legacy-runtime adapter
+- `loader.lua` - stable one-line loader
+- `update-github.ps1` - copies the parent source files, commits them, and pushes `main`
 
 ## Publish an update
 
-Run this from PowerShell after changing the parent `VOR_HUB.lua` file:
+Run this from PowerShell after changing any parent hub source file:
 
 ```powershell
-& ".\VOR-HUB\update-github.ps1"
+& ".\codex-hub\update-github.ps1"
 ```
