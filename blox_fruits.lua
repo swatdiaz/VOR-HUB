@@ -1,10 +1,8 @@
--- VOR Hub - Blox Fruits legacy-runtime adapter
+-- VOR Hub - Blox Fruits runtime adapter
 --
--- The prior Solix Blox Fruits payload is Luarmor-protected and is not stored as
--- source on disk. When that engine is already running, however, its public UI
+-- When the compatible Blox function engine is already running, its public
 -- control objects remain available in memory. This adapter imports those live
--- callbacks into VOR controls without copying the Solix interface or exposing
--- the user's private script key.
+-- callbacks into VOR controls without copying its interface or private key.
 
 return function(context)
     local Window = assert(context.Window, "Blox Fruits: Window is required")
@@ -73,12 +71,12 @@ return function(context)
         LastError = nil,
     }
 
-    local EngineSection = FarmPage:AddSection("Blox Fruits Engine", "Left")
-    local RuntimeSection = FarmPage:AddSection("Import Status", "Right")
-    local engineLabel = EngineSection:AddLabel("Engine: Scanning the running client...")
+    local EngineSection = FarmPage:AddSection("Blox Fruits Functions", "Left")
+    local RuntimeSection = FarmPage:AddSection("Function Status", "Right")
+    local engineLabel = EngineSection:AddLabel("Blox functions: Scanning the running client...")
     local importLabel = RuntimeSection:AddLabel("Imported controls: 0")
-    local actionLabel = RuntimeSection:AddLabel("Last action: Waiting for the legacy runtime")
-    RuntimeSection:AddLabel("Only game functions are imported. Solix branding, themes, and menu settings are excluded.")
+    local actionLabel = RuntimeSection:AddLabel("Last action: Waiting")
+    RuntimeSection:AddLabel("Available Blox Fruits controls are organized into VOR categories.")
 
     local function setLabelColor(label, color)
         if label then
@@ -517,7 +515,7 @@ return function(context)
         })
 
         -- VOR's regular input callback fires on FocusLost. Override Set as well
-        -- so loading a saved VOR profile also reaches the adopted Solix callback.
+        -- so loading a saved VOR profile also reaches the adopted game callback.
         local baseSet = inputControl.Set
         function inputControl:Set(value, silent)
             baseSet(self, value)
@@ -528,21 +526,9 @@ return function(context)
         return 1
     end
 
-    local function setLegacyGuiVisible(visible)
-        local legacyGui = state.LegacyGui or findLegacyGui()
-        state.LegacyGui = legacyGui
-        if not legacyGui then
-            return false
-        end
-        local ok = pcall(function()
-            legacyGui.Enabled = visible == true
-        end)
-        return ok
-    end
-
     local function importLegacyControls(applyAutoLoadAfterImport)
         if state.Built then
-            setEngineStatus("legacy runtime imported and ready", true)
+            setEngineStatus("Blox functions ready", true)
             setActionStatus("All available controls are already imported", true)
             return true
         end
@@ -554,8 +540,8 @@ return function(context)
         local records, readError = readLegacyRecords()
         if not records or #records == 0 then
             state.Building = false
-            setEngineStatus(readError or "legacy Solix runtime not detected", false)
-            importLabel.Text = "Imported controls: 0 | Execute the owned Solix build, then Rescan"
+            setEngineStatus(readError or "compatible Blox function engine not detected", false)
+            importLabel.Text = "Imported controls: 0 | Start the compatible Blox engine, then import"
             return false
         end
 
@@ -588,12 +574,13 @@ return function(context)
         )
         setLabelColor(importLabel, state.Built and COLORS.success or COLORS.error)
         if state.Built then
-            setEngineStatus("legacy callbacks adopted; Solix UI hidden", true)
+            setEngineStatus("Blox functions ready", true)
             setActionStatus("Ready", true)
             Window:Notify("VOR Hub", "Blox Fruits functions imported into VOR", 4)
 
             -- The normal VOR autoload runs after an immediate module build. If
-            -- Solix appeared later during the retry window, replay it now that
+            -- The function engine appeared later during the retry window. Replay
+            -- the saved profile now that
             -- the adopted controls finally exist.
             if applyAutoLoadAfterImport == true then
                 task.defer(function()
@@ -620,26 +607,13 @@ return function(context)
     end
 
     EngineSection:AddButton({
-        Name = "Import Running Solix Engine",
+        Name = "Import Running Blox Functions",
         Description = "Finds the already-executed callbacks and imports them into VOR",
         Persist = false,
         Callback = function()
             importLegacyControls(true)
         end,
     })
-
-    EngineSection:AddToggle({
-        Name = "Show Legacy Solix Window",
-        Description = "Off keeps only the VOR interface visible",
-        Default = false,
-        Persist = false,
-        Callback = function(enabled)
-            local ok = setLegacyGuiVisible(enabled)
-            setActionStatus(ok and (enabled and "Legacy window shown" or "Legacy window hidden") or "Legacy window not found", ok)
-        end,
-    })
-
-    EngineSection:AddLabel("The protected payload and private key are never copied into VOR or uploaded to GitHub.")
 
     if gui then
         gui:SetAttribute("BloxFruitsModule", true)

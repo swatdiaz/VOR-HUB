@@ -163,7 +163,7 @@ end
 SETTINGS.IsBloxFruits = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
 SETTINGS.ConfigScopeId = SETTINGS.IsBloxFruits and game.GameId or game.PlaceId
 local CONFIG_ROOT = SETTINGS.IsBloxFruits
-    and ("SolixHub/Configs/VOR/" .. tostring(SETTINGS.ConfigScopeId))
+    and ("VORHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
     or ("SolixHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
 local PROFILE_FOLDER = CONFIG_ROOT .. "/Profiles"
 local AUTOLOAD_FILE = CONFIG_ROOT .. "/autoload.json"
