@@ -10569,6 +10569,7 @@ function Window:BuildBloxFruitsFeatures()
         local Quests = safeRequire(ReplicatedStorage:FindFirstChild("Quests")) or {}
         local Guide = safeRequire(ReplicatedStorage:FindFirstChild("GuideModule"))
         local CombatUtil = safeRequire(ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("CombatUtil"))
+        local FruitMouse = safeRequire(ReplicatedStorage:FindFirstChild("Mouse"))
         -- Calling Net:RemoteEvent from the executor's UI-building thread drops
         -- its CoreGui capability in current Blox Fruits, so the next control
         -- fails while parenting its Instance. RegisterAttack is non-virtual;
@@ -10579,6 +10580,10 @@ function Window:BuildBloxFruitsFeatures()
         local AURA_KILL_MAX_RANGE = 70
         local AURA_KILL_HIT_DELAY = 0.13
         local AURA_KILL_NATIVE_COOLDOWN_SCALE = 0.8
+        local NATIVE_FRUIT_M1_CADENCE = 0.32
+        local NATIVE_FRUIT_MAX_RANGE = 25
+        local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.28
+        local NATIVE_FRUIT_SETTLE_TIME = 0.24
 
         local state = {
             Alive = true,
@@ -10605,16 +10610,35 @@ function Window:BuildBloxFruitsFeatures()
             AuraTargetCursor = 0,
             AuraHits = 0,
             AuraRequests = 0,
+            AuraSwordRequests = 0,
+            AuraFruitRequests = 0,
             AuraTargetCount = 0,
             AuraAttackPending = false,
             AuraCombo = 0,
+            AuraCombos = {},
+            NativeFruitCombos = {},
             AuraStage = "idle",
             AuraPendingError = nil,
             AuraLastRequestAt = nil,
             AuraLastHitAt = nil,
+            AuraWeaponName = nil,
+            AuraWeaponType = nil,
+            AuraAttackMode = nil,
+            AuraFruitBusy = false,
+            AuraFruitInRange = nil,
+            AuraFruitLastDistance = nil,
+            DoubleAttack = false,
+            FruitM1CooldownReduction = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
+            OriginalFruitTapCooldown = nil,
             MobAuraTp = false,
             MobAuraHeight = 20,
             MobAuraSearchRange = 500,
+            MobAuraOrbit = false,
+            MobAuraOrbitRadius = 8,
+            MobAuraOrbitSpeed = 110,
+            MobAuraOrbitStartedAt = os.clock(),
+            MobAuraOrbitStartAngle = math.random() * math.pi * 2,
+            MobAuraOrbitDirection = math.random(0, 1) == 0 and -1 or 1,
             MobAuraTarget = nil,
             MobAuraTargetName = nil,
             MobAuraDistance = nil,
@@ -10949,57 +10973,152 @@ function Window:BuildBloxFruitsFeatures()
             return true
         end
 
+        local function weaponNameForTool(tool)
+            if not tool then
+                return nil
+            end
+            if type(CombatUtil) == "table" and type(CombatUtil.GetWeaponName) == "function" then
+                local ok, weaponName = pcall(function()
+                    return CombatUtil:GetWeaponName(tool)
+                end)
+                if ok and weaponName then
+                    return tostring(weaponName)
+                end
+            end
+            return tostring(tool:GetAttribute("WeaponName") or tool.Name)
+        end
+
         local function weaponDataForTool(tool)
             if not tool or type(CombatUtil) ~= "table" or type(CombatUtil.GetWeaponData) ~= "function" then
                 return nil
             end
-            local weaponName = tool:GetAttribute("WeaponName") or tool.Name
+            local weaponName = weaponNameForTool(tool)
+            if not weaponName then
+                return nil
+            end
             local ok, weaponData = pcall(function()
                 return CombatUtil:GetWeaponData(weaponName)
             end)
-            return ok and weaponData or nil
+            return ok and type(weaponData) == "table" and weaponData or nil
         end
 
-        local function selectedTool()
+        local function weaponTypeForTool(tool, weaponData)
+            if not tool then
+                return ""
+            end
+            return tostring(
+                (weaponData and weaponData.WeaponType)
+                    or tool:GetAttribute("WeaponType")
+                    or tool.ToolTip
+                    or ""
+            )
+        end
+
+        local function isFruitWeaponType(weaponType)
+            return string.find(string.lower(tostring(weaponType or "")), "fruit", 1, true) ~= nil
+        end
+
+        local function hasRegisteredBasicMoveset(weaponData)
+            local moveset = type(weaponData) == "table" and weaponData.Moveset or nil
+            local basics = type(moveset) == "table" and moveset.Basic or nil
+            return type(basics) == "table" and #basics > 0
+        end
+
+        local function toolForSelection(selection)
             local char = character()
             local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-            local selected = string.lower(state.WeaponType)
+            local selected = string.lower(tostring(selection or ""))
             local selectingFruitM1 = selected == "m1 fruit" or selected == "blox fruit"
-            local fallback = nil
+            local bestAvailable = nil
             for _, container in ipairs({char, backpack}) do
                 if container then
                     for _, tool in ipairs(container:GetChildren()) do
                         if tool:IsA("Tool") then
                             local weaponData = weaponDataForTool(tool)
-                            if weaponData then
-                                fallback = fallback or tool
-                            end
-                            local weaponType = tostring((weaponData and weaponData.WeaponType) or tool:GetAttribute("WeaponType") or tool.ToolTip or "")
+                            local weaponType = weaponTypeForTool(tool, weaponData)
                             local lowered = string.lower(weaponType)
-                            if weaponData and (selected == "best available"
-                                or lowered == selected
-                                or (selectingFruitM1 and string.find(lowered, "fruit", 1, true))) then
+                            local fruitTool = isFruitWeaponType(weaponType)
+                            local registeredTool = hasRegisteredBasicMoveset(weaponData)
+                            if not bestAvailable and (registeredTool or fruitTool) then
+                                bestAvailable = tool
+                            end
+                            if selected == "best available" and (registeredTool or fruitTool) then
+                                return tool
+                            end
+                            -- Fruit Tools such as Kitsune use their own LocalScript
+                            -- and native click remote instead of WeaponData. They must
+                            -- still be selected and equipped even when GetWeaponData
+                            -- returns nil.
+                            if selectingFruitM1 and fruitTool then
+                                return tool
+                            end
+                            if registeredTool and lowered == selected then
                                 return tool
                             end
                         end
                     end
                 end
             end
-            -- Only fall back to a tool that the live CombatUtil recognizes.
-            -- Cosmetic Tools and accessories cannot produce a registered hit.
-            return fallback
+            -- Explicit Sword/Melee/Fruit choices never lie by returning another
+            -- category. Best Available is the only mode allowed to fall back.
+            return selected == "best available" and bestAvailable or nil
+        end
+
+        local function selectedTool()
+            return toolForSelection(state.WeaponType)
+        end
+
+        local function equipTool(tool)
+            local char = character()
+            local hum = humanoid()
+            local changed = false
+            if tool and char and hum and tool.Parent ~= char then
+                local ok = pcall(function()
+                    hum:EquipTool(tool)
+                end)
+                changed = ok and tool.Parent == char
+            end
+            return tool, changed
+        end
+
+        local function updateAuraWeaponState(tool, mode)
+            local weaponData = weaponDataForTool(tool)
+            state.AuraWeaponName = tool and tool.Name or nil
+            state.AuraWeaponType = tool and weaponTypeForTool(tool, weaponData) or nil
+            state.AuraAttackMode = mode
         end
 
         local function equipSelectedTool()
-            local tool = selectedTool()
-            local char = character()
-            local hum = humanoid()
-            if tool and char and hum and tool.Parent ~= char then
-                pcall(function()
-                    hum:EquipTool(tool)
-                end)
+            if state.DoubleAttack then
+                local sword = toolForSelection("Sword")
+                local fruit = toolForSelection("M1 Fruit")
+                equipTool(sword)
+                state.AuraWeaponName = sword and fruit and (sword.Name .. " + " .. fruit.Name) or nil
+                state.AuraWeaponType = sword and fruit and "Sword + Blox Fruit" or nil
+                state.AuraAttackMode = "Double Attack"
+                return sword
             end
+            local tool = selectedTool()
+            equipTool(tool)
+            updateAuraWeaponState(tool, state.WeaponType)
             return tool
+        end
+
+        local function applyFruitM1CooldownReduction(value)
+            value = math.clamp(
+                tonumber(value) or DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
+                0,
+                1
+            )
+            state.FruitM1CooldownReduction = value
+            local char = character()
+            if char then
+                if state.OriginalFruitTapCooldown == nil then
+                    state.OriginalFruitTapCooldown = tonumber(char:GetAttribute("FruitTAPCooldown")) or 0
+                end
+                char:SetAttribute("FruitTAPCooldown", value)
+            end
+            return value
         end
 
         local HIT_PART_NAMES = {
@@ -11118,7 +11237,8 @@ function Window:BuildBloxFruitsFeatures()
                 local weaponName = CombatUtil:GetWeaponName(tool)
                 local pureName = CombatUtil:GetPureWeaponName(weaponName)
                 local cache = CombatUtil:GetMovesetAnimCache(body)
-                local combo = (state.AuraCombo % #basics) + 1
+                local comboKey = string.lower(tostring(weaponName))
+                local combo = ((state.AuraCombos[comboKey] or 0) % #basics) + 1
                 local track = cache and cache[pureName .. "-basic" .. combo]
                 if not track then
                     error("basic attack track is not loaded")
@@ -11133,6 +11253,7 @@ function Window:BuildBloxFruitsFeatures()
                 attackSpeed = math.max(attackSpeed or 1, 0.01)
                 return {
                     Combo = combo,
+                    ComboKey = comboKey,
                     Duration = duration,
                     NativeCadence = duration * AURA_KILL_NATIVE_COOLDOWN_SCALE / attackSpeed,
                 }
@@ -11141,6 +11262,224 @@ function Window:BuildBloxFruitsFeatures()
                 return nil, tostring(profile)
             end
             return profile
+        end
+
+        local function registeredAttackCadence(attackProfile)
+            if state.FastAttack then
+                return math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence * 0.5)
+            end
+            return math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence)
+        end
+
+        local function nativeFruitAttackCadence()
+            local reducedCadence = math.max(
+                0.04,
+                NATIVE_FRUIT_M1_CADENCE - math.max(tonumber(state.FruitM1CooldownReduction) or 0, 0)
+            )
+            return state.FastAttack and math.max(0.04, reducedCadence * 0.55) or reducedCadence
+        end
+
+        local function transientAuraMiss(message)
+            message = tostring(message or "")
+            return message == "the target left before the hit window"
+                or message == "the target left Aura range"
+                or message == "the fruit M1 target left before activation"
+        end
+
+        local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile)
+            local _, changed = equipTool(tool)
+            if changed then
+                task.wait(0.04)
+            end
+            if not tool or tool.Parent ~= character() then
+                return false, "the combat Tool could not be equipped"
+            end
+            if not attackProfile then
+                local profileError
+                attackProfile, profileError = auraAttackProfile(tool, weaponData)
+                if not attackProfile then
+                    return false, profileError
+                end
+            end
+
+            local registerHit = resolveRegisterHitClosure()
+            if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                return false, "combat registration is unavailable in this server build"
+            end
+
+            -- Match the exact duration sent by the native combat controller.
+            -- Zero is rejected by the server.
+            RegisterAttackEvent:FireServer(attackProfile.Duration)
+            state.AuraStage = "attack-started"
+            task.wait(AURA_KILL_HIT_DELAY)
+            state.AuraStage = "hit-window"
+            if not state.Alive or not state.AuraKill or not target.Enemy.Parent or not modelAlive(target.Enemy) then
+                return false, "the target left before the hit window"
+            end
+
+            local currentRoot = rootPart()
+            local enemyRoot = modelRoot(target.Enemy)
+            local hitPart = enemyHitPart(target.Enemy)
+            if not currentRoot or not enemyRoot or not hitPart
+                or (enemyRoot.Position - currentRoot.Position).Magnitude > state.AuraRange then
+                return false, "the target left Aura range"
+            end
+
+            -- Queue and flush in one call. The fifth argument must be a table;
+            -- nil only creates a fake client highlight and sends no damage.
+            state.AuraStage = "queue-flush"
+            registerHit(true, target.Enemy, hitPart, weaponData, {})
+            state.AuraCombos[attackProfile.ComboKey] = attackProfile.Combo
+            state.AuraCombo = attackProfile.Combo
+            state.AuraStage = "registered-hit-sent"
+            return true
+        end
+
+        local function playingTrackSet()
+            local tracks = {}
+            local body = humanoid()
+            local animator = body and body:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    tracks[track] = true
+                end
+            end
+            return animator, tracks
+        end
+
+        local function stopNewActionTracks(animator, previousTracks)
+            if not animator then
+                return
+            end
+            pcall(function()
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if not previousTracks[track]
+                        and track.Priority.Value >= Enum.AnimationPriority.Action.Value then
+                        track:Stop(0)
+                    end
+                end
+            end)
+        end
+
+        local function holdRoot(root, goalCFrame, duration, animator, previousTracks)
+            local deadline = os.clock() + duration
+            repeat
+                if not root.Parent then
+                    break
+                end
+                root.CFrame = goalCFrame
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                stopNewActionTracks(animator, previousTracks)
+                task.wait()
+            until os.clock() >= deadline
+        end
+
+        local function sendNativeFruitM1(tool, target, keepEquippedTool)
+            local char = character()
+            local root = rootPart()
+            local enemyRoot = modelRoot(target.Enemy)
+            local hitPart = enemyHitPart(target.Enemy)
+            if not char or not root or not enemyRoot or not hitPart then
+                return false, "the fruit M1 target is unavailable"
+            end
+            local nativeDistance = (enemyRoot.Position - root.Position).Magnitude
+            state.AuraFruitLastDistance = nativeDistance
+            state.AuraFruitInRange = nativeDistance <= NATIVE_FRUIT_MAX_RANGE
+            if not state.AuraFruitInRange then
+                return false, "fruit-out-of-range"
+            end
+
+            local silentRemote = tool:FindFirstChild("LeftClickRemote", true)
+            silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
+
+            if silentRemote then
+                -- Kitsune-style fruits expose the damage request directly. Fire
+                -- it from the Backpack so the Sword stays visibly equipped and
+                -- neither the player nor the NPC needs any CFrame manipulation.
+                local comboKey = string.lower(tool.Name)
+                local combo = ((state.NativeFruitCombos[comboKey] or 0) % 5) + 1
+                local flatDirection = (enemyRoot.Position - root.Position) * Vector3.new(1, 0, 1)
+                if flatDirection.Magnitude < 0.05 then
+                    flatDirection = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+                end
+                flatDirection = flatDirection.Unit
+                local fired, fireError = pcall(function()
+                    silentRemote:FireServer(flatDirection, combo, false)
+                end)
+                if not fired then
+                    return false, fireError
+                end
+                state.NativeFruitCombos[comboKey] = combo
+                state.AuraStage = "silent-fruit-m1-sent"
+                return true
+            end
+
+            local originalParent = tool.Parent
+            if keepEquippedTool then
+                -- Parent the fruit beside the Sword instead of asking the
+                -- Humanoid to equip it. The Sword never leaves Character.
+                if tool.Parent ~= char then
+                    tool.Parent = char
+                    task.wait()
+                end
+            else
+                local _, changed = equipTool(tool)
+                if changed then
+                    task.wait(0.04)
+                end
+            end
+            if tool.Parent ~= char then
+                return false, "the fruit Tool could not be armed"
+            end
+
+            local originalRootCFrame = root.CFrame
+            local animator, previousTracks = playingTrackSet()
+
+            -- Other native fruit controllers still need Tool.Activate. Keep the
+            -- player at the current Mob Aura position only to cancel a local
+            -- dash; the enemy is never written to or moved.
+            if not state.Alive or not state.AuraKill or not modelAlive(target.Enemy) then
+                if keepEquippedTool and originalParent and tool.Parent ~= originalParent then
+                    tool.Parent = originalParent
+                end
+                return false, "the fruit M1 target left before activation"
+            end
+
+            if type(FruitMouse) ~= "table" then
+                if keepEquippedTool and originalParent and tool.Parent ~= originalParent then
+                    tool.Parent = originalParent
+                end
+                return false, "the native fruit mouse controller is unavailable"
+            end
+
+            state.AuraFruitBusy = true
+            local oldHit = FruitMouse.Hit
+            local oldTarget = FruitMouse.Target
+            FruitMouse.Hit = CFrame.new(hitPart.Position)
+            FruitMouse.Target = hitPart
+            local activated, activationError = pcall(function()
+                tool:Activate()
+                tool:Deactivate()
+            end)
+            FruitMouse.Hit = oldHit
+            FruitMouse.Target = oldTarget
+            if keepEquippedTool and originalParent and tool.Parent ~= originalParent then
+                tool.Parent = originalParent
+            end
+            if not activated then
+                root.CFrame = originalRootCFrame
+                state.AuraFruitBusy = false
+                return false, activationError
+            end
+
+            state.AuraStage = "native-fruit-m1-sent"
+            -- Fruit M1 LocalScripts often add a short dash and Action animation.
+            -- Pinning only the original player position and stopping newly
+            -- started Action tracks preserves the no-swing/no-movement Aura.
+            holdRoot(root, originalRootCFrame, NATIVE_FRUIT_SETTLE_TIME, animator, previousTracks)
+            state.AuraFruitBusy = false
+            return true
         end
 
         local function auraKillOnce()
@@ -11162,102 +11501,184 @@ function Window:BuildBloxFruitsFeatures()
 
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
-            local tool = equipSelectedTool()
-            local weaponData = weaponDataForTool(tool)
-            if not tool or not weaponData then
-                state.AuraPendingError = "Aura Kill could not resolve the selected combat tool"
+            local extraDelay = math.max(tonumber(state.AttackInterval) or 0, 0)
+            local plan = {Double = state.DoubleAttack}
+
+            if state.DoubleAttack then
+                plan.Sword = toolForSelection("Sword")
+                plan.Fruit = toolForSelection("M1 Fruit")
+                if not plan.Sword or not plan.Fruit then
+                    state.AuraPendingError = "Double Attack requires both a Sword and a Blox Fruit Tool"
+                    return false
+                end
+                plan.SwordData = weaponDataForTool(plan.Sword)
+                if not hasRegisteredBasicMoveset(plan.SwordData) then
+                    state.AuraPendingError = "Double Attack could not resolve the Sword M1 moveset"
+                    return false
+                end
+                local _, swordChanged = equipTool(plan.Sword)
+                if swordChanged then
+                    task.wait(0.04)
+                end
+                local swordProfile, swordError = auraAttackProfile(plan.Sword, plan.SwordData)
+                if not swordProfile then
+                    state.AuraPendingError = "Double Attack could not read the Sword: " .. tostring(swordError)
+                    return false
+                end
+                plan.SwordProfile = swordProfile
+                plan.FruitData = weaponDataForTool(plan.Fruit)
+                plan.FruitRegistered = isFruitWeaponType(weaponTypeForTool(plan.Fruit, plan.FruitData))
+                    and hasRegisteredBasicMoveset(plan.FruitData)
+                plan.Cadence = math.max(
+                    registeredAttackCadence(swordProfile),
+                    nativeFruitAttackCadence()
+                ) + extraDelay
+                state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Fruit.Name
+                state.AuraWeaponType = "Sword + Blox Fruit"
+                state.AuraAttackMode = "Double Attack"
+            else
+                plan.Tool = selectedTool()
+                if not plan.Tool then
+                    state.AuraPendingError = "No " .. tostring(state.WeaponType) .. " Tool was found"
+                    return false
+                end
+                plan.WeaponData = weaponDataForTool(plan.Tool)
+                plan.WeaponType = weaponTypeForTool(plan.Tool, plan.WeaponData)
+                plan.NativeFruit = isFruitWeaponType(plan.WeaponType)
+                    and not hasRegisteredBasicMoveset(plan.WeaponData)
+                if not plan.NativeFruit then
+                    if not hasRegisteredBasicMoveset(plan.WeaponData) then
+                        state.AuraPendingError = "The selected Tool has no M1 attack moveset"
+                        return false
+                    end
+                    if string.lower(plan.WeaponType) == "gun" then
+                        state.AuraPendingError = "Aura Kill needs a Sword, Melee, or M1 Fruit Tool"
+                        return false
+                    end
+                    equipTool(plan.Tool)
+                    local profileError
+                    plan.Profile, profileError = auraAttackProfile(plan.Tool, plan.WeaponData)
+                    if not plan.Profile then
+                        state.AuraPendingError = "Aura Kill could not read the equipped Tool: " .. tostring(profileError)
+                        return false
+                    end
+                    plan.Cadence = registeredAttackCadence(plan.Profile) + extraDelay
+                    state.AuraAttackMode = isFruitWeaponType(plan.WeaponType)
+                        and "Registered Fruit M1" or "Registered " .. plan.WeaponType
+                else
+                    plan.Cadence = nativeFruitAttackCadence() + extraDelay
+                    state.AuraAttackMode = "Native Fruit M1"
+                end
+                updateAuraWeaponState(plan.Tool, state.AuraAttackMode)
+            end
+
+            if now - state.LastAttack < plan.Cadence then
                 return false
             end
 
-            if weaponData.WeaponType == "Gun" then
-                state.AuraPendingError = "Aura Kill needs a Sword, Melee, or supported M1 Fruit tool"
-                return false
-            end
-
-            local attackProfile, profileError = auraAttackProfile(tool, weaponData)
-            if not attackProfile then
-                state.AuraPendingError = "Aura Kill could not read the equipped tool: " .. tostring(profileError)
-                return false
-            end
-            local cadence = state.FastAttack
-                and math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence * 0.5)
-                or math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence)
-            cadence = cadence + math.max(tonumber(state.AttackInterval) or 0, 0)
-            if now - state.LastAttack < cadence then
-                return false
-            end
-            state.AuraCombo = attackProfile.Combo
-
-            local registerHit = resolveRegisterHitClosure()
-            if not RegisterAttackEvent or type(registerHit) ~= "function" then
-                state.AuraPendingError = "Aura Kill combat registration is unavailable in this server build"
-                return false
-            end
-
-            local char = character()
-            if not char then
-                return false
-            end
             state.AuraAttackPending = true
             state.LastAttack = now
-            state.AuraRequests = state.AuraRequests + 1
-            state.AuraStage = "queued"
+            state.AuraStage = state.DoubleAttack and "double-queued" or "queued"
             state.AuraLastRequestAt = now
             state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
             state.AuraLastDistance = target.Distance
 
             local targetHumanoid = target.Enemy:FindFirstChildOfClass("Humanoid")
             local healthBefore = targetHumanoid and targetHumanoid.Health or nil
-            -- Firing this remote strips CoreGui capability from only this
-            -- heartbeat invocation. All UI writes are deliberately above it;
-            -- later heartbeat invocations publish the plain-table telemetry.
-            local dispatched = false
+            local dispatched = 0
+            local fruitOutOfRange = false
             local hitOk, hitError = pcall(function()
-                -- Match the exact duration sent by the native combat
-                -- controller. Zero is rejected by the server.
-                RegisterAttackEvent:FireServer(attackProfile.Duration)
-                state.AuraStage = "attack-started"
+                if plan.Double then
+                    local swordSent, swordSendError = sendRegisteredAuraHit(
+                        plan.Sword,
+                        plan.SwordData,
+                        target,
+                        plan.SwordProfile
+                    )
+                    if not swordSent then
+                        if transientAuraMiss(swordSendError) then
+                            state.AuraStage = "target-left-before-hit"
+                            return
+                        end
+                        error("Sword M1 failed: " .. tostring(swordSendError))
+                    end
+                    dispatched += 1
+                    state.AuraSwordRequests += 1
 
-                -- Native hit detection becomes valid 130 ms into the attack.
-                task.wait(AURA_KILL_HIT_DELAY)
-                state.AuraStage = "hit-window"
-                if not state.Alive or not state.AuraKill or not target.Enemy.Parent or not modelAlive(target.Enemy) then
-                    return
+                    -- Keep the Sword equipped and layer the fruit's native M1
+                    -- remote beside it. Humanoid:EquipTool is never called for
+                    -- the fruit in Double Attack mode.
+                    local fruitSent, fruitSendError = sendNativeFruitM1(plan.Fruit, target, true)
+                    if not fruitSent then
+                        if fruitSendError == "fruit-out-of-range" then
+                            fruitOutOfRange = true
+                            state.AuraStage = "double-sword-only-fruit-out-of-range"
+                            return
+                        end
+                        if transientAuraMiss(fruitSendError) then
+                            state.AuraStage = "double-sword-only-target-left"
+                            return
+                        end
+                        error("Fruit M1 failed: " .. tostring(fruitSendError))
+                    end
+                    dispatched += 1
+                    state.AuraFruitRequests += 1
+                    state.AuraStage = "double-sent"
+                elseif plan.NativeFruit then
+                    local sent, sendError = sendNativeFruitM1(plan.Tool, target)
+                    if not sent then
+                        if sendError == "fruit-out-of-range" then
+                            fruitOutOfRange = true
+                            state.AuraStage = "fruit-out-of-range"
+                            return
+                        end
+                        if transientAuraMiss(sendError) then
+                            state.AuraStage = "target-left-before-fruit"
+                            return
+                        end
+                        error(sendError)
+                    end
+                    dispatched = 1
+                    state.AuraFruitRequests += 1
+                else
+                    local sent, sendError = sendRegisteredAuraHit(
+                        plan.Tool,
+                        plan.WeaponData,
+                        target,
+                        plan.Profile
+                    )
+                    if not sent then
+                        if transientAuraMiss(sendError) then
+                            state.AuraStage = "target-left-before-hit"
+                            return
+                        end
+                        error(sendError)
+                    end
+                    dispatched = 1
+                    if isFruitWeaponType(plan.WeaponType) then
+                        state.AuraFruitRequests += 1
+                    elseif string.lower(plan.WeaponType) == "sword" then
+                        state.AuraSwordRequests += 1
+                    end
                 end
-                local currentRoot = rootPart()
-                local enemyRoot = modelRoot(target.Enemy)
-                local hitPart = enemyHitPart(target.Enemy)
-                if not currentRoot or not enemyRoot or not hitPart
-                    or (enemyRoot.Position - currentRoot.Position).Magnitude > state.AuraRange then
-                    return
-                end
-
-                -- registerHit only queues the primary target when its fifth
-                -- argument is a table. Nil creates a fake local flash and never
-                -- sends RegisterHit to the server.
-                state.AuraStage = "queue-flush"
-                -- Queue and flush in one call with p71=true. This skips the
-                -- broken local SlashHit cosmetic while preserving the exact
-                -- virtual RegisterHit payload accepted by the server.
-                registerHit(true, target.Enemy, hitPart, weaponData, {})
-                state.AuraStage = "sent"
-                dispatched = true
             end)
             state.AuraAttackPending = false
+            state.AuraFruitBusy = false
+            state.AuraRequests += dispatched
             if not hitOk then
-                state.AuraPendingError = "Aura Kill server hit failed: " .. tostring(hitError)
+                state.AuraPendingError = "Aura Kill attack failed: " .. tostring(hitError)
                 state.AuraStage = "error"
                 return false
             end
-            if not dispatched then
-                state.AuraStage = "target-left-range"
+            if dispatched == 0 then
+                state.AuraStage = fruitOutOfRange and "fruit-out-of-range" or "target-left-range"
                 return false
             end
 
             task.delay(0.35, function()
                 if state.Alive and targetHumanoid and healthBefore ~= nil
                     and targetHumanoid.Health < healthBefore then
-                    state.AuraHits = state.AuraHits + 1
+                    state.AuraHits += 1
                     state.AuraLastHitAt = os.clock()
                 end
                 state.AuraStage = "idle"
@@ -11266,7 +11687,7 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function stepMobAuraTp()
-            if not state.MobAuraTp then
+            if not state.MobAuraTp or state.AuraFruitBusy then
                 return false
             end
             local root = rootPart()
@@ -11292,6 +11713,11 @@ function Window:BuildBloxFruitsFeatures()
                     state.MobAuraDistance = distance
                     return false
                 end
+                if nearest ~= state.MobAuraTarget then
+                    state.MobAuraOrbitStartedAt = os.clock()
+                    state.MobAuraOrbitStartAngle = math.random() * math.pi * 2
+                    state.MobAuraOrbitDirection = math.random(0, 1) == 0 and -1 or 1
+                end
                 target = nearest
                 state.MobAuraTarget = target
                 targetRoot = modelRoot(target)
@@ -11303,7 +11729,18 @@ function Window:BuildBloxFruitsFeatures()
             local head = target:FindFirstChild("Head", true)
             local anchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
-            local goalPosition = anchor + Vector3.new(0, height, 0)
+            local orbitOffset = Vector3.zero
+            if state.MobAuraOrbit then
+                local elapsed = os.clock() - state.MobAuraOrbitStartedAt
+                local angle = state.MobAuraOrbitStartAngle
+                    + elapsed * math.rad(state.MobAuraOrbitSpeed) * state.MobAuraOrbitDirection
+                orbitOffset = Vector3.new(
+                    math.cos(angle) * state.MobAuraOrbitRadius,
+                    0,
+                    math.sin(angle) * state.MobAuraOrbitRadius
+                )
+            end
+            local goalPosition = anchor + Vector3.new(0, height, 0) + orbitOffset
             local facing = Vector3.new(targetRoot.CFrame.LookVector.X, 0, targetRoot.CFrame.LookVector.Z)
             if facing.Magnitude < 0.05 then
                 facing = Vector3.new(0, 0, -1)
@@ -11313,7 +11750,14 @@ function Window:BuildBloxFruitsFeatures()
 
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = CFrame.lookAt(goalPosition, goalPosition + facing)
+            if state.MobAuraOrbit and orbitOffset.Magnitude > 0.05 then
+                root.CFrame = CFrame.lookAt(
+                    goalPosition,
+                    Vector3.new(anchor.X, goalPosition.Y, anchor.Z)
+                )
+            else
+                root.CFrame = CFrame.lookAt(goalPosition, goalPosition + facing)
+            end
             state.MobAuraTargetName = normalizeEnemyName(target.Name)
             state.MobAuraDistance = (targetRoot.Position - root.Position).Magnitude
             return true
@@ -11325,7 +11769,18 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
             gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
             gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
+            gui:SetAttribute("BloxAuraSwordRequestCount", state.AuraSwordRequests)
+            gui:SetAttribute("BloxAuraFruitRequestCount", state.AuraFruitRequests)
             gui:SetAttribute("BloxAttackCount", state.AuraRequests)
+            gui:SetAttribute("BloxAuraWeaponSelection", state.WeaponType)
+            gui:SetAttribute("BloxAuraWeaponName", state.AuraWeaponName or "")
+            gui:SetAttribute("BloxAuraWeaponType", state.AuraWeaponType or "")
+            gui:SetAttribute("BloxAuraAttackMode", state.AuraAttackMode or "")
+            gui:SetAttribute("BloxDoubleAttack", state.DoubleAttack)
+            gui:SetAttribute("BloxFruitM1CooldownReduction", state.FruitM1CooldownReduction)
+            gui:SetAttribute("BloxAuraFruitNativeRange", NATIVE_FRUIT_MAX_RANGE)
+            gui:SetAttribute("BloxAuraFruitInRange", state.AuraFruitInRange == true)
+            gui:SetAttribute("BloxAuraFruitLastDistance", state.AuraFruitLastDistance or 0)
             if state.CurrentEnemyName then
                 gui:SetAttribute("BloxAuraKillLastTarget", state.CurrentEnemyName)
             end
@@ -11342,6 +11797,10 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
             gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
             gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            gui:SetAttribute("BloxMobAuraOrbit", state.MobAuraOrbit)
+            gui:SetAttribute("BloxMobAuraOrbitRadius", state.MobAuraOrbitRadius)
+            gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
+            gui:SetAttribute("BloxMobAuraOrbitDirection", state.MobAuraOrbitDirection)
             gui:SetAttribute("BloxMobAuraTarget", state.MobAuraTargetName or "")
             gui:SetAttribute("BloxMobAuraDistance", state.MobAuraDistance or 0)
             if state.AuraPendingError then
@@ -12324,6 +12783,25 @@ function Window:BuildBloxFruitsFeatures()
         local auraRangeSlider
         local mobAuraHeightSlider
 
+        local function resetMobAuraOrbit()
+            state.MobAuraOrbitStartedAt = os.clock()
+            state.MobAuraOrbitStartAngle = math.random() * math.pi * 2
+            state.MobAuraOrbitDirection = math.random(0, 1) == 0 and -1 or 1
+        end
+
+        local function requiredMobAuraRange()
+            local radius = state.MobAuraOrbit and state.MobAuraOrbitRadius or 0
+            local pathDistance = math.sqrt(state.MobAuraHeight ^ 2 + radius ^ 2)
+            return math.min(AURA_KILL_MAX_RANGE, math.ceil(pathDistance + 8))
+        end
+
+        local function syncMobAuraRange()
+            local requiredRange = requiredMobAuraRange()
+            if state.MobAuraTp and state.AuraRange < requiredRange and auraRangeSlider then
+                auraRangeSlider:Set(requiredRange)
+            end
+        end
+
         auraToggle = AttackSection:AddToggle({
             Name = "Aura Kill",
             Description = "Rapid silent tool hits on living NPCs inside the selected range; never swings your character",
@@ -12371,6 +12849,9 @@ function Window:BuildBloxFruitsFeatures()
                     and string.format("Aura Kill: Armed | Range: %.0f studs", state.AuraRange)
                     or string.format("Aura Kill: Off | Range: %.0f studs", state.AuraRange)
                 gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
+                if state.MobAuraTp then
+                    task.defer(syncMobAuraRange)
+                end
             end,
         })
         AttackSection:AddToggle({
@@ -12383,6 +12864,7 @@ function Window:BuildBloxFruitsFeatures()
                 gui:SetAttribute("BloxFastAttack", enabled)
             end,
         })
+        local weaponStatusLabel
         AttackSection:AddDropdown({
             Name = "Weapon",
             Flag = "blox_weapon_type",
@@ -12390,9 +12872,57 @@ function Window:BuildBloxFruitsFeatures()
             Default = "Sword",
             Callback = function(value)
                 state.WeaponType = tostring(value)
-                equipSelectedTool()
+                state.AuraCombo = 0
+                table.clear(state.AuraCombos)
+                local tool = equipSelectedTool()
+                if not tool then
+                    state.AuraPendingError = "No " .. state.WeaponType .. " Tool was found"
+                end
             end,
         })
+        weaponStatusLabel = AttackSection:AddLabel("Weapon: waiting for selection")
+        equipSelectedTool()
+        AttackSection:AddToggle({
+            Name = "Double Attack (Sword + Fruit M1)",
+            Description = "Keeps the Sword equipped and layers a silent fruit M1 into the same Aura cycle",
+            Flag = "blox_double_attack",
+            Default = false,
+            Callback = function(enabled)
+                state.DoubleAttack = enabled
+                state.LastAttack = 0
+                table.clear(state.AuraCombos)
+                if enabled then
+                    local sword = toolForSelection("Sword")
+                    local fruit = toolForSelection("M1 Fruit")
+                    if sword and fruit then
+                        equipTool(sword)
+                        state.AuraWeaponName = sword.Name .. " + " .. fruit.Name
+                        state.AuraWeaponType = "Sword + Blox Fruit"
+                        state.AuraAttackMode = "Double Attack"
+                    else
+                        state.AuraPendingError = "Double Attack requires both a Sword and a Blox Fruit Tool"
+                    end
+                else
+                    equipSelectedTool()
+                end
+                gui:SetAttribute("BloxDoubleAttack", enabled)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Fruit M1 Cooldown Reduction",
+            Description = "Subtracts 0.00-1.00 seconds from native fruit tap cooldowns; 0.28 is rapid",
+            Flag = "blox_fruit_m1_cooldown_reduction",
+            Min = 0,
+            Max = 1,
+            Step = 0.01,
+            Default = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
+            Callback = function(value)
+                local reduction = applyFruitM1CooldownReduction(value)
+                state.LastAttack = 0
+                gui:SetAttribute("BloxFruitM1CooldownReduction", reduction)
+            end,
+        })
+        applyFruitM1CooldownReduction(state.FruitM1CooldownReduction)
         AttackSection:AddSlider({
             Name = "Extra Aura Delay",
             Flag = "blox_attack_interval",
@@ -12415,6 +12945,7 @@ function Window:BuildBloxFruitsFeatures()
                 state.MobAuraTargetName = nil
                 state.MobAuraDistance = nil
                 if enabled then
+                    resetMobAuraOrbit()
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
                     state.AutoRaid = false
@@ -12423,10 +12954,7 @@ function Window:BuildBloxFruitsFeatures()
                     if not state.AuraKill and auraToggle then
                         auraToggle:Set(true)
                     end
-                    local requiredRange = math.min(AURA_KILL_MAX_RANGE, state.MobAuraHeight + 8)
-                    if state.AuraRange < requiredRange and auraRangeSlider then
-                        auraRangeSlider:Set(requiredRange)
-                    end
+                    syncMobAuraRange()
                     mobAuraLabel.Text = "Mob Aura TP: Searching for nearest NPC..."
                     mobAuraLabel.TextColor3 = COLORS.success
                 else
@@ -12464,13 +12992,49 @@ function Window:BuildBloxFruitsFeatures()
             Default = 20,
             Callback = function(value)
                 state.MobAuraHeight = math.clamp(tonumber(value) or 20, 3, AURA_KILL_MAX_RANGE - 10)
-                if state.MobAuraTp then
-                    local requiredRange = math.min(AURA_KILL_MAX_RANGE, state.MobAuraHeight + 8)
-                    if state.AuraRange < requiredRange and auraRangeSlider then
-                        auraRangeSlider:Set(requiredRange)
-                    end
-                end
+                syncMobAuraRange()
                 gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Mob Aura Random Orbit",
+            Description = "Starts on a random side and circles above the NPC; the NPC itself never moves",
+            Flag = "blox_mob_aura_orbit",
+            Default = false,
+            Callback = function(enabled)
+                state.MobAuraOrbit = enabled
+                resetMobAuraOrbit()
+                syncMobAuraRange()
+                gui:SetAttribute("BloxMobAuraOrbit", enabled)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Mob Aura Orbit Radius",
+            Description = "Horizontal circle size around the NPC while Height controls how far above its head you stay",
+            Flag = "blox_mob_aura_orbit_radius",
+            Min = 2,
+            Max = 25,
+            Step = 1,
+            Default = 8,
+            Callback = function(value)
+                state.MobAuraOrbitRadius = math.clamp(tonumber(value) or 8, 2, 25)
+                resetMobAuraOrbit()
+                syncMobAuraRange()
+                gui:SetAttribute("BloxMobAuraOrbitRadius", state.MobAuraOrbitRadius)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Mob Aura Orbit Speed",
+            Description = "Degrees per second to spin around the NPC",
+            Flag = "blox_mob_aura_orbit_speed",
+            Min = 20,
+            Max = 240,
+            Step = 5,
+            Default = 110,
+            Callback = function(value)
+                state.MobAuraOrbitSpeed = math.clamp(tonumber(value) or 110, 20, 240)
+                resetMobAuraOrbit()
+                gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
             end,
         })
         AttackSection:AddToggle({
@@ -12826,11 +13390,20 @@ function Window:BuildBloxFruitsFeatures()
             end
         end))
 
-        track(LocalPlayer.CharacterAdded:Connect(function()
+        track(LocalPlayer.CharacterAdded:Connect(function(newCharacter)
             state.LastAttack = 0
             state.LastAuraScan = 0
             state.LastBuso = -math.huge
             state.AuraTargetCursor = 0
+            state.AuraCombo = 0
+            table.clear(state.AuraCombos)
+            table.clear(state.NativeFruitCombos)
+            state.AuraFruitBusy = false
+            state.AuraFruitInRange = nil
+            state.AuraFruitLastDistance = nil
+            state.OriginalFruitTapCooldown = tonumber(newCharacter:GetAttribute("FruitTAPCooldown")) or 0
+            newCharacter:SetAttribute("FruitTAPCooldown", state.FruitM1CooldownReduction)
+            resetMobAuraOrbit()
             state.MobAuraTarget = nil
             state.MobAuraTargetName = nil
             state.MobAuraDistance = nil
@@ -12882,15 +13455,58 @@ function Window:BuildBloxFruitsFeatures()
             while state.Alive do
                 local ok, message = pcall(function()
                     flushAuraTelemetry()
+                    if weaponStatusLabel then
+                        if state.AuraWeaponName then
+                            local weaponText = string.format(
+                                "Weapon: %s | %s",
+                                state.AuraWeaponName,
+                                state.AuraAttackMode or state.AuraWeaponType or state.WeaponType
+                            )
+                            local mode = string.lower(tostring(state.AuraAttackMode or state.WeaponType))
+                            local fruitActive = state.DoubleAttack or string.find(mode, "fruit", 1, true) ~= nil
+                            if fruitActive then
+                                if state.AuraFruitLastDistance then
+                                    weaponText = weaponText .. string.format(
+                                        state.AuraFruitInRange
+                                            and " | Fruit %.1f / %d studs"
+                                            or " | Fruit OUT OF RANGE %.1f / %d studs",
+                                        state.AuraFruitLastDistance,
+                                        NATIVE_FRUIT_MAX_RANGE
+                                    )
+                                else
+                                    weaponText = weaponText .. string.format(
+                                        " | Fruit native reach: %d studs",
+                                        NATIVE_FRUIT_MAX_RANGE
+                                    )
+                                end
+                            end
+                            weaponStatusLabel.Text = weaponText
+                            weaponStatusLabel.TextColor3 = fruitActive and state.AuraFruitInRange == false
+                                and COLORS.warning or COLORS.success
+                        else
+                            weaponStatusLabel.Text = "Weapon: No " .. tostring(state.WeaponType) .. " Tool found"
+                            weaponStatusLabel.TextColor3 = COLORS.muted
+                        end
+                    end
                     if state.MobAuraTp then
                         if state.MobAuraTargetName and state.MobAuraDistance then
-                            mobAuraLabel.Text = string.format(
-                                "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Search: %.0f",
-                                state.MobAuraTargetName,
-                                state.MobAuraDistance,
-                                state.MobAuraHeight,
-                                state.MobAuraSearchRange
-                            )
+                            if state.MobAuraOrbit then
+                                mobAuraLabel.Text = string.format(
+                                    "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Orbit: %.0f @ %.0f deg/s",
+                                    state.MobAuraTargetName,
+                                    state.MobAuraDistance,
+                                    state.MobAuraHeight,
+                                    state.MobAuraOrbitRadius,
+                                    state.MobAuraOrbitSpeed
+                                )
+                            else
+                                mobAuraLabel.Text = string.format(
+                                    "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Fixed above",
+                                    state.MobAuraTargetName,
+                                    state.MobAuraDistance,
+                                    state.MobAuraHeight
+                                )
+                            end
                             mobAuraLabel.TextColor3 = COLORS.success
                         elseif state.MobAuraDistance then
                             mobAuraLabel.Text = string.format(
@@ -13012,7 +13628,12 @@ function Window:BuildBloxFruitsFeatures()
             state.Alive = false
             state.AuraKill = false
             state.MobAuraTp = false
+            state.AuraFruitBusy = false
             state.MobAuraTarget = nil
+            local char = character()
+            if char and state.OriginalFruitTapCooldown ~= nil then
+                char:SetAttribute("FruitTAPCooldown", state.OriginalFruitTapCooldown)
+            end
             cancelMove()
             restoreCollision()
             state.WalkOnWater = false
@@ -13042,13 +13663,28 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
             gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
             gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
+            gui:SetAttribute("BloxAuraSwordRequestCount", state.AuraSwordRequests)
+            gui:SetAttribute("BloxAuraFruitRequestCount", state.AuraFruitRequests)
             gui:SetAttribute("BloxAuraKillLastTarget", "")
             gui:SetAttribute("BloxAuraKillLastDistance", 0)
             gui:SetAttribute("BloxAuraKillLastRequestAt", 0)
             gui:SetAttribute("BloxAuraKillLastHitAt", 0)
+            gui:SetAttribute("BloxAuraWeaponSelection", state.WeaponType)
+            gui:SetAttribute("BloxAuraWeaponName", state.AuraWeaponName or "")
+            gui:SetAttribute("BloxAuraWeaponType", state.AuraWeaponType or "")
+            gui:SetAttribute("BloxAuraAttackMode", state.AuraAttackMode or "")
+            gui:SetAttribute("BloxDoubleAttack", state.DoubleAttack)
+            gui:SetAttribute("BloxFruitM1CooldownReduction", state.FruitM1CooldownReduction)
+            gui:SetAttribute("BloxAuraFruitNativeRange", NATIVE_FRUIT_MAX_RANGE)
+            gui:SetAttribute("BloxAuraFruitInRange", false)
+            gui:SetAttribute("BloxAuraFruitLastDistance", 0)
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
             gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
             gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            gui:SetAttribute("BloxMobAuraOrbit", state.MobAuraOrbit)
+            gui:SetAttribute("BloxMobAuraOrbitRadius", state.MobAuraOrbitRadius)
+            gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
+            gui:SetAttribute("BloxMobAuraOrbitDirection", state.MobAuraOrbitDirection)
             gui:SetAttribute("BloxMobAuraTarget", "")
             gui:SetAttribute("BloxMobAuraDistance", 0)
             gui:SetAttribute("BloxAutoAttack", false)
