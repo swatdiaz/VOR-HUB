@@ -14,11 +14,12 @@ local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
+local SCRIPT_STARTED_AT = os.clock()
 
 -- Masked, serialized tab transitions prevent overlapping cards, blank flashes, and mobile tap races.
 -- Change these values to customize the hub and welcome screen.
 local SETTINGS = {
-    GuiName = "CodexHub",
+    GuiName = "VORHub",
     Title = "VOR Hub",
     Discord = "discord.gg/w7gXUUZEp",
     DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
@@ -148,7 +149,7 @@ local ACTIVE_GAME_SUPPORT = resolveGameSupport()
 -- Optional game modules are fetched from the exact GitHub commit that is live
 -- when the hub starts. Keeping large integrations separate prevents one game's
 -- controls and runtime hooks from leaking into another supported experience.
-local function loadCodexGameModule(fileName)
+local function loadVORGameModule(fileName)
     local repository = "swatdiaz/VOR-HUB"
     local commitApi = "https://api.github.com/repos/" .. repository .. "/commits/main"
     local metadata = HttpService:JSONDecode(game:HttpGet(commitApi))
@@ -164,7 +165,8 @@ local function loadCodexGameModule(fileName)
     return module
 end
 
--- Keep the legacy storage path so existing profiles and autoload selections survive the rebrand.
+-- Profiles are isolated by VOR game support scope so one game's settings never
+-- leak into another supported game.
 -- Blox Fruits profiles use its UniverseId so the same setup follows the player between seas.
 -- Every other integration remains isolated by PlaceId.
 SETTINGS.IsBloxFruits = ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
@@ -175,14 +177,20 @@ if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
     -- purple, but this integration opens immediately in its lean presentation.
     SETTINGS.IntroEnabled = false
     SETTINGS.SnowEnabled = false
+    -- Blox Fruits is the text-tab integration: keep its panel surfaces clean
+    -- and opaque enough to avoid costly full-window image blending. Decals for
+    -- Revive, Basketball, and other supported games remain unchanged.
+    SETTINGS.PanelBackgroundImageId = ""
+    SETTINGS.SectionBackgroundImageId = ""
+    SETTINGS.StatusBackgroundImageId = ""
 end
 SETTINGS.ConfigScopeId = SETTINGS.IsBloxFruits and game.GameId or game.PlaceId
 local CONFIG_ROOT = SETTINGS.IsBloxFruits
     and ("VORHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
-    or ("SolixHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
+    or ("VORHub/Configs/" .. tostring(SETTINGS.ConfigScopeId))
 local PROFILE_FOLDER = CONFIG_ROOT .. "/Profiles"
 local AUTOLOAD_FILE = CONFIG_ROOT .. "/autoload.json"
-local ACCESS_FILE = "SolixHub/Configs/access.json"
+local ACCESS_FILE = "VORHub/Configs/access.json"
 
 -- VOR identity: blackened metal, deep violet energy, and restrained silver highlights.
 -- The legacy constant name remains so saved configurations and older helpers stay compatible.
@@ -217,7 +225,7 @@ local COLORS = {
 }
 
 local UI_FONT = Enum.Font.GothamBold
-local hubTransparencyValue = SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering and 0.06 or 0.24
+local hubTransparencyValue = SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering and 0.02 or 0.24
 
 local function create(className, properties, parent)
     local object = Instance.new(className)
@@ -448,7 +456,19 @@ local function destroyOldGui()
         table.insert(containers, playerGui)
     end
 
-    for _, guiName in ipairs({SETTINGS.GuiName, SETTINGS.GuiName .. "_Snow", SETTINGS.GuiName .. "_Notifications", SETTINGS.GuiName .. "_Status"}) do
+    local guiNames = {
+        SETTINGS.GuiName,
+        SETTINGS.GuiName .. "_Snow",
+        SETTINGS.GuiName .. "_Notifications",
+        SETTINGS.GuiName .. "_Status",
+        -- One-time cleanup compatibility for builds published before the VOR
+        -- rebrand. These names are never created by the current hub.
+        "CodexHub",
+        "CodexHub_Snow",
+        "CodexHub_Notifications",
+        "CodexHub_Status",
+    }
+    for _, guiName in ipairs(guiNames) do
         for _, container in ipairs(containers) do
             while true do
                 local oldGui = container:FindFirstChild(guiName)
@@ -459,10 +479,12 @@ local function destroyOldGui()
             end
         end
     end
-    local oldMusic = SoundService:FindFirstChild("CodexHubMusic")
-    if oldMusic then
-        oldMusic:Stop()
-        oldMusic:Destroy()
+    for _, musicName in ipairs({"VORHubMusic", "CodexHubMusic"}) do
+        local oldMusic = SoundService:FindFirstChild(musicName)
+        if oldMusic then
+            oldMusic:Stop()
+            oldMusic:Destroy()
+        end
     end
 end
 
@@ -507,6 +529,9 @@ local function fluidTween(object, duration, properties, style, direction)
 end
 
 local function attachFluidScale(button, visual, hoverScale, pressedScale)
+    if SETTINGS.LightweightRendering then
+        return nil
+    end
     visual = visual or button
     local scale = visual:FindFirstChild("FluidInteractionScale")
     if not scale then
@@ -531,6 +556,9 @@ local function attachFluidScale(button, visual, hoverScale, pressedScale)
 end
 
 local function attachPressRipple(button, surface)
+    if SETTINGS.LightweightRendering then
+        return
+    end
     surface = surface or button
     surface.ClipsDescendants = true
     track(button.MouseButton1Down:Connect(function(x, y)
@@ -572,7 +600,7 @@ local gui = create("ScreenGui", {
 parentScreenGui(gui)
 
 local toggleClickSound = create("Sound", {
-    Name = "CodexToggleClick",
+    Name = "VORToggleClick",
     SoundId = SETTINGS.ToggleClickSoundId,
     Volume = 0,
     PlaybackSpeed = SETTINGS.ToggleOnPlaybackSpeed,
@@ -600,7 +628,7 @@ local function playToggleClick(enabled)
 end
 
 local hubVisibilitySound = create("Sound", {
-    Name = "CodexHubVisibilitySound",
+    Name = "VORHubVisibilitySound",
     SoundId = SETTINGS.HubVisibilitySoundId,
     Volume = 0,
     PlaybackSpeed = SETTINGS.HubOpenPlaybackSpeed,
@@ -628,7 +656,7 @@ local function playHubVisibilitySound(opening)
 end
 
 local hubMusic = create("Sound", {
-    Name = "CodexHubMusic",
+    Name = "VORHubMusic",
     SoundId = tostring(SETTINGS.IntroPianoSoundId or ""),
     Volume = 0,
     PlaybackSpeed = math.clamp(tonumber(SETTINGS.IntroPianoPlaybackSpeed) or 1, 0.25, 3),
@@ -710,7 +738,7 @@ local snowLayer = create("Frame", {
 }, snowGui)
 
 local main = create("Frame", {
-    Name = "CodexHub",
+    Name = "VORHub",
     Active = true,
     Visible = false,
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1195,7 +1223,7 @@ do
 end
 
 local brandLogo = create("Frame", {
-    Name = "CodexLogo",
+    Name = "VORLogo",
     Position = UDim2.fromOffset(13, 10),
     Size = UDim2.fromOffset(26, 26),
     BackgroundTransparency = 1,
@@ -1510,7 +1538,7 @@ avatarName.Visible = false
 local currentHour = tonumber(os.date("%H")) or 12
 local greetingText = currentHour < 12 and "Good morning" or (currentHour < 18 and "Good afternoon" or "Good evening")
 local welcomeCard = create("Frame", {
-    Name = "CodexWelcomeCard",
+    Name = "VORWelcomeCard",
     Position = UDim2.fromOffset(162, 67),
     Size = UDim2.new(1, -178, 0, 64),
     BackgroundColor3 = COLORS.surface,
@@ -2339,7 +2367,7 @@ local function applyHubTransparency(value)
         hubTransparencyValue = math.min(hubTransparencyValue, 0.12)
     end
     local offsets = {
-        CodexHub = 0.00,
+        VORHub = 0.00,
         Header = 0.06,
         HeaderSquareJoin = 0.06,
         Sidebar = 0.12,
@@ -2350,7 +2378,7 @@ local function applyHubTransparency(value)
         ContentLeftJoin = 0.16,
         FloatingAvatarCard = 0.10,
         PlayerHeadshotCard = 0.08,
-        CodexWelcomeCard = 0.00,
+        VORWelcomeCard = 0.00,
         Search = 0.08,
         HomeCategoryBar = 0.08,
         SectionCard = 0.20,
@@ -2535,9 +2563,10 @@ local function makeControlRow(section, height)
 end
 
 local function attachControlMotion(button, row, hoverTransparency)
-    if not SETTINGS.LightweightRendering then
-        attachFluidScale(button, row, 1.006, 0.994)
+    if SETTINGS.LightweightRendering then
+        return
     end
+    attachFluidScale(button, row, 1.006, 0.994)
     track(button.MouseEnter:Connect(function()
         fluidTween(row, 0.16, {BackgroundTransparency = hoverTransparency or 0.18})
     end))
@@ -2917,6 +2946,25 @@ function SectionMethods:AddDropdown(options)
     return registerPersistentControl(self, name, options, control)
 end
 
+-- All sliders share one global drag router. The previous implementation added
+-- two UserInputService connections per slider, which became a measurable open
+-- menu cost in large games such as Blox Fruits.
+local activeSliderDrag = nil
+track(UserInputService.InputChanged:Connect(function(input)
+    local drag = activeSliderDrag
+    if drag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        drag.Update(input)
+    end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if activeSliderDrag
+        and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        local drag = activeSliderDrag
+        activeSliderDrag = nil
+        drag.Finish()
+    end
+end))
+
 function SectionMethods:AddSlider(options)
     options = options or {}
     local name = options.Name or "Slider"
@@ -3003,24 +3051,25 @@ function SectionMethods:AddSlider(options)
         control:Set(minimum + (maximum - minimum) * alpha)
     end
 
+    local function finishDrag()
+        dragging = false
+        fluidTween(knob, 0.18, {Size = UDim2.fromOffset(14, 14), BackgroundColor3 = COLORS.knob}, Enum.EasingStyle.Back)
+        fluidTween(knobStroke, 0.18, {Transparency = 0.34, Thickness = 1})
+    end
+
     track(hitbox.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if activeSliderDrag then
+                activeSliderDrag.Finish()
+            end
             dragging = true
+            activeSliderDrag = {
+                Update = updateFromInput,
+                Finish = finishDrag,
+            }
             fluidTween(knob, 0.14, {Size = UDim2.fromOffset(18, 18), BackgroundColor3 = SNOW_WHITE}, Enum.EasingStyle.Back)
             fluidTween(knobStroke, 0.14, {Transparency = 0.04, Thickness = 2})
             updateFromInput(input)
-        end
-    end))
-    track(UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateFromInput(input)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            fluidTween(knob, 0.18, {Size = UDim2.fromOffset(14, 14), BackgroundColor3 = COLORS.knob}, Enum.EasingStyle.Back)
-            fluidTween(knobStroke, 0.18, {Transparency = 0.34, Thickness = 1})
         end
     end))
 
@@ -3695,7 +3744,7 @@ local function hashAccessKey(value)
 end
 
 local function hasRememberedAccess()
-    if _G.CodexHubAccessHash == SETTINGS.AccessKeyHash then
+    if _G.VORHubAccessHash == SETTINGS.AccessKeyHash then
         return true
     end
     if not SETTINGS.RememberKey or not hasProfileFileApi() or not isfile(ACCESS_FILE) then
@@ -3708,12 +3757,12 @@ local function hasRememberedAccess()
 end
 
 local function rememberAccess()
-    _G.CodexHubAccessHash = SETTINGS.AccessKeyHash
+    _G.VORHubAccessHash = SETTINGS.AccessKeyHash
     if not SETTINGS.RememberKey or not hasProfileFileApi() then
         return
     end
     pcall(function()
-        ensureFolder("SolixHub/Configs")
+        ensureFolder("VORHub/Configs")
         writefile(ACCESS_FILE, HttpService:JSONEncode({
             version = 1,
             keyHash = SETTINGS.AccessKeyHash,
@@ -3722,7 +3771,7 @@ local function rememberAccess()
 end
 
 local function forgetRememberedAccess()
-    _G.CodexHubAccessHash = nil
+    _G.VORHubAccessHash = nil
     if type(isfile) == "function" and type(delfile) == "function" and isfile(ACCESS_FILE) then
         pcall(delfile, ACCESS_FILE)
     end
@@ -3761,7 +3810,7 @@ function Window:RequestKeyAccess(onGranted)
     gui:SetAttribute("DiscordInviteURL", SETTINGS.DiscordInviteURL)
 
     local gate = create("CanvasGroup", {
-        Name = "CodexAccessGate",
+        Name = "VORAccessGate",
         Active = true,
         Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.fromRGB(3, 1, 7),
@@ -3808,7 +3857,7 @@ function Window:RequestKeyAccess(onGranted)
     addCorner(shade, 18)
 
     local logo = create("ImageLabel", {
-        Name = "CodexLogo",
+        Name = "VORLogo",
         AnchorPoint = Vector2.new(0.5, 0),
         Position = UDim2.new(0.5, 0, 0, 19),
         Size = UDim2.fromOffset(64, 64),
@@ -3870,7 +3919,7 @@ function Window:RequestKeyAccess(onGranted)
     status.ZIndex = 904
 
     local unlockButton = create("TextButton", {
-        Name = "UnlockCodexHub",
+        Name = "UnlockVORHub",
         Position = UDim2.fromOffset(38, 258),
         Size = UDim2.new(0.54, -5, 0, 52),
         AutoButtonColor = false,
@@ -4032,7 +4081,7 @@ function Window:PlayIntro()
     local holdDuration = math.max(duration - blackDelay - fadeInDuration - fadeOutDuration, 0)
 
     local intro = create("Frame", {
-        Name = "CodexIntro",
+        Name = "VORIntro",
         Active = true,
         Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.fromRGB(3, 1, 8),
@@ -4113,7 +4162,7 @@ function Window:PlayIntro()
     }, intro)
 
     local introLogo = create("Frame", {
-        Name = "FloatingCodexLogo",
+        Name = "FloatingVORLogo",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(0.5, 0, 0.5, -180),
         Size = UDim2.fromOffset(108, 108),
@@ -4124,7 +4173,7 @@ function Window:PlayIntro()
     }, intro)
 
     local introLogoImage = create("ImageLabel", {
-        Name = "UploadedCodexLogo",
+        Name = "UploadedVORLogo",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
         Size = UDim2.fromScale(1, 1),
@@ -7094,7 +7143,7 @@ local visualState = {outline = false, aura = false, trail = false, glow = false,
 local visualConnections = {}
 
 local function markVisual(object)
-    object:SetAttribute("CodexReviveVisual", true)
+    object:SetAttribute("VorReviveVisual", true)
     object:SetAttribute("VorReviveVisual", true)
     return object
 end
@@ -7700,12 +7749,13 @@ local function applyVorNameplate()
     local changed = false
     for _, descendant in ipairs(nameplateRoot:GetDescendants()) do
         if descendant:IsA("TextLabel") then
-            local managed = descendant:GetAttribute("CodexNameplateManaged") == true
+            local managed = descendant:GetAttribute("VORNameplateManaged") == true
+                or descendant:GetAttribute("CodexNameplateManaged") == true
             local isPlayerName = descendant.Text == LocalPlayer.Name or descendant.Text == LocalPlayer.DisplayName
             if managed or isPlayerName then
                 if not managed then
-                    descendant:SetAttribute("CodexOriginalNameplateText", descendant.Text)
-                    descendant:SetAttribute("CodexNameplateManaged", true)
+                    descendant:SetAttribute("VOROriginalNameplateText", descendant.Text)
+                    descendant:SetAttribute("VORNameplateManaged", true)
                 end
                 if descendant.Text ~= "VOR" then
                     descendant.Text = "VOR"
@@ -7724,8 +7774,16 @@ local function restoreVorNameplate()
         return
     end
     for _, descendant in ipairs(worldGui:GetDescendants()) do
-        if descendant:IsA("TextLabel") and descendant:GetAttribute("CodexNameplateManaged") == true then
-            descendant.Text = tostring(descendant:GetAttribute("CodexOriginalNameplateText") or LocalPlayer.DisplayName)
+        if descendant:IsA("TextLabel")
+            and (descendant:GetAttribute("VORNameplateManaged") == true
+                or descendant:GetAttribute("CodexNameplateManaged") == true) then
+            descendant.Text = tostring(
+                descendant:GetAttribute("VOROriginalNameplateText")
+                or descendant:GetAttribute("CodexOriginalNameplateText")
+                or LocalPlayer.DisplayName
+            )
+            descendant:SetAttribute("VOROriginalNameplateText", nil)
+            descendant:SetAttribute("VORNameplateManaged", nil)
             descendant:SetAttribute("CodexOriginalNameplateText", nil)
             descendant:SetAttribute("CodexNameplateManaged", nil)
         end
@@ -9372,19 +9430,19 @@ local function resolveShotMeter()
     shootingGui = candidate
     shootingBar = bar
 
-    meterScaleObject = shootingGui:FindFirstChild("CodexMeterScale")
+    meterScaleObject = shootingGui:FindFirstChild("VORMeterScale")
     if not meterScaleObject then
         meterScaleObject = create("UIScale", {
-            Name = "CodexMeterScale",
+            Name = "VORMeterScale",
             Scale = basketballState.MeterScale,
         }, shootingGui)
     end
     meterScaleObject.Scale = basketballState.MeterScale
 
-    releaseGuide = shootingGui:FindFirstChild("CodexReleaseGuide")
+    releaseGuide = shootingGui:FindFirstChild("VORReleaseGuide")
     if not releaseGuide then
         releaseGuide = create("Frame", {
-            Name = "CodexReleaseGuide",
+            Name = "VORReleaseGuide",
             Size = UDim2.new(1, 8, 0, 3),
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.new(0.5, 0, 1 - basketballState.Calibration, 0),
@@ -9520,7 +9578,7 @@ local function updateCourtVision()
         highlightedBall = ball
         if ball then
             ballHighlight = create("Highlight", {
-                Name = "CodexBasketballVision",
+                Name = "VORBasketballVision",
                 Adornee = ball,
                 FillColor = Color3.fromRGB(76, 224, 255),
                 FillTransparency = 0.32,
@@ -9537,7 +9595,7 @@ local function updateCourtVision()
         highlightedOpponent = opponentCharacter
         if opponentCharacter then
             opponentHighlight = create("Highlight", {
-                Name = "CodexOpponentVision",
+                Name = "VOROpponentVision",
                 Adornee = opponentCharacter,
                 FillColor = Color3.fromRGB(255, 92, 118),
                 FillTransparency = 0.68,
@@ -10421,7 +10479,7 @@ gui:SetAttribute("BasketballExploitsDecal", CATEGORY_DECALS.Exploits)
 end
 
 local function buildAnimeExpeditionsFeatures()
-    local loaded, moduleOrError = pcall(loadCodexGameModule, "anime_expeditions.lua")
+    local loaded, moduleOrError = pcall(loadVORGameModule, "anime_expeditions.lua")
     if not loaded then
         local HomePage = Window:AddPage("Home")
         local errorSection = HomePage:AddSection("Anime Expeditions", "Left")
@@ -10460,6 +10518,7 @@ function Window:BuildBloxFruitsFeatures()
         local VirtualUser = game:GetService("VirtualUser")
         local Lighting = game:GetService("Lighting")
         local HttpService = game:GetService("HttpService")
+        local CollectionService = game:GetService("CollectionService")
         local LocalPlayer = Players.LocalPlayer
 
         local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage({TextOnly = true})
@@ -10502,9 +10561,27 @@ function Window:BuildBloxFruitsFeatures()
 
         local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
         local CommF = Remotes and Remotes:FindFirstChild("CommF_")
+        local CommE = Remotes and Remotes:FindFirstChild("CommE")
         local Redeem = Remotes and Remotes:FindFirstChild("Redeem")
+        local Net = ReplicatedStorage:FindFirstChild("Modules")
+        Net = Net and Net:FindFirstChild("Net")
+        local ClaimBerry = Net and (Net:FindFirstChild("ClaimBerry", true) or Net:FindFirstChild("RF/ClaimBerry"))
         local Quests = safeRequire(ReplicatedStorage:FindFirstChild("Quests")) or {}
         local Guide = safeRequire(ReplicatedStorage:FindFirstChild("GuideModule"))
+        local CombatUtil = safeRequire(ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("CombatUtil"))
+        local Network = safeRequire(Net)
+        local function networkEvent(name, threaded)
+            if type(Network) ~= "table" or type(Network.RemoteEvent) ~= "function" then
+                return nil
+            end
+            local ok, remote = pcall(function()
+                return Network:RemoteEvent(name, threaded)
+            end)
+            return ok and remote or nil
+        end
+        local RegisterAttackEvent = networkEvent("RegisterAttack")
+        local AURA_KILL_RANGE = 10
+        local AURA_KILL_BASE_INTERVAL = 0.05
 
         local state = {
             Alive = true,
@@ -10512,6 +10589,9 @@ function Window:BuildBloxFruitsFeatures()
             LastError = nil,
             AutoFarmLevel = false,
             AutoChest = false,
+            AutoBerry = false,
+            LastBerryClaim = 0,
+            BerriesClaimed = 0,
             AutoBoss = false,
             SelectedBoss = "None",
             AutoRaid = false,
@@ -10519,13 +10599,20 @@ function Window:BuildBloxFruitsFeatures()
             AutoBuyRaidChip = false,
             AutoAwaken = false,
             SelectedRaid = "Flame",
-            AutoAttack = false,
+            AuraKill = false,
+            FastAttack = false,
             AttackInterval = 0,
             LastAttack = 0,
-            LastInputFallback = 0,
+            LastAuraScan = 0,
+            AuraTargetCursor = 0,
+            AuraHits = 0,
+            RegisterHitClosure = nil,
+            LastRegisterHitResolve = -math.huge,
             WeaponType = "Sword",
             AutoBuso = false,
             LastBuso = 0,
+            AutoObservation = false,
+            LastObservation = 0,
             GatherEnemies = false,
             GatherRange = 5000,
             GatherDistance = 2,
@@ -10536,6 +10623,17 @@ function Window:BuildBloxFruitsFeatures()
             TweenSpeed = 300,
             FarmDistance = 7,
             FarmHeight = 0,
+            FarmOffsetX = 0,
+            FarmOffsetY = 0,
+            FarmOffsetZ = -7,
+            FarmPositionPreset = "Front",
+            RandomPosition = false,
+            RandomPositionRange = 0,
+            PositionTarget = nil,
+            PositionBasis = nil,
+            PositionJitter = Vector3.zero,
+            SafeMode = false,
+            SafeHealthPercent = 30,
             CurrentEnemyName = nil,
             CurrentQuestName = nil,
             MoveTween = nil,
@@ -10564,10 +10662,13 @@ function Window:BuildBloxFruitsFeatures()
             Noclip = false,
             InfiniteEnergy = false,
             WalkOnWater = false,
-            AntiAfk = false,
+            AntiAfk = true,
             EnemyESP = false,
             PlayerESP = false,
             FpsBoost = false,
+            LastGatherLabelText = nil,
+            EnemyHighlights = setmetatable({}, {__mode = "k"}),
+            PlayerHighlights = setmetatable({}, {__mode = "k"}),
             OriginalCollision = setmetatable({}, {__mode = "k"}),
             GraphicsBackup = setmetatable({}, {__mode = "k"}),
             WaterPlatform = nil,
@@ -10576,11 +10677,15 @@ function Window:BuildBloxFruitsFeatures()
         local statusLabel = FarmStatusSection:AddLabel("Status: Initializing...")
         local questLabel = FarmStatusSection:AddLabel("Quest: Reading live quest data...")
         local targetLabel = FarmStatusSection:AddLabel("Target: None")
+        local berryLabel = FarmStatusSection:AddLabel("Berries: Ready")
         local gatherLabel = ExploitSection:AddLabel("Gathered enemies: 0")
         ExploitSection:AddLabel("Target filter: active quest, boss, or raid target only")
         local raidLabel = SeaStatusSection:AddLabel("Raid: Idle")
         local seaLabel = SeaStatusSection:AddLabel("Sea: Detecting...")
         local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
+        local auraLabel = AttackSection:AddLabel("Aura Kill: Off | Range: 10 studs")
+        local busoLabel = AttackSection:AddLabel("Buso: Detecting...")
+        local observationLabel = AttackSection:AddLabel("Observation: Reading live state...")
 
         local function setStatus(message, success)
             state.Status = tostring(message)
@@ -10624,6 +10729,65 @@ function Window:BuildBloxFruitsFeatures()
                 return false, result
             end
             return true, result
+        end
+
+        local function busoActive()
+            local char = character()
+            if not char then
+                return false
+            end
+            if char:FindFirstChild("HasBuso") or char:FindFirstChild("Aura") then
+                return true
+            end
+            local tagged = false
+            pcall(function()
+                tagged = CollectionService:HasTag(char, "Buso") or char:HasTag("Buso")
+            end)
+            return tagged
+        end
+
+        local function refreshBusoStatus()
+            local active = busoActive()
+            gui:SetAttribute("BloxBusoActive", active)
+            if not state.AutoBuso then
+                busoLabel.Text = active and "Buso: Active | Auto: Off" or "Buso: Off | Auto: Off"
+                busoLabel.TextColor3 = active and COLORS.success or COLORS.muted
+            elseif active then
+                busoLabel.Text = "Buso: Active | Auto: On"
+                busoLabel.TextColor3 = COLORS.success
+            else
+                busoLabel.Text = "Buso: Activating..."
+                busoLabel.TextColor3 = COLORS.muted
+            end
+            return active
+        end
+
+        local function ensureBuso(force)
+            if refreshBusoStatus() then
+                return true
+            end
+            if not state.AutoBuso then
+                return false
+            end
+            local now = os.clock()
+            if not force and now - state.LastBuso < 0.75 then
+                return false
+            end
+            state.LastBuso = now
+            gui:SetAttribute("BloxLastBusoAttemptAt", now)
+            local ok, message = invoke("Buso")
+            gui:SetAttribute("BloxLastBusoRequestSucceeded", ok)
+            if not ok then
+                busoLabel.Text = "Buso: Activation failed"
+                busoLabel.TextColor3 = COLORS.error
+                setError("Auto Buso failed: " .. tostring(message))
+                return false
+            end
+            -- The server adds HasBuso/Aura and the Buso tag asynchronously.
+            -- Keep retrying until one of those authoritative markers appears.
+            busoLabel.Text = "Buso: Activation requested"
+            busoLabel.TextColor3 = COLORS.muted
+            return true
         end
 
         local function normalizeEnemyName(value)
@@ -10719,34 +10883,96 @@ function Window:BuildBloxFruitsFeatures()
             if not enemyRoot then
                 return nil
             end
-            local position = (enemyRoot.CFrame * CFrame.new(0, state.FarmHeight, -state.FarmDistance)).Position
+            -- Lock the enemy's facing basis once per target. Recomputing the
+            -- offset from a boss that constantly turns toward the player is
+            -- what caused the old circular/orbiting tween.
+            if state.PositionTarget ~= enemy or state.PositionBasis == nil then
+                state.PositionTarget = enemy
+                state.PositionBasis = enemyRoot.CFrame - enemyRoot.Position
+                local range = state.RandomPosition and math.max(0, state.RandomPositionRange) or 0
+                state.PositionJitter = range > 0 and Vector3.new(
+                    math.random(-range, range),
+                    0,
+                    math.random(-range, range)
+                ) or Vector3.zero
+            end
+            local localOffset = Vector3.new(
+                state.FarmOffsetX,
+                state.FarmOffsetY,
+                state.FarmOffsetZ
+            ) + state.PositionJitter
+            if localOffset.Magnitude < 1 then
+                localOffset = Vector3.new(0, 0, -2)
+            end
+            local worldOffset = state.PositionBasis:VectorToWorldSpace(localOffset)
+            local position = enemyRoot.Position + worldOffset
             return CFrame.lookAt(position, enemyRoot.Position)
+        end
+
+        local function healthPercent()
+            local body = humanoid()
+            if not body or body.MaxHealth <= 0 then
+                return 100
+            end
+            return (body.Health / body.MaxHealth) * 100
+        end
+
+        local function safeModeRetreat(enemy)
+            if not state.SafeMode or healthPercent() > state.SafeHealthPercent then
+                return false
+            end
+            local enemyRoot = modelRoot(enemy)
+            if enemyRoot then
+                local retreatPosition = enemyRoot.Position + Vector3.new(0, 45, 0)
+                moveTo(CFrame.lookAt(retreatPosition, enemyRoot.Position))
+            else
+                cancelMove()
+            end
+            setStatus(string.format(
+                "Safe mode: recovering at %.0f%% health",
+                healthPercent()
+            ), nil)
+            return true
+        end
+
+        local function weaponDataForTool(tool)
+            if not tool or type(CombatUtil) ~= "table" or type(CombatUtil.GetWeaponData) ~= "function" then
+                return nil
+            end
+            local weaponName = tool:GetAttribute("WeaponName") or tool.Name
+            local ok, weaponData = pcall(function()
+                return CombatUtil:GetWeaponData(weaponName)
+            end)
+            return ok and weaponData or nil
         end
 
         local function selectedTool()
             local char = character()
             local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
             local selected = string.lower(state.WeaponType)
+            local selectingFruitM1 = selected == "m1 fruit" or selected == "blox fruit"
             local fallback = nil
             for _, container in ipairs({char, backpack}) do
                 if container then
                     for _, tool in ipairs(container:GetChildren()) do
                         if tool:IsA("Tool") then
-                            fallback = fallback or tool
-                            local weaponType = tostring(tool:GetAttribute("WeaponType") or tool.ToolTip or "")
+                            local weaponData = weaponDataForTool(tool)
+                            if weaponData then
+                                fallback = fallback or tool
+                            end
+                            local weaponType = tostring((weaponData and weaponData.WeaponType) or tool:GetAttribute("WeaponType") or tool.ToolTip or "")
                             local lowered = string.lower(weaponType)
-                            if selected == "best available"
+                            if weaponData and (selected == "best available"
                                 or lowered == selected
-                                or (selected == "blox fruit" and string.find(lowered, "fruit", 1, true)) then
+                                or (selectingFruitM1 and string.find(lowered, "fruit", 1, true))) then
                                 return tool
                             end
                         end
                     end
                 end
             end
-            -- Some Blox Fruits tools expose an empty or localized ToolTip.
-            -- Falling back to the first usable tool keeps Auto Attack working
-            -- instead of silently doing nothing when metadata is unavailable.
+            -- Only fall back to a tool that the live CombatUtil recognizes.
+            -- Cosmetic Tools and accessories cannot produce a registered hit.
             return fallback
         end
 
@@ -10762,38 +10988,167 @@ function Window:BuildBloxFruitsFeatures()
             return tool
         end
 
-        local function attackOnce()
-            local now = os.clock()
-            if state.AttackInterval > 0 and now - state.LastAttack < state.AttackInterval then
+        local HIT_PART_NAMES = {
+            "ModelHitbox",
+            "UpperTorso",
+            "LowerTorso",
+            "Head",
+            "RightUpperArm",
+            "LeftUpperArm",
+            "RightUpperLeg",
+            "LeftUpperLeg",
+        }
+
+        local function enemyHitPart(enemy)
+            for _, partName in ipairs(HIT_PART_NAMES) do
+                local part = enemy:FindFirstChild(partName, true)
+                if part and part:IsA("BasePart") then
+                    return part
+                end
+            end
+            return nil
+        end
+
+        local function nearbyAuraTargets()
+            local root = rootPart()
+            local enemies = workspace:FindFirstChild("Enemies")
+            local targets = {}
+            if not root or not enemies then
+                return targets
+            end
+            for _, enemy in ipairs(enemies:GetChildren()) do
+                local enemyRoot = modelRoot(enemy)
+                local hitPart = enemyHitPart(enemy)
+                if enemyRoot and hitPart and modelAlive(enemy) then
+                    local distance = (enemyRoot.Position - root.Position).Magnitude
+                    if distance <= AURA_KILL_RANGE then
+                        table.insert(targets, {
+                            Enemy = enemy,
+                            HitPart = hitPart,
+                            Distance = distance,
+                        })
+                    end
+                end
+            end
+            table.sort(targets, function(left, right)
+                return left.Distance < right.Distance
+            end)
+            return targets
+        end
+
+        local function resolveRegisterHitClosure()
+            if type(state.RegisterHitClosure) == "function" then
+                return state.RegisterHitClosure
+            end
+            if os.clock() - state.LastRegisterHitResolve < 5 then
+                return nil
+            end
+            state.LastRegisterHitResolve = os.clock()
+            if type(CombatUtil) ~= "table"
+                or type(CombatUtil.RunHitDetection) ~= "function"
+                or type(debug) ~= "table"
+                or type(debug.getupvalue) ~= "function" then
+                return nil
+            end
+            local currentBuildFallback = nil
+            for index = 1, 16 do
+                local ok, first, second = pcall(debug.getupvalue, CombatUtil.RunHitDetection, index)
+                if not ok then
+                    break
+                end
+                -- Executor implementations return either the value alone or
+                -- the stock name/value pair. Support both shapes.
+                local value = type(second) == "function" and second or first
+                if type(value) == "function" then
+                    if index == 5 then
+                        currentBuildFallback = value
+                    end
+                    local name = ""
+                    if type(debug.info) == "function" then
+                        pcall(function()
+                            name = debug.info(value, "n")
+                        end)
+                    end
+                    if name == "registerHit" then
+                        state.RegisterHitClosure = value
+                        return value
+                    end
+                end
+            end
+            -- Live Blox Fruits currently stores registerHit at upvalue 5. The
+            -- named lookup above is preferred so updates do not depend on it.
+            state.RegisterHitClosure = currentBuildFallback
+            return currentBuildFallback
+        end
+
+        local function auraKillOnce()
+            if not state.AuraKill then
                 return false
             end
-            state.LastAttack = now
+            local now = os.clock()
+            local baseInterval = state.FastAttack and 0.035 or AURA_KILL_BASE_INTERVAL
+            local effectiveInterval = baseInterval + math.max(tonumber(state.AttackInterval) or 0, 0)
+            if now - state.LastAuraScan < effectiveInterval then
+                return false
+            end
+            state.LastAuraScan = now
+
+            local targets = nearbyAuraTargets()
+            gui:SetAttribute("BloxAuraKillTargets", #targets)
+            if #targets == 0 then
+                state.AuraTargetCursor = 0
+                return false
+            end
+
+            state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
+            local target = targets[state.AuraTargetCursor]
             local tool = equipSelectedTool()
-            if tool then
-                pcall(function()
-                    tool:Activate()
-                end)
+            local weaponData = weaponDataForTool(tool)
+            if not tool or not weaponData then
+                setError("Aura Kill could not resolve the selected combat tool")
+                return false
             end
-            -- Tool activation has no added delay. The virtual click is only a
-            -- compatibility fallback, so throttle that expensive path while
-            -- still activating the weapon every Heartbeat.
-            if now - state.LastInputFallback >= 0.08 then
-                state.LastInputFallback = now
-                pcall(function()
-                    VirtualUser:CaptureController()
-                    VirtualUser:Button1Down(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
-                    VirtualUser:Button1Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
-                end)
-                pcall(function()
-                    local VirtualInputManager = game:GetService("VirtualInputManager")
-                    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
-                    local x, y = math.floor(viewport.X * 0.5), math.floor(viewport.Y * 0.5)
-                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-                end)
+
+            if weaponData.WeaponType == "Gun" then
+                setError("Aura Kill needs a Sword, Melee, or supported M1 Fruit tool")
+                return false
             end
-            gui:SetAttribute("BloxLastAttackAt", os.clock())
-            gui:SetAttribute("BloxAttackCount", (tonumber(gui:GetAttribute("BloxAttackCount")) or 0) + 1)
+
+            local registerHit = resolveRegisterHitClosure()
+            if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                setError("Aura Kill combat registration is unavailable in this server build")
+                return false
+            end
+
+            local char = character()
+            if not char then
+                return false
+            end
+            local ok, message = pcall(function()
+                -- Register the server-authorized attack directly, then flush
+                -- one validated NPC hit. No tool activation, click injection,
+                -- character tween, or swing animation is used.
+                RegisterAttackEvent:FireServer(0)
+                registerHit(char, target.Enemy, target.HitPart, weaponData, nil)
+                registerHit(true)
+            end)
+            if not ok then
+                setError("Aura Kill hit failed: " .. tostring(message))
+                return false
+            end
+
+            state.LastAttack = now
+            state.AuraHits = state.AuraHits + 1
+            state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
+            state.AuraLastDistance = target.Distance
+            gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
+            gui:SetAttribute("BloxAuraKillLastTarget", state.CurrentEnemyName)
+            gui:SetAttribute("BloxAuraKillLastDistance", target.Distance)
+            gui:SetAttribute("BloxAuraKillLastHitAt", now)
+            gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
+            -- Preserve the old counters for existing diagnostics and profiles.
+            gui:SetAttribute("BloxLastAttackAt", now)
+            gui:SetAttribute("BloxAttackCount", state.AuraHits)
             return true
         end
 
@@ -10941,12 +11296,12 @@ function Window:BuildBloxFruitsFeatures()
             local enemy, distance = nearestEnemy(quest.EnemyName, false)
             if enemy then
                 targetLabel.Text = string.format("Target: %s | %.0f studs", normalizeEnemyName(enemy.Name), distance or 0)
+                if safeModeRetreat(enemy) then
+                    return
+                end
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
                     moveTo(targetCFrame)
-                end
-                if state.AutoAttack and distance and distance <= math.max(25, state.FarmDistance + 12) then
-                    attackOnce()
                 end
                 setStatus("Farming " .. normalizeEnemyName(enemy.Name), true)
                 return
@@ -11011,12 +11366,12 @@ function Window:BuildBloxFruitsFeatures()
             local enemy, distance = nearestEnemy(state.SelectedBoss, false)
             if enemy then
                 targetLabel.Text = string.format("Boss: %s | %.0f studs", state.SelectedBoss, distance or 0)
+                if safeModeRetreat(enemy) then
+                    return
+                end
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
                     moveTo(targetCFrame)
-                end
-                if state.AutoAttack and distance and distance <= math.max(30, state.FarmDistance + 15) then
-                    attackOnce()
                 end
                 setStatus("Farming boss " .. state.SelectedBoss, true)
                 return
@@ -11078,12 +11433,13 @@ function Window:BuildBloxFruitsFeatures()
             local enemy, distance = nearestEnemy(nil, true)
             if enemy then
                 state.CurrentEnemyName = normalizeEnemyName(enemy.Name)
+                if safeModeRetreat(enemy) then
+                    raidLabel.Text = "Raid: Safe mode recovery"
+                    return
+                end
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
                     moveTo(targetCFrame)
-                end
-                if state.AutoAttack and distance and distance <= 35 then
-                    attackOnce()
                 end
                 raidLabel.Text = "Raid: Attacking " .. normalizeEnemyName(enemy.Name)
             else
@@ -11161,13 +11517,18 @@ function Window:BuildBloxFruitsFeatures()
             end
             local best = nil
             local bestDistance = math.huge
-            for _, descendant in ipairs(workspace:GetDescendants()) do
-                if descendant:IsA("BasePart") then
-                    local name = string.lower(descendant.Name .. " " .. (descendant.Parent and descendant.Parent.Name or ""))
-                    if string.find(name, "chest", 1, true) then
-                        local distance = (descendant.Position - root.Position).Magnitude
+            -- Blox Fruits registers live server chests with this tag. Reading
+            -- that registry avoids a full Workspace descendant scan every
+            -- second and skips chests already marked IsDisabled.
+            for _, serverChest in ipairs(CollectionService:GetTagged("_ChestTagged")) do
+                if serverChest:IsDescendantOf(workspace) and serverChest:GetAttribute("IsDisabled") ~= true then
+                    local part = serverChest:IsA("BasePart") and serverChest
+                        or serverChest:FindFirstChild("PushBox", true)
+                        or serverChest:FindFirstChildWhichIsA("BasePart", true)
+                    if part and part:IsA("BasePart") then
+                        local distance = (part.Position - root.Position).Magnitude
                         if distance < bestDistance then
-                            best = descendant
+                            best = part
                             bestDistance = distance
                         end
                     end
@@ -11195,6 +11556,74 @@ function Window:BuildBloxFruitsFeatures()
                 end
             end
             setStatus("Collecting nearest chest", true)
+        end
+
+        local function berryTarget()
+            local root = rootPart()
+            if not root then
+                return nil
+            end
+            local best = nil
+            local bestDistance = math.huge
+            for _, streamed in ipairs(CollectionService:GetTagged("BerryBushStreamed")) do
+                local berries = streamed:IsA("Configuration") and streamed
+                    or streamed:FindFirstChild("Berries")
+                    or streamed:FindFirstChildWhichIsA("Configuration")
+                local bush = berries and berries.Parent
+                if berries and bush and bush:IsDescendantOf(workspace) then
+                    for key, berryName in pairs(berries:GetAttributes()) do
+                        if string.sub(tostring(key), 1, 12) == "_BerryCFrame" and tostring(berryName) ~= "" then
+                            local localCFrame = bush:GetAttribute(key)
+                            if typeof(localCFrame) == "CFrame" then
+                                local pivot = bush:IsA("Model") and bush:GetPivot()
+                                    or (bush:IsA("BasePart") and bush.CFrame)
+                                if pivot then
+                                    local worldCFrame = pivot * localCFrame
+                                    local distance = (worldCFrame.Position - root.Position).Magnitude
+                                    if distance < bestDistance then
+                                        bestDistance = distance
+                                        best = {
+                                            Bush = bush,
+                                            Key = key,
+                                            Name = tostring(berryName),
+                                            CFrame = worldCFrame,
+                                            Distance = distance,
+                                        }
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            return best
+        end
+
+        local function stepBerry()
+            if os.clock() - state.LastBerryClaim < 0.35 then
+                return
+            end
+            local target = berryTarget()
+            if not target then
+                berryLabel.Text = "Berries: Waiting for a streamed berry bush"
+                setStatus("Waiting for a berry to spawn", nil)
+                return
+            end
+            moveTo(target.CFrame + Vector3.new(0, 3, 0))
+            berryLabel.Text = string.format("Berry: %s | %.0f studs", target.Name, target.Distance)
+            if target.Distance <= 14 and ClaimBerry and ClaimBerry:IsA("RemoteFunction") then
+                state.LastBerryClaim = os.clock()
+                local ok, claimed = pcall(function()
+                    return ClaimBerry:InvokeServer(target.Bush.Name, target.Key)
+                end)
+                if ok and claimed ~= false then
+                    state.BerriesClaimed += 1
+                    berryLabel.Text = string.format("Berries claimed: %d | Last: %s", state.BerriesClaimed, target.Name)
+                    setStatus("Claimed " .. target.Name, true)
+                elseif not ok then
+                    setError("Berry claim failed: " .. tostring(claimed))
+                end
+            end
         end
 
         local function enabledStats()
@@ -11420,15 +11849,16 @@ function Window:BuildBloxFruitsFeatures()
             end
         end
 
-        local function clearHighlights(name)
-            for _, descendant in ipairs(workspace:GetDescendants()) do
-                if descendant:IsA("Highlight") and descendant.Name == name then
-                    descendant:Destroy()
+        local function clearHighlights(registry)
+            for highlight in pairs(registry) do
+                if highlight and highlight.Parent then
+                    highlight:Destroy()
                 end
+                registry[highlight] = nil
             end
         end
 
-        local function ensureHighlight(model, name, color)
+        local function ensureHighlight(model, name, color, registry)
             if not model or not model.Parent then
                 return
             end
@@ -11441,6 +11871,7 @@ function Window:BuildBloxFruitsFeatures()
                 highlight.OutlineTransparency = 0.08
                 highlight.Parent = model
             end
+            registry[highlight] = true
             highlight.FillColor = color
             highlight.OutlineColor = color:Lerp(Color3.new(1, 1, 1), 0.45)
         end
@@ -11449,20 +11880,20 @@ function Window:BuildBloxFruitsFeatures()
             if state.EnemyESP then
                 for _, enemy in ipairs(loadedEnemies()) do
                     if modelAlive(enemy) then
-                        ensureHighlight(enemy, "VOR_EnemyESP", COLORS.error)
+                        ensureHighlight(enemy, "VOR_EnemyESP", COLORS.error, state.EnemyHighlights)
                     end
                 end
             else
-                clearHighlights("VOR_EnemyESP")
+                clearHighlights(state.EnemyHighlights)
             end
             if state.PlayerESP then
                 for _, player in ipairs(Players:GetPlayers()) do
                     if player ~= LocalPlayer and player.Character then
-                        ensureHighlight(player.Character, "VOR_PlayerESP", COLORS.accent)
+                        ensureHighlight(player.Character, "VOR_PlayerESP", COLORS.accent, state.PlayerHighlights)
                     end
                 end
             else
-                clearHighlights("VOR_PlayerESP")
+                clearHighlights(state.PlayerHighlights)
             end
         end
 
@@ -11515,26 +11946,110 @@ function Window:BuildBloxFruitsFeatures()
                 state.TweenSpeed = value
             end,
         })
-        FarmSettingsSection:AddSlider({
-            Name = "Distance From Enemy",
-            Flag = "blox_farm_distance",
-            Min = 2,
-            Max = 25,
-            Step = 1,
-            Default = 7,
+        local farmXSlider, farmYSlider, farmZSlider
+        FarmSettingsSection:AddDropdown({
+            Name = "Position Preset",
+            Flag = "blox_farm_position_preset",
+            Options = {"Front", "Behind", "Above", "Below", "Left", "Right", "Custom"},
+            Default = "Front",
             Callback = function(value)
-                state.FarmDistance = value
+                local preset = tostring(value or "Custom")
+                state.FarmPositionPreset = preset
+                local offsets = {
+                    Front = Vector3.new(0, 0, -7),
+                    Behind = Vector3.new(0, 0, 7),
+                    Above = Vector3.new(0, 8, -2),
+                    Below = Vector3.new(0, -5, -2),
+                    Left = Vector3.new(-7, 0, 0),
+                    Right = Vector3.new(7, 0, 0),
+                }
+                local offset = offsets[preset]
+                if offset then
+                    if farmXSlider then farmXSlider:Set(offset.X) else state.FarmOffsetX = offset.X end
+                    if farmYSlider then farmYSlider:Set(offset.Y) else state.FarmOffsetY = offset.Y end
+                    if farmZSlider then farmZSlider:Set(offset.Z) else state.FarmOffsetZ = offset.Z end
+                end
+                state.PositionTarget = nil
             end,
         })
-        FarmSettingsSection:AddSlider({
-            Name = "Height From Enemy",
-            Flag = "blox_farm_height",
-            Min = -10,
-            Max = 35,
+        farmXSlider = FarmSettingsSection:AddSlider({
+            Name = "Position X (Left / Right)",
+            Flag = "blox_farm_x",
+            Min = -30,
+            Max = 30,
             Step = 1,
             Default = 0,
             Callback = function(value)
+                state.FarmOffsetX = value
+                state.PositionTarget = nil
+            end,
+        })
+        farmYSlider = FarmSettingsSection:AddSlider({
+            Name = "Position Y (Down / Up)",
+            Flag = "blox_farm_y",
+            Min = -20,
+            Max = 40,
+            Step = 1,
+            Default = 0,
+            Callback = function(value)
+                state.FarmOffsetY = value
                 state.FarmHeight = value
+                state.PositionTarget = nil
+            end,
+        })
+        farmZSlider = FarmSettingsSection:AddSlider({
+            Name = "Position Z (Front / Back)",
+            Flag = "blox_farm_z",
+            Min = -30,
+            Max = 30,
+            Step = 1,
+            Default = -7,
+            Callback = function(value)
+                state.FarmOffsetZ = value
+                state.FarmDistance = math.abs(value)
+                state.PositionTarget = nil
+            end,
+        })
+        FarmSettingsSection:AddToggle({
+            Name = "Random Position Per Target",
+            Description = "Chooses one stable offset per enemy instead of orbiting every frame",
+            Flag = "blox_random_position",
+            Default = false,
+            Callback = function(enabled)
+                state.RandomPosition = enabled
+                state.PositionTarget = nil
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Random Position Range",
+            Flag = "blox_random_position_range",
+            Min = 0,
+            Max = 20,
+            Step = 1,
+            Default = 0,
+            Callback = function(value)
+                state.RandomPositionRange = value
+                state.PositionTarget = nil
+            end,
+        })
+        FarmSettingsSection:AddToggle({
+            Name = "Safe Mode",
+            Description = "Retreats above the target until health recovers past the selected threshold",
+            Flag = "blox_safe_mode",
+            Default = false,
+            Callback = function(enabled)
+                state.SafeMode = enabled
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Safe Mode Health %",
+            Flag = "blox_safe_health",
+            Min = 5,
+            Max = 95,
+            Step = 1,
+            Default = 30,
+            Callback = function(value)
+                state.SafeHealthPercent = value
             end,
         })
         FarmSettingsSection:AddToggle({
@@ -11607,19 +12122,42 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
         AttackSection:AddToggle({
-            Name = "Auto Attack",
-            Description = "Activates the equipped weapon while an automation target is close",
+            Name = "Aura Kill",
+            Description = "Rapid silent tool hits on living NPCs in workspace.Enemies within 10 studs; never moves or swings your character",
+            -- Keep the legacy flag so profiles that enabled Auto Attack now
+            -- enable its Aura Kill replacement instead of losing the setting.
             Flag = "blox_auto_attack",
             Default = false,
             Callback = function(enabled)
-                state.AutoAttack = enabled
+                state.AuraKill = enabled
+                state.LastAttack = 0
+                state.LastAuraScan = 0
+                state.AuraTargetCursor = 0
+                if enabled then
+                    resolveRegisterHitClosure()
+                end
+                auraLabel.Text = enabled and "Aura Kill: Armed | Range: 10 studs" or "Aura Kill: Off | Range: 10 studs"
+                auraLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
+                gui:SetAttribute("BloxAuraKill", enabled)
+                gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
+                -- Compatibility for existing external status readers.
                 gui:SetAttribute("BloxAutoAttack", enabled)
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Aura Kill Turbo",
+            Description = "Uses a 35 ms silent-hit cadence instead of the normal 50 ms cadence",
+            Flag = "blox_fast_attack",
+            Default = false,
+            Callback = function(enabled)
+                state.FastAttack = enabled
+                gui:SetAttribute("BloxFastAttack", enabled)
             end,
         })
         AttackSection:AddDropdown({
             Name = "Weapon",
             Flag = "blox_weapon_type",
-            Options = {"Sword", "Melee", "Gun", "Blox Fruit", "Best Available"},
+            Options = {"Sword", "Melee", "M1 Fruit", "Best Available"},
             Default = "Sword",
             Callback = function(value)
                 state.WeaponType = tostring(value)
@@ -11627,7 +12165,7 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
         AttackSection:AddSlider({
-            Name = "Extra Attack Delay",
+            Name = "Extra Aura Delay",
             Flag = "blox_attack_interval",
             Min = 0,
             Max = 0.50,
@@ -11639,11 +12177,32 @@ function Window:BuildBloxFruitsFeatures()
         })
         AttackSection:AddToggle({
             Name = "Auto Buso",
-            Description = "Enables Aura when your character does not have it active",
+            Description = "Immediately enables Armament Buso and restores it after respawn if its live markers disappear",
             Flag = "blox_auto_buso",
             Default = false,
             Callback = function(enabled)
                 state.AutoBuso = enabled
+                state.LastBuso = -math.huge
+                if enabled then
+                    ensureBuso(true)
+                else
+                    refreshBusoStatus()
+                end
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Auto Observation (Ken)",
+            Description = "Keeps Instinct active through the verified CommE Ken controller",
+            Flag = "blox_auto_observation",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoObservation = enabled
+                state.LastObservation = 0
+                if CommE then
+                    pcall(function()
+                        CommE:FireServer("Ken", enabled)
+                    end)
+                end
             end,
         })
 
@@ -11895,7 +12454,7 @@ function Window:BuildBloxFruitsFeatures()
         PlayerStateSection:AddToggle({
             Name = "Anti-AFK / Anti-Idle",
             Flag = "blox_anti_afk",
-            Default = false,
+            Default = true,
             Callback = function(enabled)
                 state.AntiAfk = enabled
             end,
@@ -11969,12 +12528,27 @@ function Window:BuildBloxFruitsFeatures()
             end
         end))
 
+        track(LocalPlayer.CharacterAdded:Connect(function()
+            state.LastAttack = 0
+            state.LastAuraScan = 0
+            state.LastBuso = -math.huge
+            state.AuraTargetCursor = 0
+            if state.AutoBuso then
+                task.delay(0.5, function()
+                    if state.Alive and state.AutoBuso then
+                        ensureBuso(true)
+                    end
+                end)
+            end
+        end))
+
         track(RunService.Heartbeat:Connect(function()
             if not state.Alive then
                 return
             end
-            if state.AutoAttack then
-                attackOnce()
+            local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
+            if not attackBlocked and state.AuraKill then
+                auraKillOnce()
             end
             gatherStep()
             if state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
@@ -11982,7 +12556,6 @@ function Window:BuildBloxFruitsFeatures()
             end
             updateEnergy()
             updateWaterPlatform()
-            gatherLabel.Text = "Gathered enemies: " .. tostring(state.Gathered) .. " | Range: " .. tostring(state.GatherRange)
         end))
 
         track(workspace.DescendantAdded:Connect(function(descendant)
@@ -12010,26 +12583,30 @@ function Window:BuildBloxFruitsFeatures()
                         stepAutoLevel()
                     elseif state.AutoChest then
                         stepChest()
-                    elseif state.AutoAttack then
-                        local nearbyEnemy, nearbyDistance = nearestEnemy(nil, true)
-                        if nearbyEnemy and nearbyDistance then
-                            state.CurrentEnemyName = normalizeEnemyName(nearbyEnemy.Name)
-                            targetLabel.Text = string.format("Target: %s | %.0f studs", state.CurrentEnemyName, nearbyDistance)
+                    elseif state.AuraKill then
+                        local targets = nearbyAuraTargets()
+                        local target = targets[1]
+                        if target then
+                            state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
+                            targetLabel.Text = string.format("Aura target: %s | %.1f / %d studs", state.CurrentEnemyName, target.Distance, AURA_KILL_RANGE)
+                        else
+                            targetLabel.Text = "Aura target: No living NPC within 10 studs"
                         end
+                        auraLabel.Text = string.format("Aura Kill: Armed | In range: %d | Hits: %d", #targets, state.AuraHits)
+                        auraLabel.TextColor3 = #targets > 0 and COLORS.success or COLORS.muted
                     end
 
-                    if state.AutoBuso and os.clock() - state.LastBuso >= 2 then
-                        state.LastBuso = os.clock()
-                        local char = character()
-                        local hasBuso = char and char:FindFirstChild("HasBuso") ~= nil
-                        if char and not hasBuso then
-                            pcall(function()
-                                hasBuso = char:HasTag("Buso")
-                            end)
-                        end
-                        if char and not hasBuso then
-                            invoke("Buso")
-                        end
+                    if state.AutoBuso then
+                        ensureBuso(false)
+                    else
+                        refreshBusoStatus()
+                    end
+
+                    if state.AutoObservation and CommE and os.clock() - state.LastObservation >= 2 then
+                        state.LastObservation = os.clock()
+                        pcall(function()
+                            CommE:FireServer("Ken", true)
+                        end)
                     end
 
                     stepStats()
@@ -12056,9 +12633,17 @@ function Window:BuildBloxFruitsFeatures()
                         invoke("Awakener", "Awaken")
                     end
 
+                    local gatherText = "Gathered enemies: " .. tostring(state.Gathered) .. " | Range: " .. tostring(state.GatherRange)
+                    if gatherText ~= state.LastGatherLabelText then
+                        state.LastGatherLabelText = gatherText
+                        gatherLabel.Text = gatherText
+                    end
+
                     if os.clock() - lastEsp >= 1 then
                         lastEsp = os.clock()
-                        updateEsp()
+                        if state.EnemyESP or state.PlayerESP then
+                            updateEsp()
+                        end
                         local seaName = game.PlaceId == 2753915549 and "First Sea"
                             or (game.PlaceId == 4442272183 and "Second Sea")
                             or (game.PlaceId == 7449423635 and "Third Sea")
@@ -12066,6 +12651,12 @@ function Window:BuildBloxFruitsFeatures()
                             or "Blox Fruits"
                         seaLabel.Text = "Sea: " .. seaName .. " | Loaded enemies: " .. tostring(#loadedEnemies())
                         playerLabel.Text = string.format("Player: Level %d | Stat points %d", currentLevel(), currentPoints())
+                        observationLabel.Text = string.format(
+                            "Observation: %s | Dodges: %s / %s",
+                            state.AutoObservation and "Auto" or "Manual",
+                            tostring(LocalPlayer:GetAttribute("KenDodgesLeft") or "N/A"),
+                            tostring(LocalPlayer:GetAttribute("KenMaxDodges") or "N/A")
+                        )
                     end
                 end)
                 if not ok then
@@ -12082,15 +12673,21 @@ function Window:BuildBloxFruitsFeatures()
             end
             cleaned = true
             state.Alive = false
+            state.AuraKill = false
             cancelMove()
             restoreCollision()
             state.WalkOnWater = false
             updateWaterPlatform()
+            if state.AutoObservation and CommE then
+                pcall(function()
+                    CommE:FireServer("Ken", false)
+                end)
+            end
             if state.FpsBoost then
                 setFpsBoost(false)
             end
-            clearHighlights("VOR_EnemyESP")
-            clearHighlights("VOR_PlayerESP")
+            clearHighlights(state.EnemyHighlights)
+            clearHighlights(state.PlayerHighlights)
         end
 
         if gui then
@@ -12100,10 +12697,16 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxFruitsRuntimeDependency", "None")
             gui:SetAttribute("RuntimeDependency", "None")
             gui:SetAttribute("BloxFruitsEnemyGatherSource", "NativeVOR")
+            gui:SetAttribute("BloxAuraKill", false)
+            gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
+            gui:SetAttribute("BloxAuraKillTargets", 0)
+            gui:SetAttribute("BloxAuraKillHitCount", 0)
+            gui:SetAttribute("BloxAutoAttack", false)
             track(gui.Destroying:Connect(cleanup))
         end
 
         setStatus("Native Blox Fruits functions ready", true)
+        refreshBusoStatus()
         local quest = bestQuest()
         if quest then
             questLabel.Text = string.format("Quest: %s | Target: %s", quest.DisplayName, quest.EnemyName)
@@ -12425,7 +13028,9 @@ end
 
 Window:SelectPage("Home")
 -- Optional global reference for adding controls later from the same environment.
-_G.CodexHubTemplate = Window
+_G.VORHub = Window
 Window:RequestKeyAccess(function()
     Window:PlayIntro()
 end)
+gui:SetAttribute("VORBuildSeconds", os.clock() - SCRIPT_STARTED_AT)
+gui:SetAttribute("VORBuildCompleted", true)
