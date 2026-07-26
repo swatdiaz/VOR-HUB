@@ -1,16 +1,11 @@
--- VOR Hub latest-build loader.
--- Resolves the current main commit first, then downloads the immutable file for
--- that commit so GitHub's branch cache cannot serve an older hub build.
+-- VOR Hub audited-release loader.
+-- This deliberately does not follow `main`. Updating the repository cannot
+-- change what this loader executes until its pinned release is reviewed and
+-- this file is intentionally updated.
 
-local HttpService = game:GetService("HttpService")
-local repository = "swatdiaz/VOR-HUB"
-local commitApi = "https://api.github.com/repos/" .. repository .. "/commits/main"
-
-local metadata = HttpService:JSONDecode(game:HttpGet(commitApi))
-local commit = metadata and metadata.sha
-assert(type(commit) == "string" and #commit >= 7, "VOR Hub could not resolve the latest GitHub commit")
-
-local scriptUrl = "https://raw.githubusercontent.com/" .. repository .. "/" .. commit .. "/VOR_HUB.lua"
+local auditedRelease = "90cfa60d2bbc8f9ab7ff577fe39af2e4a70a0328"
+local scriptUrl = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/"
+    .. auditedRelease .. "/VOR_HUB.lua"
 local source = game:HttpGet(scriptUrl)
 local chunk, compileError = loadstring(source)
 assert(chunk, "VOR Hub compile failed: " .. tostring(compileError))
