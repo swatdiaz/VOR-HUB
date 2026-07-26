@@ -16,6 +16,8 @@ return function(context)
     local RunService = game:GetService("RunService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
+    local environment = type(getgenv) == "function" and getgenv() or _G
+    local resumeAllAutomation = environment.VORDungeonResumeAll == true
 
     local DungeonPage = Window:AddPage("Dungeons")
     local PlayerPage = Window:AddPage("Player")
@@ -33,11 +35,11 @@ return function(context)
 
     local state = {
         Alive = true,
-        AutoJoin = false,
-        AutoStart = false,
-        AutoLeave = false,
-        AutoFarm = false,
-        AutoSelectCards = false,
+        AutoJoin = resumeAllAutomation,
+        AutoStart = resumeAllAutomation,
+        AutoLeave = resumeAllAutomation,
+        AutoFarm = resumeAllAutomation,
+        AutoSelectCards = resumeAllAutomation,
         Difficulty = "Normal",
         MinimumPlayers = 1,
         TweenSpeed = 315,
@@ -55,8 +57,14 @@ return function(context)
         Status = "Initializing dungeon adapter...",
         LastError = nil,
         CurrentTarget = nil,
+        CurrentTargetKind = "None",
         CurrentTargetName = "None",
         CurrentTargetDistance = nil,
+        CurrentFloorId = 0,
+        FloorExitTarget = nil,
+        LastExitTouch = 0,
+        ExitTouches = 0,
+        ActiveShrineCount = 0,
         CurrentPad = nil,
         InRun = false,
         WasInRun = false,
@@ -97,6 +105,8 @@ return function(context)
         ResultsRemote = nil,
         BuffRemote = nil,
         CurrentBuffCount = 0,
+        TeleportResumeQueued = false,
+        TeleportQueueMethod = "Unavailable",
         PlayerEspObjects = {},
         PlayerEspLastTextUpdate = 0,
     }
@@ -124,6 +134,54 @@ return function(context)
     local function setError(message)
         state.LastError = tostring(message or "Unknown error")
         setStatus(state.LastError, false)
+    end
+
+    local function queueFunction()
+        if type(queue_on_teleport) == "function" then
+            return queue_on_teleport, "queue_on_teleport"
+        end
+        if type(queueonteleport) == "function" then
+            return queueonteleport, "queueonteleport"
+        end
+        if type(syn) == "table" and type(syn.queue_on_teleport) == "function" then
+            return syn.queue_on_teleport, "syn.queue_on_teleport"
+        end
+        if type(fluxus) == "table" and type(fluxus.queue_on_teleport) == "function" then
+            return fluxus.queue_on_teleport, "fluxus.queue_on_teleport"
+        end
+        return nil, "Unavailable"
+    end
+
+    local function queueDungeonResume()
+        if state.TeleportResumeQueued or environment.VORDungeonTeleportQueuedJob == game.JobId then
+            state.TeleportResumeQueued = true
+            return true
+        end
+        local queue, method = queueFunction()
+        state.TeleportQueueMethod = method
+        if type(queue) ~= "function" then
+            return false, "This executor does not expose a teleport queue"
+        end
+
+        local loaderUrl = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua?teleport="
+            .. tostring(game.JobId):gsub("[^%w%-]", "")
+        local payload = table.concat({
+            "repeat task.wait() until game:IsLoaded()",
+            "task.wait(1)",
+            "getgenv().VORDungeonResumeAll = true",
+            "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
+        }, "\n")
+        local ok, message = pcall(queue, payload)
+        if not ok then
+            return false, tostring(message)
+        end
+        state.TeleportResumeQueued = true
+        environment.VORDungeonTeleportQueuedJob = game.JobId
+        if gui then
+            gui:SetAttribute("BloxDungeonTeleportResumeQueued", true)
+            gui:SetAttribute("BloxDungeonTeleportQueueMethod", method)
+        end
+        return true
     end
 
     local function character()
@@ -221,6 +279,11 @@ return function(context)
             and not isPlayerCharacterOrClone(model)
     end
 
+    local currentPlayerFloorId = nil
+    local floorContainsPosition = nil
+    local setCharacterNoclip = nil
+    local stepRootToward = nil
+
     local function livingEnemies(origin)
         local enemiesFolder = workspace:FindFirstChild("Enemies")
         local enemies = {}
@@ -228,18 +291,30 @@ return function(context)
             return enemies
         end
         origin = origin or (rootPart() and rootPart().Position)
+        local floorId = currentPlayerFloorId and currentPlayerFloorId() or nil
         for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-            if validEnemy(enemy) then
+            if validEnemy(enemy) and (
+                not floorId
+                or not floorContainsPosition
+                or floorContainsPosition(floorId, modelRoot(enemy).Position)
+            ) then
                 local enemyRoot = modelRoot(enemy)
                 table.insert(enemies, {
                     Enemy = enemy,
                     Root = enemyRoot,
                     HitPart = enemyHitPart(enemy),
                     Distance = origin and (enemyRoot.Position - origin).Magnitude or 0,
+                    ObjectivePriority = (
+                        normalizeName(enemy.Name):find("shrine", 1, true)
+                        or normalizeName(enemy.Name):find("mark", 1, true)
+                    ) and 0 or 1,
                 })
             end
         end
         table.sort(enemies, function(left, right)
+            if left.ObjectivePriority ~= right.ObjectivePriority then
+                return left.ObjectivePriority < right.ObjectivePriority
+            end
             return left.Distance < right.Distance
         end)
         return enemies
@@ -272,11 +347,151 @@ return function(context)
         return nil
     end
 
+    local function currentExplorerFolder()
+        local dungeon = currentDungeonReplication()
+        local explorers = dungeon and dungeon:FindFirstChild("Explorers")
+        if not explorers then
+            return nil
+        end
+        for _, explorer in ipairs(explorers:GetChildren()) do
+            if tostring(explorer:GetAttribute("PlayerName") or "") == LocalPlayer.Name then
+                return explorer
+            end
+        end
+        return nil
+    end
+
+    currentPlayerFloorId = function()
+        local explorer = currentExplorerFolder()
+        local floorId = tonumber(explorer and explorer:GetAttribute("FloorId"))
+        if not floorId then
+            local dungeon = currentDungeonReplication()
+            floorId = tonumber(dungeon and dungeon:GetAttribute("CurrentExploredLevel"))
+        end
+        state.CurrentFloorId = floorId or 0
+        return floorId
+    end
+
+    local function dungeonFloorModel(floorId)
+        local map = workspace:FindFirstChild("Map")
+        local dungeon = map and map:FindFirstChild("Dungeon")
+        return dungeon and floorId and dungeon:FindFirstChild(tostring(floorId)) or nil
+    end
+
+    floorContainsPosition = function(floorId, position)
+        local floorModel = dungeonFloorModel(floorId)
+        if not floorModel or typeof(position) ~= "Vector3" then
+            return true
+        end
+        local ok, boundingCFrame, boundingSize = pcall(floorModel.GetBoundingBox, floorModel)
+        if not ok or not boundingCFrame or not boundingSize then
+            return true
+        end
+        local relative = boundingCFrame:PointToObjectSpace(position)
+        return math.abs(relative.X) <= boundingSize.X / 2 + 80
+            and math.abs(relative.Y) <= boundingSize.Y / 2 + 80
+            and math.abs(relative.Z) <= boundingSize.Z / 2 + 80
+    end
+
+    local function activeShrines()
+        local shrines = {}
+        local floorId = currentPlayerFloorId()
+        if floorId ~= 10 then
+            state.ActiveShrineCount = 0
+            return shrines
+        end
+        local floorModel = dungeonFloorModel(10)
+        local props = floorModel and floorModel:FindFirstChild("Props")
+        local root = rootPart()
+        if not props then
+            state.ActiveShrineCount = 0
+            return shrines
+        end
+        for _, shrine in ipairs(props:GetChildren()) do
+            if shrine.Name == "Shrine" and shrine:GetAttribute("KitsuneMarkActive") == true then
+                local shrineRoot = shrine:FindFirstChild("NeonShrinePart", true) or modelRoot(shrine)
+                if shrineRoot and shrineRoot:IsA("BasePart") then
+                    table.insert(shrines, {
+                        Enemy = shrine,
+                        Root = shrineRoot,
+                        HitPart = shrineRoot,
+                        Distance = root and (shrineRoot.Position - root.Position).Magnitude or 0,
+                        IsShrine = true,
+                    })
+                end
+            end
+        end
+        table.sort(shrines, function(left, right)
+            return left.Distance < right.Distance
+        end)
+        state.ActiveShrineCount = #shrines
+        return shrines
+    end
+
+    local function validFarmTarget(model)
+        if validEnemy(model) then
+            return true
+        end
+        return model ~= nil
+            and model.Parent ~= nil
+            and model.Name == "Shrine"
+            and model:GetAttribute("KitsuneMarkActive") == true
+    end
+
+    local function currentFloorExit()
+        local floorId = currentPlayerFloorId()
+        local floorModel = dungeonFloorModel(floorId)
+        local exitModel = floorModel and floorModel:FindFirstChild("ExitTeleporter")
+        local exitRoot = exitModel and exitModel:FindFirstChild("Root", true)
+        if exitRoot and exitRoot:IsA("BasePart")
+            and exitRoot:FindFirstChildOfClass("TouchTransmitter") then
+            return exitRoot, floorId
+        end
+        return nil, floorId
+    end
+
+    local function stepIntoCurrentFloorExit(deltaTime)
+        local exitRoot, floorId = currentFloorExit()
+        local root = rootPart()
+        if not exitRoot or not root then
+            state.FloorExitTarget = nil
+            return false
+        end
+        state.FloorExitTarget = exitRoot
+        setCharacterNoclip(true)
+        local lookDirection = exitRoot.CFrame.LookVector
+        if lookDirection.Magnitude < 0.05 then
+            lookDirection = Vector3.new(0, 0, -1)
+        end
+        local goal = CFrame.lookAt(exitRoot.Position, exitRoot.Position + lookDirection)
+        local reached, distance = stepRootToward(goal, state.TweenSpeed, deltaTime)
+        state.CurrentTargetKind = "Floor Exit"
+        state.CurrentTargetName = "Floor " .. tostring(floorId) .. " unlocked exit"
+        state.CurrentTargetDistance = distance
+        if reached or distance <= 4 then
+            root.CFrame = goal
+            root.AssemblyLinearVelocity = Vector3.zero
+            if os.clock() - state.LastExitTouch >= 0.45 then
+                state.LastExitTouch = os.clock()
+                state.ExitTouches += 1
+                if type(firetouchinterest) == "function" then
+                    pcall(firetouchinterest, root, exitRoot, 0)
+                    task.delay(0.05, function()
+                        if root.Parent and exitRoot.Parent then
+                            pcall(firetouchinterest, root, exitRoot, 1)
+                        end
+                    end)
+                end
+            end
+        end
+        return true
+    end
+
     local function dungeonRunActive()
         return currentDungeonReplication() ~= nil
     end
 
-    local function setCharacterNoclip(enabled)
+    setCharacterNoclip = function(enabled)
         local char = character()
         if enabled and char then
             for _, descendant in ipairs(char:GetDescendants()) do
@@ -311,7 +526,7 @@ return function(context)
         state.OriginalAutoRotate = nil
     end
 
-    local function stepRootToward(goalCFrame, speed, deltaTime)
+    stepRootToward = function(goalCFrame, speed, deltaTime)
         local root = rootPart()
         if not root then
             return false, math.huge
@@ -562,7 +777,9 @@ return function(context)
         if not root then
             return targets
         end
-        for _, candidate in ipairs(livingEnemies(root.Position)) do
+        local shrineTargets = activeShrines()
+        local candidates = #shrineTargets > 0 and shrineTargets or livingEnemies(root.Position)
+        for _, candidate in ipairs(candidates) do
             if candidate.Distance <= 38 then
                 table.insert(targets, candidate)
                 if #targets >= maximum then
@@ -712,23 +929,36 @@ return function(context)
         local root = rootPart()
         if not root then
             state.CurrentTarget = nil
+            state.CurrentTargetKind = "None"
             return nil
         end
-        if validEnemy(state.CurrentTarget) then
+        local shrineTargets = activeShrines()
+        if #shrineTargets > 0 then
+            state.CurrentTarget = shrineTargets[1].Enemy
+            state.CurrentTargetKind = "Shrine"
+            return state.CurrentTarget
+        end
+        if validFarmTarget(state.CurrentTarget) then
             local currentRoot = modelRoot(state.CurrentTarget)
-            if currentRoot and (currentRoot.Position - root.Position).Magnitude <= math.max(state.MagnetRange, 650) then
+            local floorId = currentPlayerFloorId()
+            if currentRoot
+                and floorContainsPosition(floorId, currentRoot.Position)
+                and (currentRoot.Position - root.Position).Magnitude <= math.max(state.MagnetRange, 650) then
                 return state.CurrentTarget
             end
         end
         local enemies = livingEnemies(root.Position)
         state.CurrentTarget = enemies[1] and enemies[1].Enemy or nil
+        state.CurrentTargetKind = state.CurrentTarget and "Enemy" or "None"
         state.PositionIndex = 3
         state.NextPositionChange = 0
         return state.CurrentTarget
     end
 
     local function desiredFarmCFrame(target)
-        local targetRoot = modelRoot(target)
+        local targetRoot = target and target.Name == "Shrine"
+            and (target:FindFirstChild("NeonShrinePart", true) or modelRoot(target))
+            or modelRoot(target)
         local root = rootPart()
         if not targetRoot or not root then
             return nil
@@ -778,7 +1008,8 @@ return function(context)
     end
 
     local function applyDungeonMagnet()
-        if not state.AutoFarm or not state.AutoMagnet or not validEnemy(state.CurrentTarget) then
+        if not state.AutoFarm or not state.AutoMagnet or not validEnemy(state.CurrentTarget)
+            or state.ActiveShrineCount > 0 then
             restoreEnemyCollision()
             return
         end
@@ -1019,11 +1250,11 @@ return function(context)
         ["None"] = nil,
         ["Fruit"] = "Fruit",
         ["Fruit M1 Speed"] = "FruitTAPCooldown",
-        ["All Cooldowns"] = "AllCooldown",
-        ["Fruit Cooldowns"] = "FruitCooldown",
+        ["All Cooldowns"] = {"AllCooldown", "AllVCooldown"},
+        ["Fruit Cooldowns"] = {"FruitCooldown", "FruitVCooldown"},
         ["HYPER! (M1 Speed)"] = "AttackSpeedMultiplier",
         ["Sword"] = "Sword",
-        ["Sword Cooldowns"] = "SwordCooldown",
+        ["Sword Cooldowns"] = {"SwordCooldown", "SwordVCooldown"},
         ["Lifesteal"] = "Lifesteal",
         ["Armor"] = "Armor",
         ["Fortress"] = "Fortress",
@@ -1086,10 +1317,13 @@ return function(context)
         state.LastCardOffers = #offeredNames > 0 and table.concat(offeredNames, " / ") or "No card names"
 
         for index = 1, #state.Priority do
-            local key = CARD_LABEL_TO_KEY[state.Priority[index]]
-            if key and byName[key] then
-                state.LastCardChoice = state.Priority[index]
-                return byName[key], key
+            local keySpec = CARD_LABEL_TO_KEY[state.Priority[index]]
+            local keys = type(keySpec) == "table" and keySpec or {keySpec}
+            for _, key in ipairs(keys) do
+                if key and byName[key] then
+                    state.LastCardChoice = state.Priority[index]
+                    return byName[key], key
+                end
             end
         end
         if #offeredNames > 0 then
@@ -1180,16 +1414,34 @@ return function(context)
 
         for priorityIndex = 1, #state.Priority do
             local wantedLabel = state.Priority[priorityIndex]
-            local wantedKey = CARD_LABEL_TO_KEY[wantedLabel]
-            if wantedKey then
+            local wantedKeySpec = CARD_LABEL_TO_KEY[wantedLabel]
+            local wantedKeys = type(wantedKeySpec) == "table" and wantedKeySpec or {wantedKeySpec}
+            if wantedKeySpec then
                 for _, button in ipairs(playerGui:GetDescendants()) do
-                    if button:IsA("GuiButton") and button.Visible then
+                    local fullyVisible = button:IsA("GuiButton") and button.Visible
+                    local ancestor = button.Parent
+                    while fullyVisible and ancestor and ancestor ~= playerGui do
+                        if ancestor:IsA("GuiObject") and not ancestor.Visible then
+                            fullyVisible = false
+                        elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
+                            fullyVisible = false
+                        end
+                        ancestor = ancestor.Parent
+                    end
+                    if button:IsA("GuiButton") and fullyVisible then
                         local matched = false
                         for _, textObject in ipairs(button:GetDescendants()) do
-                            if (textObject:IsA("TextLabel") or textObject:IsA("TextButton")) then
+                            if (textObject:IsA("TextLabel") or textObject:IsA("TextButton"))
+                                and textObject.Name == "DisplayName" then
                                 local text = string.lower(tostring(textObject.Text or ""))
-                                if text == string.lower(wantedLabel)
-                                    or text == string.lower(wantedKey) then
+                                local keyMatched = false
+                                for _, wantedKey in ipairs(wantedKeys) do
+                                    if wantedKey and text == string.lower(wantedKey) then
+                                        keyMatched = true
+                                        break
+                                    end
+                                end
+                                if text == string.lower(wantedLabel) or keyMatched then
                                     matched = true
                                     break
                                 end
@@ -1199,11 +1451,20 @@ return function(context)
                             state.LastGuiCardClickAt = os.clock()
                             state.LastCardChoice = wantedLabel
                             cardLabel.Text = "Cards: Chose " .. wantedLabel .. " (UI fallback)"
-                            pcall(function()
-                                button:Activate()
-                            end)
-                            if type(firesignal) == "function" then
-                                pcall(firesignal, button.MouseButton1Click)
+                            local firedConnection = false
+                            if type(getconnections) == "function" then
+                                local ok, connections = pcall(getconnections, button.Activated)
+                                if ok then
+                                    for _, connection in ipairs(connections) do
+                                        local fired = pcall(function()
+                                            connection:Fire()
+                                        end)
+                                        firedConnection = firedConnection or fired
+                                    end
+                                end
+                            end
+                            if not firedConnection and type(firesignal) == "function" then
+                                pcall(firesignal, button.Activated)
                             end
                             return true
                         end
@@ -1479,9 +1740,12 @@ return function(context)
     AutomationSection:AddToggle({
         Name = "Auto Join Dungeon",
         Flag = "blox_dungeon_auto_join",
-        Default = false,
+        Default = state.AutoJoin,
         Callback = function(enabled)
             state.AutoJoin = enabled
+            if enabled then
+                queueDungeonResume()
+            end
             if not enabled then
                 state.CurrentPad = nil
             end
@@ -1490,17 +1754,26 @@ return function(context)
     AutomationSection:AddToggle({
         Name = "Auto Start Dungeon",
         Flag = "blox_dungeon_auto_start",
-        Default = false,
+        Default = state.AutoStart,
         Callback = function(enabled)
             state.AutoStart = enabled
+            if enabled then
+                local queued, message = queueDungeonResume()
+                if not queued then
+                    state.LastError = "Teleport resume: " .. tostring(message)
+                end
+            end
         end,
     })
     AutomationSection:AddToggle({
         Name = "Auto Leave Dungeon",
         Flag = "blox_dungeon_auto_leave",
-        Default = false,
+        Default = state.AutoLeave,
         Callback = function(enabled)
             state.AutoLeave = enabled
+            if enabled then
+                queueDungeonResume()
+            end
             if enabled and state.RunFinished then
                 local ok, message = returnToHub()
                 setStatus(message, ok)
@@ -1511,9 +1784,15 @@ return function(context)
         Name = "Auto Farm Dungeon",
         Description = "Smooth cardinal farm with silent Sword + Fruit M1",
         Flag = "blox_dungeon_auto_farm",
-        Default = false,
+        Default = state.AutoFarm,
         Callback = function(enabled)
             state.AutoFarm = enabled
+            if enabled then
+                local queued, message = queueDungeonResume()
+                if not queued then
+                    state.LastError = "Teleport resume: " .. tostring(message)
+                end
+            end
             state.CurrentTarget = nil
             state.NextPositionChange = 0
             if not enabled and not state.ManualNoclip then
@@ -1527,7 +1806,7 @@ return function(context)
         Name = "Auto Select Cards",
         Description = "Uses the ordered priority list below",
         Flag = "blox_dungeon_auto_cards",
-        Default = false,
+        Default = state.AutoSelectCards,
         Callback = function(enabled)
             state.AutoSelectCards = enabled
             if enabled then
@@ -1789,13 +2068,21 @@ return function(context)
                 setCharacterNoclip(true)
                 stepRootToward(goal, state.TweenSpeed, deltaTime)
                 movementActive = true
-                local targetRoot = modelRoot(target)
+                local targetRoot = target.Name == "Shrine"
+                    and (target:FindFirstChild("NeonShrinePart", true) or modelRoot(target))
+                    or modelRoot(target)
                 local root = rootPart()
-                state.CurrentTargetName = target.Name
+                state.CurrentTargetName = state.CurrentTargetKind == "Shrine"
+                    and "Kitsune Shrine (boss paused)"
+                    or target.Name
                 state.CurrentTargetDistance = targetRoot and root and (targetRoot.Position - root.Position).Magnitude or nil
             else
-                state.CurrentTargetName = "Waiting for next wave"
-                state.CurrentTargetDistance = nil
+                movementActive = stepIntoCurrentFloorExit(deltaTime)
+                if not movementActive then
+                    state.CurrentTargetKind = "Waiting"
+                    state.CurrentTargetName = "Waiting for next floor"
+                    state.CurrentTargetDistance = nil
+                end
             end
             applyDungeonMagnet()
         else
@@ -1824,7 +2111,7 @@ return function(context)
 
     task.spawn(function()
         while state.Alive do
-            if state.AutoFarm and dungeonRunActive() and validEnemy(state.CurrentTarget) then
+            if state.AutoFarm and dungeonRunActive() and validFarmTarget(state.CurrentTarget) then
                 if ensureBuso() then
                     local now = os.clock()
                     if not state.SwordBusy and now - state.LastSwordAttack >= 0.13 then
@@ -1951,5 +2238,11 @@ return function(context)
 
     bindDungeonRemotes()
     ensureBuso()
-    setStatus("Blox Fruits Dungeon module ready", true)
+    if resumeAllAutomation then
+        queueDungeonResume()
+        installCardHook()
+        setStatus("Dungeon automation resumed after teleport", true)
+    else
+        setStatus("Blox Fruits Dungeon module ready", true)
+    end
 end
