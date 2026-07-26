@@ -5,10 +5,11 @@ GitHub-backed source for VOR Hub.
 ## Loader
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/VOR_HUB.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua"))()
 ```
 
-The loader URL stays the same when `VOR_HUB.lua` is updated on the `main` branch.
+`loader.lua` resolves the latest `main` commit and then downloads the immutable
+commit-pinned `VOR_HUB.lua`, avoiding Roblox/GitHub's stale branch-file cache.
 
 ## Files
 
