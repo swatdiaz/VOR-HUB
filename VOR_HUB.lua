@@ -58,6 +58,7 @@ local SETTINGS = {
     -- Large games such as Blox Fruits can expose hundreds of controls at once;
     -- a clean flat row treatment keeps the menu responsive when it opens.
     LightweightRendering = true,
+    UIAnimationRate = 240,
     SnowEnabled = true,
     -- Keep the animated background lightweight. The old 52-label storm created
     -- 52 concurrent tweens (plus 52 glow images) whenever the hub opened.
@@ -2176,19 +2177,17 @@ track(LocalPlayer.CharacterAppearanceLoaded:Connect(loadPlayerHeadshot))
 SETTINGS.AvatarFloatClock = 0
 SETTINGS.AvatarFrameAccumulator = 0
 track(RunService.RenderStepped:Connect(function(deltaTime)
-    if SETTINGS.IsBloxFruits and SETTINGS.LightweightRendering then
-        return
-    end
     if not SETTINGS.AvatarPreviewEnabled or not hubVisible or not main.Visible or not sidebar.Visible or not avatarCard.Visible then
         return
     end
 
     SETTINGS.AvatarFrameAccumulator += deltaTime
-    if SETTINGS.AvatarFrameAccumulator < (1 / 15) then
+    local frameInterval = 1 / math.clamp(tonumber(SETTINGS.UIAnimationRate) or 240, 30, 240)
+    if SETTINGS.AvatarFrameAccumulator < frameInterval then
         return
     end
     SETTINGS.AvatarFloatClock = SETTINGS.AvatarFloatClock + math.min(SETTINGS.AvatarFrameAccumulator, 0.05)
-    SETTINGS.AvatarFrameAccumulator = 0
+    SETTINGS.AvatarFrameAccumulator = SETTINGS.AvatarFrameAccumulator % frameInterval
     local verticalFloat = math.sin(SETTINGS.AvatarFloatClock * 1.75) * 3
     local horizontalFloat = math.sin(SETTINGS.AvatarFloatClock * 0.82) * 2
     local sway = math.sin(SETTINGS.AvatarFloatClock * 0.95) * 1.8
@@ -2764,8 +2763,56 @@ function SectionMethods:AddDropdown(options)
     options = options or {}
     local name = options.Name or "Dropdown"
     local values = options.Options or {}
+    local multiple = options.Multi == true
     local selected = options.Default
     local open = false
+
+    local function normalizeSelection(value)
+        if not multiple then
+            return value
+        end
+        local result = {}
+        if type(value) == "table" then
+            for key, enabled in pairs(value) do
+                if type(key) == "number" then
+                    result[tostring(enabled)] = true
+                elseif enabled == true then
+                    result[tostring(key)] = true
+                end
+            end
+        elseif value ~= nil then
+            result[tostring(value)] = true
+        end
+        return result
+    end
+
+    selected = normalizeSelection(selected)
+
+    local function selectionText()
+        if not multiple then
+            return selected and tostring(selected) or (options.Placeholder or "Select...")
+        end
+        local chosen = {}
+        for _, value in ipairs(values) do
+            if selected[tostring(value)] then
+                table.insert(chosen, tostring(value))
+            end
+        end
+        if #chosen == 0 then
+            return options.Placeholder or "Select..."
+        end
+        if #chosen <= 2 then
+            return table.concat(chosen, ", ")
+        end
+        return tostring(#chosen) .. " selected"
+    end
+
+    local function hasSelection()
+        if multiple then
+            return next(selected) ~= nil
+        end
+        return selected ~= nil
+    end
 
     self.NextOrder = self.NextOrder + 1
     local row = create("Frame", {
@@ -2791,7 +2838,7 @@ function SectionMethods:AddDropdown(options)
         BorderSizePixel = 0,
     }, row)
     makeLabel(top, name, UDim2.fromOffset(12, 3), UDim2.new(1, -40, 0, 24), COLORS.text, 12, Enum.Font.GothamSemibold)
-    local valueLabel = makeLabel(top, selected and tostring(selected) or (options.Placeholder or "Select..."), UDim2.fromOffset(12, 25), UDim2.new(1, -50, 0, 24), selected and COLORS.text or COLORS.dim, 13, Enum.Font.GothamMedium)
+    local valueLabel = makeLabel(top, selectionText(), UDim2.fromOffset(12, 25), UDim2.new(1, -50, 0, 24), hasSelection() and COLORS.text or COLORS.dim, 13, Enum.Font.GothamMedium)
     local arrow = makeLabel(top, "v", UDim2.new(1, -36, 0, 20), UDim2.fromOffset(24, 26), COLORS.accent, 14, Enum.Font.GothamBold)
     arrow.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -2825,6 +2872,15 @@ function SectionMethods:AddDropdown(options)
     }, optionHolder)
 
     local control = {}
+    local optionButtons = {}
+
+    local function refreshOptionVisuals()
+        for key, button in pairs(optionButtons) do
+            local active = multiple and selected[key] == true or (not multiple and tostring(selected) == key)
+            button.BackgroundTransparency = active and 0.08 or 0.30
+            button.TextColor3 = active and COLORS.accent or COLORS.sectionMuted
+        end
+    end
 
     local function getOptionsHeight()
         local count = #values
@@ -2864,8 +2920,10 @@ function SectionMethods:AddDropdown(options)
                 child:Destroy()
             end
         end
+        table.clear(optionButtons)
 
         for index, value in ipairs(values) do
+            local optionKey = tostring(value)
             local optionButton = create("TextButton", {
                 LayoutOrder = index,
                 AutoButtonColor = false,
@@ -2879,6 +2937,7 @@ function SectionMethods:AddDropdown(options)
                 TextSize = 12,
                 TextXAlignment = Enum.TextXAlignment.Left,
             }, optionHolder)
+            optionButtons[optionKey] = optionButton
             addCorner(optionButton, 4)
             attachFluidScale(optionButton, optionButton, 1.012, 0.985)
             attachPressRipple(optionButton, optionButton)
@@ -2889,22 +2948,31 @@ function SectionMethods:AddDropdown(options)
                 })
             end))
             track(optionButton.MouseLeave:Connect(function()
-                fluidTween(optionButton, 0.16, {
-                    BackgroundTransparency = 0.30,
-                    TextColor3 = COLORS.sectionMuted,
-                })
+                refreshOptionVisuals()
             end))
             track(optionButton.MouseButton1Click:Connect(function()
-                control:Set(value)
-                setOpen(false)
+                if multiple then
+                    local nextSelection = table.clone(selected)
+                    if nextSelection[optionKey] then
+                        nextSelection[optionKey] = nil
+                    else
+                        nextSelection[optionKey] = true
+                    end
+                    control:Set(nextSelection)
+                else
+                    control:Set(value)
+                    setOpen(false)
+                end
             end))
         end
+        refreshOptionVisuals()
     end
 
     function control:Set(value, silent)
-        selected = value
-        valueLabel.Text = value == nil and (options.Placeholder or "Select...") or tostring(value)
-        valueLabel.TextColor3 = value == nil and COLORS.dim or COLORS.text
+        selected = normalizeSelection(value)
+        valueLabel.Text = selectionText()
+        valueLabel.TextColor3 = hasSelection() and COLORS.text or COLORS.dim
+        refreshOptionVisuals()
         if not silent then
             safeCallback(options.Callback, selected)
         end
@@ -10680,6 +10748,54 @@ function Window:BuildBloxFruitsFeatures()
             RaidIslandIndex = 0,
             RaidIslandName = nil,
             RaidTargetName = nil,
+            SeaEvent = {
+                Enabled = false,
+                AutoSail = false,
+                AutoKill = false,
+                AutoStopSail = false,
+                SelectedEvents = {
+                    ["Piranha"] = true,
+                    ["Shark"] = true,
+                    ["Terror Shark"] = true,
+                    ["Fish Crew Member"] = true,
+                    ["Enemy Boat"] = true,
+                    ["Sea Beast"] = true,
+                },
+                StopConditions = {},
+                StopMatch = nil,
+                LastStopScan = 0,
+                SelectedBoat = "Guardian",
+                BoatTweenSpeed = 295,
+                BoatFloatHeight = 0,
+                CombatHeight = 24,
+                SpamAllSkills = true,
+                ResetBrokenBoat = true,
+                Boat = nil,
+                BoatBaseY = nil,
+                Target = nil,
+                TargetKind = nil,
+                Heading = nil,
+                NextHeadingAt = 0,
+                LastPurchase = 0,
+                LastSeat = 0,
+                LastSkill = 0,
+                ToolIndex = 0,
+                SkillIndex = 0,
+                EffectiveSpeed = 295,
+                SafeSpeed = 80,
+                RejectedSpeed = nil,
+                StableSince = 0,
+                PauseUntil = 0,
+                LastCommandedPosition = nil,
+                Rubberbacks = 0,
+                BoatCollisions = setmetatable({}, {__mode = "k"}),
+                SafetyPart = nil,
+                Phase = "Off",
+                DangerLevel = 0,
+                DangerDistance = 0,
+                EventsCompleted = 0,
+                LastError = nil,
+            },
             AuraKill = false,
             AuraRange = AURA_KILL_DEFAULT_RANGE,
             FastAttack = false,
@@ -13550,6 +13666,740 @@ function Window:BuildBloxFruitsFeatures()
             state.RaidGathered = raidGatherEnabled and gathered or 0
         end
 
+        state.SeaEvent.BoatNames = {
+            "Guardian",
+            "Pirate Grand Brigade",
+            "Marine Grand Brigade",
+            "Pirate Brigade",
+            "Marine Brigade",
+            "Pirate Sloop",
+            "Marine Sloop",
+            "Beast Hunter",
+            "Lantern",
+            "Miracle",
+            "Sentinel",
+            "Sleigh",
+        }
+        state.SeaEvent.BoatPurchaseNames = {
+            ["Guardian"] = "Guardian",
+            ["Pirate Grand Brigade"] = "PirateGrandBrigade",
+            ["Marine Grand Brigade"] = "MarineGrandBrigade",
+            ["Pirate Brigade"] = "PirateBrigade",
+            ["Marine Brigade"] = "MarineBrigade",
+            ["Pirate Sloop"] = "PirateBasic",
+            ["Marine Sloop"] = "MarineBasic",
+            ["Beast Hunter"] = "BeastHunter",
+            ["Lantern"] = "Lantern",
+            ["Miracle"] = "Miracle",
+            ["Sentinel"] = "Sentinel",
+            ["Sleigh"] = "Sleigh",
+        }
+        state.SeaEvent.SkillKeys = {
+            Enum.KeyCode.Z,
+            Enum.KeyCode.X,
+            Enum.KeyCode.C,
+            Enum.KeyCode.V,
+            Enum.KeyCode.F,
+        }
+        state.SeaEvent.StopConditionPatterns = {
+            ["Kitsune Island"] = {"kitsune island", "kitsune shrine"},
+            ["Prehistoric Island"] = {"prehistoric island", "prehistoric"},
+            ["Mirage Island"] = {"mirage island", "mystic island"},
+            ["Frozen Dimension"] = {"frozen dimension", "frozen island"},
+        }
+        state.SeaEvent.TransformationSkillKeys = {
+            ["kitsune"] = {V = true},
+            ["leopard"] = {V = true},
+            ["mammoth"] = {V = true},
+            ["t-rex"] = {V = true},
+            ["trex"] = {V = true},
+            ["dragon"] = {V = true},
+            ["gas"] = {V = true},
+            ["yeti"] = {V = true},
+            ["phoenix"] = {V = true},
+            ["buddha"] = {Z = true},
+            ["venom"] = {F = true},
+            ["falcon"] = {Z = true},
+        }
+        state.SeaEvent.DangerDistanceFn = safeRequire(ReplicatedStorage:FindFirstChild("DangerDistance"))
+        state.SeaEvent.GetDangerLevelFn = safeRequire(
+            ReplicatedStorage:FindFirstChild("Util")
+                and ReplicatedStorage.Util:FindFirstChild("GetDangerLevel")
+        )
+
+        function state.SeaEvent.TargetPart(target)
+            if not target or not target.Parent then
+                return nil
+            end
+            if target:IsA("BasePart") then
+                return target
+            end
+            return (target:IsA("Model") and target.PrimaryPart or nil)
+                or target:FindFirstChild("HumanoidRootPart", true)
+                or target:FindFirstChild("RootPart", true)
+                or target:FindFirstChild("Engine", true)
+                or target:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        function state.SeaEvent.Health(target)
+            if not target then
+                return nil, nil
+            end
+            local body = target:FindFirstChildWhichIsA("Humanoid", true)
+            if body then
+                return body.Health, body.MaxHealth
+            end
+            for _, name in ipairs({"Humanoid", "Health", "HP"}) do
+                local value = target:FindFirstChild(name, true)
+                if value and (value:IsA("IntValue") or value:IsA("NumberValue")) then
+                    local maximum = tonumber(target:GetAttribute("MaxHealth"))
+                        or tonumber(target:GetAttribute("OriginalMaxHealth"))
+                        or tonumber(value:GetAttribute("MaxHealth"))
+                    return tonumber(value.Value), maximum
+                end
+            end
+            local health = tonumber(target:GetAttribute("Health")) or tonumber(target:GetAttribute("HP"))
+            local maximum = tonumber(target:GetAttribute("MaxHealth"))
+            return health, maximum
+        end
+
+        function state.SeaEvent.IsAlive(target)
+            if not target or not target.Parent then
+                return false
+            end
+            local health = state.SeaEvent.Health(target)
+            return health == nil or health > 0
+        end
+
+        function state.SeaEvent.Kind(target, sourceName)
+            local name = string.lower(tostring(target and target.Name or ""))
+            local fullName = string.lower(tostring(target and target:GetFullName() or ""))
+            local combined = name .. " " .. fullName .. " " .. string.lower(tostring(sourceName or ""))
+            if combined:find("leviathan", 1, true) then
+                return "Sea Beast", 3
+            end
+            if combined:find("terror shark", 1, true) or combined:find("terrorshark", 1, true) then
+                return "Terror Shark", 1
+            end
+            if combined:find("sea beast", 1, true)
+                or combined:find("seabeast", 1, true)
+                or string.lower(tostring(sourceName or "")) == "seabeasts" then
+                return "Sea Beast", 2
+            end
+            if combined:find("piranha", 1, true) then
+                return "Piranha", 4
+            end
+            if combined:find("shark", 1, true) then
+                return "Shark", 4
+            end
+            if combined:find("fish crew", 1, true) then
+                return "Fish Crew Member", 5
+            end
+            if combined:find("ship", 1, true)
+                or combined:find("boat", 1, true)
+                or combined:find("brigade", 1, true) then
+                return "Enemy Boat", 6
+            end
+            return "Sea Event", 7
+        end
+
+        function state.SeaEvent.FindTarget()
+            local origin = rootPart()
+            local boat = state.SeaEvent.Boat
+            local originPosition = origin and origin.Position
+                or (boat and boat.Parent and boat:GetPivot().Position)
+            if not originPosition then
+                return nil
+            end
+            local candidates = {}
+            local seen = setmetatable({}, {__mode = "k"})
+            local function addCandidate(candidate, sourceName)
+                if not candidate or seen[candidate] or candidate == boat then
+                    return
+                end
+                local part = state.SeaEvent.TargetPart(candidate)
+                local kind, priority = state.SeaEvent.Kind(candidate, sourceName)
+                local allowed = state.SeaEvent.SelectedEvents[kind] == true
+                if part and allowed and state.SeaEvent.IsAlive(candidate) then
+                    seen[candidate] = true
+                    table.insert(candidates, {
+                        Target = candidate,
+                        Part = part,
+                        Kind = kind,
+                        Priority = priority,
+                        Distance = (part.Position - originPosition).Magnitude,
+                    })
+                end
+            end
+
+            for _, folderName in ipairs({"SeaBeasts", "SeaEvents"}) do
+                local folder = workspace:FindFirstChild(folderName)
+                if folder then
+                    for _, child in ipairs(folder:GetChildren()) do
+                        addCandidate(child, folderName)
+                    end
+                end
+            end
+            local enemies = workspace:FindFirstChild("Enemies")
+            if enemies then
+                for _, enemy in ipairs(enemies:GetChildren()) do
+                    local lowered = string.lower(enemy.Name)
+                    if lowered:find("terror", 1, true)
+                        or lowered:find("shark", 1, true)
+                        or lowered:find("piranha", 1, true)
+                        or lowered:find("fish crew", 1, true)
+                        or lowered:find("sea beast", 1, true) then
+                        addCandidate(enemy, "Enemies")
+                    end
+                end
+            end
+            table.sort(candidates, function(left, right)
+                if left.Priority == right.Priority then
+                    return left.Distance < right.Distance
+                end
+                return left.Priority < right.Priority
+            end)
+            return candidates[1]
+        end
+
+        function state.SeaEvent.OwnedBoat()
+            local boats = workspace:FindFirstChild("Boats")
+            if not boats then
+                return nil
+            end
+            for _, boat in ipairs(boats:GetChildren()) do
+                local owner = boat:FindFirstChild("Owner")
+                if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then
+                    return boat
+                end
+            end
+            return nil
+        end
+
+        function state.SeaEvent.BoatAlive(boat)
+            if not boat or not boat.Parent then
+                return false
+            end
+            local health = state.SeaEvent.Health(boat)
+            return health == nil or health > 0
+        end
+
+        function state.SeaEvent.StopBoat(boat)
+            if not boat or not boat.Parent then
+                return
+            end
+            for _, part in ipairs(boat:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end
+
+        function state.SeaEvent.ApplyBoatNoclip(boat)
+            if not boat or not boat.Parent then
+                return
+            end
+            for _, part in ipairs(boat:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    if state.SeaEvent.BoatCollisions[part] == nil then
+                        state.SeaEvent.BoatCollisions[part] = {
+                            CanCollide = part.CanCollide,
+                        }
+                    end
+                    part.CanCollide = false
+                end
+            end
+        end
+
+        function state.SeaEvent.RestoreBoatNoclip()
+            for part, original in pairs(state.SeaEvent.BoatCollisions) do
+                if part and part.Parent then
+                    part.CanCollide = original.CanCollide
+                end
+            end
+            state.SeaEvent.BoatCollisions = setmetatable({}, {__mode = "k"})
+        end
+
+        function state.SeaEvent.FindStopCondition()
+            if not state.SeaEvent.AutoStopSail then
+                state.SeaEvent.StopMatch = nil
+                return nil
+            end
+            if os.clock() - state.SeaEvent.LastStopScan < 0.5 then
+                return state.SeaEvent.StopMatch
+            end
+            state.SeaEvent.LastStopScan = os.clock()
+            state.SeaEvent.StopMatch = nil
+            local candidates = workspace:GetChildren()
+            local worldOrigin = workspace:FindFirstChild("_WorldOrigin")
+            local locations = worldOrigin and worldOrigin:FindFirstChild("Locations")
+            local map = workspace:FindFirstChild("Map")
+            local seaEvents = workspace:FindFirstChild("SeaEvents")
+            for _, container in ipairs({locations, map, seaEvents}) do
+                if container then
+                    for _, child in ipairs(container:GetChildren()) do
+                        table.insert(candidates, child)
+                    end
+                end
+            end
+            for condition, enabled in pairs(state.SeaEvent.StopConditions) do
+                if enabled then
+                    for _, candidate in ipairs(candidates) do
+                        local lowered = string.lower(candidate.Name)
+                        for _, pattern in ipairs(state.SeaEvent.StopConditionPatterns[condition] or {}) do
+                            if lowered:find(pattern, 1, true) then
+                                state.SeaEvent.StopMatch = condition
+                                return condition
+                            end
+                        end
+                    end
+                end
+            end
+            return nil
+        end
+
+        function state.SeaEvent.DestroySafety()
+            local part = state.SeaEvent.SafetyPart
+            if part and part.Parent then
+                part:Destroy()
+            end
+            state.SeaEvent.SafetyPart = nil
+        end
+
+        function state.SeaEvent.UpdateSafety(position)
+            local part = state.SeaEvent.SafetyPart
+            if not part or not part.Parent then
+                part = Instance.new("Part")
+                part.Name = "VORSeaEventWaterSafety"
+                part.Size = Vector3.new(34, 1, 34)
+                part.Anchored = true
+                part.CanCollide = true
+                part.CanTouch = false
+                part.CanQuery = false
+                part.Transparency = 1
+                part.Parent = workspace
+                state.SeaEvent.SafetyPart = part
+            end
+            part.CFrame = CFrame.new(position - Vector3.new(0, 4.5, 0))
+        end
+
+        function state.SeaEvent.ResetAdaptiveSpeed()
+            state.SeaEvent.EffectiveSpeed = math.max(0, tonumber(state.SeaEvent.BoatTweenSpeed) or 295)
+            state.SeaEvent.SafeSpeed = math.min(80, state.SeaEvent.EffectiveSpeed)
+            state.SeaEvent.RejectedSpeed = nil
+            state.SeaEvent.StableSince = os.clock()
+            state.SeaEvent.PauseUntil = 0
+            state.SeaEvent.LastCommandedPosition = nil
+            state.SeaEvent.Rubberbacks = 0
+        end
+
+        function state.SeaEvent.NearestDealer()
+            local root = rootPart()
+            local npcs = workspace:FindFirstChild("NPCs")
+            local best, bestPart, bestDistance = nil, nil, math.huge
+            if not root or not npcs then
+                return nil
+            end
+            for _, npc in ipairs(npcs:GetChildren()) do
+                local lowered = string.lower(npc.Name)
+                if lowered == "boat dealer" or lowered == "luxury boat dealer" then
+                    local part = npc:FindFirstChild("HumanoidRootPart")
+                        or npc:FindFirstChild("Head")
+                        or npc:FindFirstChildWhichIsA("BasePart")
+                    local distance = part and (part.Position - root.Position).Magnitude or math.huge
+                    if distance < bestDistance then
+                        best, bestPart, bestDistance = npc, part, distance
+                    end
+                end
+            end
+            return best, bestPart, bestDistance
+        end
+
+        function state.SeaEvent.ResetCharacter(reason)
+            if os.clock() - (state.SeaEvent.LastReset or 0) < 5 then
+                return
+            end
+            state.SeaEvent.LastReset = os.clock()
+            state.SeaEvent.Phase = reason or "Resetting for a new boat"
+            state.SeaEvent.Boat = nil
+            state.SeaEvent.BoatBaseY = nil
+            state.SeaEvent.Heading = nil
+            state.SeaEvent.LastCommandedPosition = nil
+            local body = humanoid()
+            if body then
+                body.Health = 0
+            end
+        end
+
+        function state.SeaEvent.EnsureBoat()
+            local current = state.SeaEvent.OwnedBoat()
+            if current and state.SeaEvent.BoatAlive(current) then
+                if current ~= state.SeaEvent.Boat then
+                    state.SeaEvent.Boat = current
+                    -- Solix keeps the spawned boat at its exact native pivot Y.
+                    -- WaterOrigin is not the model pivot and was lifting VOR boats
+                    -- high enough for the server's movement security to reject them.
+                    state.SeaEvent.BoatBaseY = current:GetPivot().Position.Y
+                    state.SeaEvent.Heading = nil
+                    state.SeaEvent.ResetAdaptiveSpeed()
+                end
+                return current
+            end
+            if current and not state.SeaEvent.BoatAlive(current) then
+                if state.SeaEvent.ResetBrokenBoat then
+                    state.SeaEvent.ResetCharacter("Boat destroyed - resetting")
+                end
+                return nil
+            end
+            state.SeaEvent.Boat = nil
+            if os.clock() - state.SeaEvent.LastPurchase < 3 then
+                state.SeaEvent.Phase = "Waiting for " .. state.SeaEvent.SelectedBoat
+                return nil
+            end
+
+            local _, dealerPart, dealerDistance = state.SeaEvent.NearestDealer()
+            if dealerPart and dealerDistance > 24 then
+                state.SeaEvent.Phase = "Moving to Boat Dealer"
+                moveTo(CFrame.new(dealerPart.Position + Vector3.new(0, 5, 8), dealerPart.Position))
+                return nil
+            end
+            if not dealerPart then
+                if state.SeaEvent.ResetBrokenBoat then
+                    state.SeaEvent.ResetCharacter("Returning to Boat Dealer")
+                end
+                return nil
+            end
+
+            state.SeaEvent.LastPurchase = os.clock()
+            state.SeaEvent.Phase = "Buying " .. state.SeaEvent.SelectedBoat
+            local purchaseName = state.SeaEvent.BoatPurchaseNames[state.SeaEvent.SelectedBoat]
+                or state.SeaEvent.SelectedBoat
+            local ok, result = invoke("BuyBoat", purchaseName)
+            if not ok then
+                state.SeaEvent.LastError = tostring(result)
+            end
+            return nil
+        end
+
+        function state.SeaEvent.SeatBoat(boat)
+            local body = humanoid()
+            local char = character()
+            local seat = boat and boat:FindFirstChildWhichIsA("VehicleSeat", true)
+            if not body or not char or not seat then
+                return false
+            end
+            if seat.Occupant ~= body and os.clock() - state.SeaEvent.LastSeat >= 0.15 then
+                state.SeaEvent.LastSeat = os.clock()
+                char:PivotTo(seat.CFrame + Vector3.new(0, 2.5, 0))
+                body.Sit = false
+                seat:Sit(body)
+            end
+            return seat.Occupant == body
+        end
+
+        function state.SeaEvent.ChooseHeading(boat)
+            local position = boat:GetPivot().Position
+            local dangerDistance = state.SeaEvent.DangerDistanceFn
+            local previous = state.SeaEvent.Heading
+            local bestDirection = previous or Vector3.new(0, 0, 1)
+            local bestScore = -math.huge
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Include
+            params.FilterDescendantsInstances = {workspace:FindFirstChild("Map")}
+            params.IgnoreWater = true
+            for index = 0, 15 do
+                local angle = index * math.pi / 8
+                local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+                local probe = position + direction * 8000
+                local score = type(dangerDistance) == "function" and dangerDistance(probe) or 0
+                if previous then
+                    score += direction:Dot(previous) * 220
+                end
+                if workspace:FindFirstChild("Map")
+                    and workspace:Raycast(position + Vector3.new(0, 18, 0), direction * 900, params) then
+                    score -= 100000
+                end
+                if score > bestScore then
+                    bestScore = score
+                    bestDirection = direction
+                end
+            end
+            state.SeaEvent.Heading = bestDirection
+            state.SeaEvent.NextHeadingAt = os.clock() + 2.5
+            return bestDirection
+        end
+
+        function state.SeaEvent.DetectRubberband(currentPosition, deltaTime)
+            local commanded = state.SeaEvent.LastCommandedPosition
+            if not commanded then
+                return false
+            end
+            local horizontalError = ((currentPosition - commanded) * Vector3.new(1, 0, 1)).Magnitude
+            local allowed = math.max(35, state.SeaEvent.EffectiveSpeed * math.max(deltaTime, 1 / 60) * 8)
+            if horizontalError <= allowed then
+                return false
+            end
+
+            state.SeaEvent.Rubberbacks += 1
+            local rejected = math.max(tonumber(state.SeaEvent.EffectiveSpeed) or 0, 1)
+            state.SeaEvent.RejectedSpeed = math.min(state.SeaEvent.RejectedSpeed or rejected, rejected)
+            state.SeaEvent.EffectiveSpeed = math.max(
+                25,
+                math.floor((state.SeaEvent.SafeSpeed + state.SeaEvent.RejectedSpeed) * 0.5)
+            )
+            state.SeaEvent.PauseUntil = os.clock() + 0.85
+            state.SeaEvent.StableSince = os.clock()
+            state.SeaEvent.LastCommandedPosition = nil
+            state.SeaEvent.Heading = nil
+            state.SeaEvent.Phase = string.format(
+                "Snap-back stopped - testing %.0f speed",
+                state.SeaEvent.EffectiveSpeed
+            )
+            return true
+        end
+
+        function state.SeaEvent.RaiseSafeSpeed()
+            local requested = math.max(0, tonumber(state.SeaEvent.BoatTweenSpeed) or 0)
+            if os.clock() - state.SeaEvent.StableSince < 4
+                or state.SeaEvent.EffectiveSpeed >= requested then
+                return
+            end
+            state.SeaEvent.SafeSpeed = math.max(state.SeaEvent.SafeSpeed, state.SeaEvent.EffectiveSpeed)
+            if state.SeaEvent.RejectedSpeed then
+                local nextSpeed = math.floor(
+                    (state.SeaEvent.SafeSpeed + state.SeaEvent.RejectedSpeed) * 0.5
+                )
+                if nextSpeed <= state.SeaEvent.SafeSpeed + 1 then
+                    state.SeaEvent.EffectiveSpeed = state.SeaEvent.SafeSpeed
+                else
+                    state.SeaEvent.EffectiveSpeed = math.min(requested, nextSpeed)
+                end
+            else
+                state.SeaEvent.EffectiveSpeed = math.min(requested, state.SeaEvent.EffectiveSpeed + 25)
+            end
+            state.SeaEvent.StableSince = os.clock()
+        end
+
+        function state.SeaEvent.Sail(boat, deltaTime)
+            state.SeaEvent.DestroySafety()
+            state.SeaEvent.ApplyBoatNoclip(boat)
+            state.SeaEvent.SeatBoat(boat)
+            local pivot = boat:GetPivot()
+            if state.SeaEvent.DetectRubberband(pivot.Position, deltaTime) then
+                state.SeaEvent.StopBoat(boat)
+                return
+            end
+            if os.clock() < state.SeaEvent.PauseUntil then
+                state.SeaEvent.StopBoat(boat)
+                return
+            end
+            state.SeaEvent.RaiseSafeSpeed()
+            local direction = state.SeaEvent.Heading
+            if not direction then
+                direction = state.SeaEvent.ChooseHeading(boat)
+            end
+            local speed = math.max(0, tonumber(state.SeaEvent.EffectiveSpeed) or 0)
+            local baseY = tonumber(state.SeaEvent.BoatBaseY) or pivot.Position.Y
+            local nextPosition = pivot.Position + direction * speed * math.min(deltaTime, 0.05)
+            nextPosition = Vector3.new(
+                nextPosition.X,
+                baseY + math.max(0, tonumber(state.SeaEvent.BoatFloatHeight) or 0),
+                nextPosition.Z
+            )
+            local goal = CFrame.lookAt(nextPosition, nextPosition + direction)
+            boat:PivotTo(goal)
+            state.SeaEvent.StopBoat(boat)
+            state.SeaEvent.LastCommandedPosition = nextPosition
+            state.SeaEvent.SeatBoat(boat)
+
+            local danger = type(state.SeaEvent.DangerDistanceFn) == "function"
+                and state.SeaEvent.DangerDistanceFn(nextPosition) or 0
+            local dangerData = type(state.SeaEvent.GetDangerLevelFn) == "function"
+                and state.SeaEvent.GetDangerLevelFn(danger) or nil
+            state.SeaEvent.DangerDistance = danger
+            state.SeaEvent.DangerLevel = dangerData
+                and math.max((tonumber(dangerData.level) or 1) - 1, 0) or 0
+            state.SeaEvent.Phase = string.format(
+                "Sailing | Danger %d | %.0f speed | +%.0f height",
+                state.SeaEvent.DangerLevel,
+                speed,
+                state.SeaEvent.BoatFloatHeight
+            )
+        end
+
+        function state.SeaEvent.CombatTools()
+            local result = {}
+            local seen = setmetatable({}, {__mode = "k"})
+            for _, container in ipairs({character(), LocalPlayer:FindFirstChildOfClass("Backpack")}) do
+                if container then
+                    for _, tool in ipairs(container:GetChildren()) do
+                        if tool:IsA("Tool") and not seen[tool] then
+                            local weaponData = weaponDataForTool(tool)
+                            local weaponType = string.lower(weaponTypeForTool(tool, weaponData))
+                            if weaponType:find("melee", 1, true)
+                                or weaponType:find("sword", 1, true)
+                                or weaponType:find("gun", 1, true)
+                                or weaponType:find("fruit", 1, true) then
+                                seen[tool] = true
+                                table.insert(result, tool)
+                            end
+                        end
+                    end
+                end
+            end
+            return result
+        end
+
+        function state.SeaEvent.SpamSkill(targetPart)
+            if not state.SeaEvent.SpamAllSkills
+                or os.clock() - state.SeaEvent.LastSkill < 0.055 then
+                return
+            end
+            local tools = state.SeaEvent.CombatTools()
+            if #tools == 0 then
+                state.SeaEvent.LastError = "No combat Tools found"
+                return
+            end
+            state.SeaEvent.LastSkill = os.clock()
+            state.SeaEvent.SkillIndex = state.SeaEvent.SkillIndex % #state.SeaEvent.SkillKeys + 1
+            if state.SeaEvent.SkillIndex == 1 then
+                state.SeaEvent.ToolIndex = state.SeaEvent.ToolIndex % #tools + 1
+            end
+            if state.SeaEvent.ToolIndex == 0 then
+                state.SeaEvent.ToolIndex = 1
+            end
+            local tool = tools[state.SeaEvent.ToolIndex]
+            local keyCode = state.SeaEvent.SkillKeys[state.SeaEvent.SkillIndex]
+            local loweredToolName = string.lower(tool.Name)
+            for pattern, blockedKeys in pairs(state.SeaEvent.TransformationSkillKeys) do
+                if loweredToolName:find(pattern, 1, true) and blockedKeys[keyCode.Name] then
+                    return
+                end
+            end
+            equipTool(tool)
+            if type(FruitMouse) == "table" and targetPart then
+                FruitMouse.Hit = CFrame.new(targetPart.Position)
+                FruitMouse.Target = targetPart
+            end
+            pcall(function()
+                tool:Activate()
+                tool:Deactivate()
+            end)
+            task.spawn(function()
+                local input = game:GetService("VirtualInputManager")
+                input:SendKeyEvent(true, keyCode, false, game)
+                task.wait(0.045)
+                input:SendKeyEvent(false, keyCode, false, game)
+            end)
+        end
+
+        function state.SeaEvent.Fight(candidate)
+            local target = candidate and candidate.Target
+            local targetPart = candidate and state.SeaEvent.TargetPart(target)
+            local root = rootPart()
+            local body = humanoid()
+            if not targetPart or not root or not body then
+                return
+            end
+            state.SeaEvent.LastCommandedPosition = nil
+            state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+            if body.SeatPart then
+                body.Sit = false
+                body.Jump = true
+            end
+
+            local height = math.max(8, tonumber(state.SeaEvent.CombatHeight) or 24)
+            if candidate.Kind == "Sea Beast" then
+                height = math.max(9, height * 0.5)
+            elseif candidate.Kind == "Hostile Boats" then
+                height = math.max(12, height * 0.65)
+            end
+            local position = targetPart.Position + Vector3.new(0, height, 0)
+            root.CFrame = CFrame.lookAt(position, targetPart.Position)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            state.SeaEvent.UpdateSafety(position)
+            ensureBuso(true)
+            state.SeaEvent.SpamSkill(targetPart)
+            local health, maximum = state.SeaEvent.Health(target)
+            state.SeaEvent.Phase = string.format(
+                "Fighting %s%s",
+                candidate.Kind,
+                health and string.format(" | %.0f / %.0f", health, maximum or health) or ""
+            )
+        end
+
+        function state.SeaEvent.UpdateStatus()
+            if os.clock() - (state.SeaEvent.LastStatusUpdate or 0) < 0.15 then
+                return
+            end
+            state.SeaEvent.LastStatusUpdate = os.clock()
+            if state.SeaEvent.StatusLabel then
+                state.SeaEvent.StatusLabel.Text = "Sea Events: " .. tostring(state.SeaEvent.Phase)
+                state.SeaEvent.StatusLabel.TextColor3 = state.SeaEvent.LastError and COLORS.warning
+                    or (state.SeaEvent.Enabled and COLORS.success or COLORS.muted)
+            end
+            if state.SeaEvent.DetailLabel then
+                state.SeaEvent.DetailLabel.Text = string.format(
+                    "Boat: %s | Event: %s | Snap-backs: %d | Completed: %d",
+                    state.SeaEvent.Boat and state.SeaEvent.Boat.Name or state.SeaEvent.SelectedBoat,
+                    state.SeaEvent.TargetKind or "Searching",
+                    state.SeaEvent.Rubberbacks,
+                    state.SeaEvent.EventsCompleted
+                )
+            end
+            gui:SetAttribute("BloxSeaEventAutoFarm", state.SeaEvent.Enabled)
+            gui:SetAttribute("BloxSeaEventPhase", state.SeaEvent.Phase)
+            gui:SetAttribute("BloxSeaEventBoat", state.SeaEvent.Boat and state.SeaEvent.Boat.Name or "")
+            gui:SetAttribute("BloxSeaEventTarget", state.SeaEvent.Target and state.SeaEvent.Target.Name or "")
+            gui:SetAttribute("BloxSeaEventTargetKind", state.SeaEvent.TargetKind or "")
+            gui:SetAttribute("BloxSeaEventDangerLevel", state.SeaEvent.DangerLevel)
+            gui:SetAttribute("BloxSeaEventEffectiveSpeed", state.SeaEvent.EffectiveSpeed)
+            gui:SetAttribute("BloxSeaEventRubberbacks", state.SeaEvent.Rubberbacks)
+        end
+
+        function state.SeaEvent.Step(deltaTime)
+            if not state.SeaEvent.Enabled then
+                state.SeaEvent.Phase = "Off"
+                state.SeaEvent.Target = nil
+                state.SeaEvent.TargetKind = nil
+                state.SeaEvent.DestroySafety()
+                state.SeaEvent.UpdateStatus()
+                return
+            end
+            local stopCondition = state.SeaEvent.FindStopCondition()
+            if stopCondition then
+                state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+                state.SeaEvent.Phase = "Stopped at " .. stopCondition
+                state.SeaEvent.UpdateStatus()
+                return
+            end
+            local candidate = state.SeaEvent.AutoKill and state.SeaEvent.FindTarget() or nil
+            if candidate then
+                state.SeaEvent.Target = candidate.Target
+                state.SeaEvent.TargetKind = candidate.Kind
+                state.SeaEvent.Fight(candidate)
+                state.SeaEvent.UpdateStatus()
+                return
+            end
+            if state.SeaEvent.Target then
+                state.SeaEvent.EventsCompleted += 1
+            end
+            state.SeaEvent.Target = nil
+            state.SeaEvent.TargetKind = nil
+            if not state.SeaEvent.AutoSail then
+                state.SeaEvent.Phase = "Auto Kill waiting for a selected sea enemy"
+                state.SeaEvent.UpdateStatus()
+                return
+            end
+            local boat = state.SeaEvent.EnsureBoat()
+            if boat then
+                state.SeaEvent.Sail(boat, deltaTime)
+            end
+            state.SeaEvent.UpdateStatus()
+        end
+
         local function chestPart()
             local root = rootPart()
             if not root then
@@ -15259,6 +16109,188 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
 
+        state.SeaEvent.Section = SeaPage:AddSection("Sea Event Automation", "Left")
+        state.SeaEvent.Section:AddDropdown({
+            Name = "Sea Monster Selection",
+            Description = "Select several sea enemies; VOR kills each active target and returns to the boat",
+            Flag = "blox_sea_event_priority",
+            Options = {
+                "Piranha",
+                "Shark",
+                "Terror Shark",
+                "Fish Crew Member",
+                "Enemy Boat",
+                "Sea Beast",
+            },
+            Multi = true,
+            Default = {
+                "Piranha",
+                "Shark",
+                "Terror Shark",
+                "Fish Crew Member",
+                "Enemy Boat",
+                "Sea Beast",
+            },
+            Callback = function(value)
+                state.SeaEvent.SelectedEvents = type(value) == "table" and value or {}
+            end,
+        })
+        state.SeaEvent.Section:AddDropdown({
+            Name = "Selected Boat",
+            Description = "The server must show this boat as owned/unlocked",
+            Flag = "blox_sea_event_boat",
+            Options = state.SeaEvent.BoatNames,
+            Default = "Guardian",
+            Callback = function(value)
+                state.SeaEvent.SelectedBoat = tostring(value)
+            end,
+        })
+        state.SeaEvent.Section:AddSlider({
+            Name = "Boat Tween Speed",
+            Description = "Requested speed from 0-500; snap-back detection automatically finds a lower server-safe limit",
+            Flag = "blox_sea_event_boat_speed",
+            Min = 0,
+            Max = 500,
+            Step = 10,
+            Default = 295,
+            Callback = function(value)
+                state.SeaEvent.BoatTweenSpeed = math.clamp(tonumber(value) or 295, 0, 500)
+                state.SeaEvent.ResetAdaptiveSpeed()
+            end,
+        })
+        state.SeaEvent.Section:AddSlider({
+            Name = "Boat Float Height",
+            Description = "Extra height above the boat's native waterline; keep 0 for the server-safe Solix path",
+            Flag = "blox_sea_event_boat_height",
+            Min = 0,
+            Max = 10,
+            Step = 1,
+            Default = 0,
+            Callback = function(value)
+                state.SeaEvent.BoatFloatHeight = math.clamp(tonumber(value) or 0, 0, 10)
+            end,
+        })
+        state.SeaEvent.Section:AddDropdown({
+            Name = "Stop Sail Condition",
+            Description = "Select any event islands where Auto Stop Sail should freeze the boat",
+            Flag = "blox_sea_event_stop_conditions",
+            Options = {"Kitsune Island", "Prehistoric Island", "Mirage Island", "Frozen Dimension"},
+            Multi = true,
+            Default = {},
+            Callback = function(value)
+                state.SeaEvent.StopConditions = type(value) == "table" and value or {}
+                state.SeaEvent.StopMatch = nil
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Auto Stop Sail",
+            Description = "Stops the boat when any selected island condition is detected",
+            Flag = "blox_sea_event_auto_stop",
+            Default = false,
+            Callback = function(enabled)
+                state.SeaEvent.AutoStopSail = enabled == true
+                state.SeaEvent.StopMatch = nil
+            end,
+        })
+        state.SeaEvent.Section:AddSlider({
+            Name = "Sea Combat Height",
+            Description = "Terror Sharks and boats stay below you; Sea Beasts use half this height to keep you inside their hitbox",
+            Flag = "blox_sea_event_combat_height",
+            Min = 8,
+            Max = 70,
+            Step = 1,
+            Default = 24,
+            Callback = function(value)
+                state.SeaEvent.CombatHeight = math.clamp(tonumber(value) or 24, 8, 70)
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Spam Every Tool Skill",
+            Description = "Cycles every combat Tool and repeatedly fires M1 plus Z, X, C, V, and F",
+            Flag = "blox_sea_event_all_skills",
+            Default = true,
+            Callback = function(enabled)
+                state.SeaEvent.SpamAllSkills = enabled == true
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Reset When Boat Breaks",
+            Description = "Respawns at the dock, buys the selected boat again, reseats, and resumes sailing",
+            Flag = "blox_sea_event_reset_boat",
+            Default = true,
+            Callback = function(enabled)
+                state.SeaEvent.ResetBrokenBoat = enabled == true
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Auto Kill Sea Enemy",
+            Description = "Leaves the boat, kills every selected sea enemy without touching water, then reseats",
+            Flag = "blox_auto_kill_sea_enemy",
+            Default = false,
+            Callback = function(enabled)
+                state.SeaEvent.AutoKill = enabled == true
+                state.SeaEvent.Enabled = state.SeaEvent.AutoSail or state.SeaEvent.AutoKill
+                state.SeaEvent.Target = nil
+                state.SeaEvent.TargetKind = nil
+                if enabled then
+                    prepareManualTravel()
+                    state.SeaEvent.Phase = "Searching for selected sea enemies"
+                else
+                    state.SeaEvent.DestroySafety()
+                    if not state.SeaEvent.Enabled then
+                        state.SeaEvent.Phase = "Off"
+                        state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+                        state.SeaEvent.RestoreBoatNoclip()
+                        state.SeaEvent.LastCommandedPosition = nil
+                    end
+                end
+                state.SeaEvent.UpdateStatus()
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Auto Sail",
+            Description = "Buys the selected boat, seats normally, and sails straight at the server-safe waterline",
+            Flag = "blox_auto_sea_events",
+            Default = false,
+            Callback = function(enabled)
+                state.SeaEvent.AutoSail = enabled == true
+                state.SeaEvent.Enabled = state.SeaEvent.AutoSail or state.SeaEvent.AutoKill
+                state.SeaEvent.LastError = nil
+                state.SeaEvent.Target = nil
+                state.SeaEvent.TargetKind = nil
+                if enabled then
+                    prepareManualTravel()
+                    state.SeaEvent.Phase = "Finding Boat Dealer"
+                    state.SeaEvent.ResetAdaptiveSpeed()
+                else
+                    state.SeaEvent.Phase = state.SeaEvent.AutoKill and "Auto Kill waiting" or "Off"
+                    state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+                    state.SeaEvent.RestoreBoatNoclip()
+                    if not state.SeaEvent.AutoKill then
+                        state.SeaEvent.DestroySafety()
+                    end
+                    state.SeaEvent.LastCommandedPosition = nil
+                end
+                state.SeaEvent.UpdateStatus()
+            end,
+        })
+        state.SeaEvent.StatusLabel = state.SeaEvent.Section:AddLabel("Sea Events: Off")
+        state.SeaEvent.DetailLabel = state.SeaEvent.Section:AddLabel(
+            "Boat: Guardian | Event: Searching | Snap-backs: 0 | Completed: 0"
+        )
+
+        track(RunService.Heartbeat:Connect(function(deltaTime)
+            if not state.Alive then
+                return
+            end
+            local ok, message = pcall(state.SeaEvent.Step, deltaTime)
+            if not ok then
+                state.SeaEvent.LastError = tostring(message)
+                state.SeaEvent.Phase = "Error: " .. tostring(message)
+                state.SeaEvent.UpdateStatus()
+            end
+        end))
+
         PlayerStateSection:AddToggle({
             Name = "Noclip",
             Flag = "blox_noclip",
@@ -15835,6 +16867,10 @@ function Window:BuildBloxFruitsFeatures()
             state.RaidVoidActive = false
             state.RaidVoidMoved = 0
             state.RaidVoidStaged = 0
+            state.SeaEvent.Enabled = false
+            state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+            state.SeaEvent.RestoreBoatNoclip()
+            state.SeaEvent.DestroySafety()
             FarmVertical.SetAntiRagdoll(false)
             FarmVertical.Release()
             for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
@@ -16848,6 +17884,19 @@ local transparencyControl = AppearanceSection:AddSlider({
     Step = 0.05,
     Callback = function(value)
         applyHubTransparency(value)
+    end,
+})
+
+AppearanceSection:AddSlider({
+    Name = "UI Animation Rate",
+    Description = "Caps VOR's manual animations at 30-240 FPS; Roblox still limits the final result to the game's render rate",
+    Flag = "vor_ui_animation_rate",
+    Min = 30,
+    Max = 240,
+    Default = 240,
+    Step = 30,
+    Callback = function(value)
+        SETTINGS.UIAnimationRate = math.clamp(tonumber(value) or 240, 30, 240)
     end,
 })
 
