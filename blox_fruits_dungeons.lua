@@ -248,6 +248,24 @@ return function(context)
         return false
     end
 
+    local function isDecoyEnemy(model)
+        local name = normalizeName(model and model.Name)
+        return name == "blank buddy"
+            or name:find("shadow clone", 1, true) ~= nil
+            or name:find("shadow decoy", 1, true) ~= nil
+            or name:find("illusion", 1, true) ~= nil
+            or name:find("mirage clone", 1, true) ~= nil
+    end
+
+    local function isObjectiveEnemy(model)
+        local name = normalizeName(model and model.Name)
+        return name == "prophitboxplaceholder"
+            or name:find("shrine", 1, true) ~= nil
+            or name:find("objective", 1, true) ~= nil
+            or name:find("gas canister", 1, true) ~= nil
+            or name:find("generator", 1, true) ~= nil
+    end
+
     local HIT_PART_NAMES = {
         "ModelHitbox",
         "HumanoidRootPart",
@@ -278,6 +296,7 @@ return function(context)
             and modelRoot(model) ~= nil
             and enemyHitPart(model) ~= nil
             and not isPlayerCharacterOrClone(model)
+            and not isDecoyEnemy(model)
     end
 
     local currentPlayerFloorId = nil
@@ -293,6 +312,7 @@ return function(context)
         end
         origin = origin or (rootPart() and rootPart().Position)
         local floorId = currentPlayerFloorId and currentPlayerFloorId() or nil
+        local hasObjective = false
         for _, enemy in ipairs(enemiesFolder:GetChildren()) do
             if validEnemy(enemy) and (
                 not floorId
@@ -300,17 +320,25 @@ return function(context)
                 or floorContainsPosition(floorId, modelRoot(enemy).Position)
             ) then
                 local enemyRoot = modelRoot(enemy)
+                local objectivePriority = isObjectiveEnemy(enemy) and 0 or 1
+                hasObjective = hasObjective or objectivePriority == 0
                 table.insert(enemies, {
                     Enemy = enemy,
                     Root = enemyRoot,
                     HitPart = enemyHitPart(enemy),
                     Distance = origin and (enemyRoot.Position - origin).Magnitude or 0,
-                    ObjectivePriority = (
-                        normalizeName(enemy.Name):find("shrine", 1, true)
-                        or normalizeName(enemy.Name):find("mark", 1, true)
-                    ) and 0 or 1,
+                    ObjectivePriority = objectivePriority,
                 })
             end
+        end
+        if hasObjective then
+            local objectives = {}
+            for _, candidate in ipairs(enemies) do
+                if candidate.ObjectivePriority == 0 then
+                    table.insert(objectives, candidate)
+                end
+            end
+            enemies = objectives
         end
         table.sort(enemies, function(left, right)
             if left.ObjectivePriority ~= right.ObjectivePriority then
@@ -778,8 +806,12 @@ return function(context)
         if not root then
             return targets
         end
+        local enemyTargets = livingEnemies(root.Position)
         local shrineTargets = activeShrines()
-        local candidates = #shrineTargets > 0 and shrineTargets or livingEnemies(root.Position)
+        local hasObjectiveEnemy = enemyTargets[1] and enemyTargets[1].ObjectivePriority == 0
+        local candidates = hasObjectiveEnemy
+            and enemyTargets
+            or (#shrineTargets > 0 and shrineTargets or enemyTargets)
         for _, candidate in ipairs(candidates) do
             if candidate.Distance <= 38 then
                 table.insert(targets, candidate)
@@ -933,6 +965,12 @@ return function(context)
             state.CurrentTargetKind = "None"
             return nil
         end
+        local enemies = livingEnemies(root.Position)
+        if enemies[1] and enemies[1].ObjectivePriority == 0 then
+            state.CurrentTarget = enemies[1].Enemy
+            state.CurrentTargetKind = "Boss Objective"
+            return state.CurrentTarget
+        end
         local shrineTargets = activeShrines()
         if #shrineTargets > 0 then
             state.CurrentTarget = shrineTargets[1].Enemy
@@ -948,7 +986,6 @@ return function(context)
                 return state.CurrentTarget
             end
         end
-        local enemies = livingEnemies(root.Position)
         state.CurrentTarget = enemies[1] and enemies[1].Enemy or nil
         state.CurrentTargetKind = state.CurrentTarget and "Enemy" or "None"
         state.PositionIndex = 3
@@ -1010,7 +1047,7 @@ return function(context)
 
     local function applyDungeonMagnet()
         if not state.AutoFarm or not state.AutoMagnet or not validEnemy(state.CurrentTarget)
-            or state.ActiveShrineCount > 0 then
+            or state.ActiveShrineCount > 0 or isObjectiveEnemy(state.CurrentTarget) then
             restoreEnemyCollision()
             return
         end
@@ -2093,8 +2130,9 @@ return function(context)
                     and (target:FindFirstChild("NeonShrinePart", true) or modelRoot(target))
                     or modelRoot(target)
                 local root = rootPart()
-                state.CurrentTargetName = state.CurrentTargetKind == "Shrine"
-                    and "Kitsune Shrine (boss paused)"
+                state.CurrentTargetName = (state.CurrentTargetKind == "Shrine"
+                    or state.CurrentTargetKind == "Boss Objective")
+                    and (target.Name .. " (boss paused)")
                     or target.Name
                 state.CurrentTargetDistance = targetRoot and root and (targetRoot.Position - root.Position).Magnitude or nil
             else
