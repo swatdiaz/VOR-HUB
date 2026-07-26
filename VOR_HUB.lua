@@ -10575,8 +10575,9 @@ function Window:BuildBloxFruitsFeatures()
         -- use its already-replicated event directly and leave RegisterHit on
         -- CombatUtil's initialized internal sender.
         local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
-        local AURA_KILL_RANGE = 10
-        local AURA_KILL_BASE_INTERVAL = 0.05
+        local AURA_KILL_DEFAULT_RANGE = 10
+        local AURA_KILL_HIT_DELAY = 0.13
+        local AURA_KILL_NATIVE_COOLDOWN_SCALE = 0.8
 
         local state = {
             Alive = true,
@@ -10595,12 +10596,21 @@ function Window:BuildBloxFruitsFeatures()
             AutoAwaken = false,
             SelectedRaid = "Flame",
             AuraKill = false,
+            AuraRange = AURA_KILL_DEFAULT_RANGE,
             FastAttack = false,
             AttackInterval = 0,
             LastAttack = 0,
             LastAuraScan = 0,
             AuraTargetCursor = 0,
             AuraHits = 0,
+            AuraRequests = 0,
+            AuraTargetCount = 0,
+            AuraAttackPending = false,
+            AuraCombo = 0,
+            AuraStage = "idle",
+            AuraPendingError = nil,
+            AuraLastRequestAt = nil,
+            AuraLastHitAt = nil,
             RegisterHitClosure = nil,
             LastRegisterHitResolve = -math.huge,
             WeaponType = "Sword",
@@ -11016,7 +11026,7 @@ function Window:BuildBloxFruitsFeatures()
                 local hitPart = enemyHitPart(enemy)
                 if enemyRoot and hitPart and modelAlive(enemy) then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
-                    if distance <= AURA_KILL_RANGE then
+                    if distance <= state.AuraRange then
                         table.insert(targets, {
                             Enemy = enemy,
                             HitPart = hitPart,
@@ -11076,20 +11086,66 @@ function Window:BuildBloxFruitsFeatures()
             return currentBuildFallback
         end
 
+        local function auraAttackProfile(tool, weaponData)
+            if not tool or type(weaponData) ~= "table"
+                or type(CombatUtil) ~= "table"
+                or type(CombatUtil.GetMovesetAnimCache) ~= "function"
+                or type(CombatUtil.GetWeaponName) ~= "function"
+                or type(CombatUtil.GetPureWeaponName) ~= "function" then
+                return nil, "combat animation data is unavailable"
+            end
+
+            local moveset = weaponData.Moveset
+            local basics = type(moveset) == "table" and moveset.Basic or nil
+            if type(basics) ~= "table" or #basics == 0 then
+                return nil, "the equipped tool has no basic attack moveset"
+            end
+
+            local body = humanoid()
+            if not body then
+                return nil, "the local humanoid is unavailable"
+            end
+            local ok, profile = pcall(function()
+                local weaponName = CombatUtil:GetWeaponName(tool)
+                local pureName = CombatUtil:GetPureWeaponName(weaponName)
+                local cache = CombatUtil:GetMovesetAnimCache(body)
+                local combo = (state.AuraCombo % #basics) + 1
+                local track = cache and cache[pureName .. "-basic" .. combo]
+                if not track then
+                    error("basic attack track is not loaded")
+                end
+                local speedMultiplier = track:GetAttribute("SpeedMult") or 1
+                local duration = tonumber(track.Length) / math.max(tonumber(speedMultiplier) or 1, 0.01)
+                if duration <= 0 then
+                    error("basic attack duration is invalid")
+                end
+                local char = character()
+                local attackSpeed = char and tonumber(char:GetAttribute("AttackSpeedMultiplier")) or 1
+                attackSpeed = math.max(attackSpeed or 1, 0.01)
+                return {
+                    Combo = combo,
+                    Duration = duration,
+                    NativeCadence = duration * AURA_KILL_NATIVE_COOLDOWN_SCALE / attackSpeed,
+                }
+            end)
+            if not ok then
+                return nil, tostring(profile)
+            end
+            return profile
+        end
+
         local function auraKillOnce()
-            if not state.AuraKill then
+            if not state.AuraKill or state.AuraAttackPending then
                 return false
             end
             local now = os.clock()
-            local baseInterval = state.FastAttack and 0.035 or AURA_KILL_BASE_INTERVAL
-            local effectiveInterval = baseInterval + math.max(tonumber(state.AttackInterval) or 0, 0)
-            if now - state.LastAuraScan < effectiveInterval then
+            if now - state.LastAuraScan < 0.04 then
                 return false
             end
             state.LastAuraScan = now
 
             local targets = nearbyAuraTargets()
-            gui:SetAttribute("BloxAuraKillTargets", #targets)
+            state.AuraTargetCount = #targets
             if #targets == 0 then
                 state.AuraTargetCursor = 0
                 return false
@@ -11100,18 +11156,32 @@ function Window:BuildBloxFruitsFeatures()
             local tool = equipSelectedTool()
             local weaponData = weaponDataForTool(tool)
             if not tool or not weaponData then
-                setError("Aura Kill could not resolve the selected combat tool")
+                state.AuraPendingError = "Aura Kill could not resolve the selected combat tool"
                 return false
             end
 
             if weaponData.WeaponType == "Gun" then
-                setError("Aura Kill needs a Sword, Melee, or supported M1 Fruit tool")
+                state.AuraPendingError = "Aura Kill needs a Sword, Melee, or supported M1 Fruit tool"
                 return false
             end
 
+            local attackProfile, profileError = auraAttackProfile(tool, weaponData)
+            if not attackProfile then
+                state.AuraPendingError = "Aura Kill could not read the equipped tool: " .. tostring(profileError)
+                return false
+            end
+            local cadence = state.FastAttack
+                and math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence * 0.5)
+                or math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence)
+            cadence = cadence + math.max(tonumber(state.AttackInterval) or 0, 0)
+            if now - state.LastAttack < cadence then
+                return false
+            end
+            state.AuraCombo = attackProfile.Combo
+
             local registerHit = resolveRegisterHitClosure()
             if not RegisterAttackEvent or type(registerHit) ~= "function" then
-                setError("Aura Kill combat registration is unavailable in this server build")
+                state.AuraPendingError = "Aura Kill combat registration is unavailable in this server build"
                 return false
             end
 
@@ -11119,32 +11189,97 @@ function Window:BuildBloxFruitsFeatures()
             if not char then
                 return false
             end
-            local ok, message = pcall(function()
-                -- Register the server-authorized attack directly, then flush
-                -- one validated NPC hit. No tool activation, click injection,
-                -- character tween, or swing animation is used.
-                RegisterAttackEvent:FireServer(0)
-                registerHit(char, target.Enemy, target.HitPart, weaponData, nil)
+            state.AuraAttackPending = true
+            state.LastAttack = now
+            state.AuraRequests = state.AuraRequests + 1
+            state.AuraStage = "queued"
+            state.AuraLastRequestAt = now
+            state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
+            state.AuraLastDistance = target.Distance
+
+            local targetHumanoid = target.Enemy:FindFirstChildOfClass("Humanoid")
+            local healthBefore = targetHumanoid and targetHumanoid.Health or nil
+            -- Firing this remote strips CoreGui capability from only this
+            -- heartbeat invocation. All UI writes are deliberately above it;
+            -- later heartbeat invocations publish the plain-table telemetry.
+            local dispatched = false
+            local hitOk, hitError = pcall(function()
+                -- Match the exact duration sent by the native combat
+                -- controller. Zero is rejected by the server.
+                RegisterAttackEvent:FireServer(attackProfile.Duration)
+                state.AuraStage = "attack-started"
+
+                -- Native hit detection becomes valid 130 ms into the attack.
+                task.wait(AURA_KILL_HIT_DELAY)
+                state.AuraStage = "hit-window"
+                if not state.Alive or not state.AuraKill or not target.Enemy.Parent or not modelAlive(target.Enemy) then
+                    return
+                end
+                local currentRoot = rootPart()
+                local enemyRoot = modelRoot(target.Enemy)
+                local hitPart = enemyHitPart(target.Enemy)
+                if not currentRoot or not enemyRoot or not hitPart
+                    or (enemyRoot.Position - currentRoot.Position).Magnitude > state.AuraRange then
+                    return
+                end
+
+                -- registerHit only queues the primary target when its fifth
+                -- argument is a table. Nil creates a fake local flash and never
+                -- sends RegisterHit to the server.
+                state.AuraStage = "queue-primary"
+                registerHit(char, target.Enemy, hitPart, weaponData, {})
+                state.AuraStage = "flush"
                 registerHit(true)
+                state.AuraStage = "sent"
+                dispatched = true
             end)
-            if not ok then
-                setError("Aura Kill hit failed: " .. tostring(message))
+            state.AuraAttackPending = false
+            if not hitOk then
+                state.AuraPendingError = "Aura Kill server hit failed: " .. tostring(hitError)
+                state.AuraStage = "error"
+                return false
+            end
+            if not dispatched then
+                state.AuraStage = "target-left-range"
                 return false
             end
 
-            state.LastAttack = now
-            state.AuraHits = state.AuraHits + 1
-            state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
-            state.AuraLastDistance = target.Distance
-            gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
-            gui:SetAttribute("BloxAuraKillLastTarget", state.CurrentEnemyName)
-            gui:SetAttribute("BloxAuraKillLastDistance", target.Distance)
-            gui:SetAttribute("BloxAuraKillLastHitAt", now)
-            gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
-            -- Preserve the old counters for existing diagnostics and profiles.
-            gui:SetAttribute("BloxLastAttackAt", now)
-            gui:SetAttribute("BloxAttackCount", state.AuraHits)
+            task.delay(0.35, function()
+                if state.Alive and targetHumanoid and healthBefore ~= nil
+                    and targetHumanoid.Health < healthBefore then
+                    state.AuraHits = state.AuraHits + 1
+                    state.AuraLastHitAt = os.clock()
+                end
+                state.AuraStage = "idle"
+            end)
             return true
+        end
+
+        local function flushAuraTelemetry()
+            gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
+            gui:SetAttribute("BloxAuraKillTargets", state.AuraTargetCount)
+            gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
+            gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
+            gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
+            gui:SetAttribute("BloxAttackCount", state.AuraRequests)
+            if state.CurrentEnemyName then
+                gui:SetAttribute("BloxAuraKillLastTarget", state.CurrentEnemyName)
+            end
+            if state.AuraLastDistance then
+                gui:SetAttribute("BloxAuraKillLastDistance", state.AuraLastDistance)
+            end
+            if state.AuraLastRequestAt then
+                gui:SetAttribute("BloxAuraKillLastRequestAt", state.AuraLastRequestAt)
+                gui:SetAttribute("BloxLastAttackAt", state.AuraLastRequestAt)
+            end
+            if state.AuraLastHitAt then
+                gui:SetAttribute("BloxAuraKillLastHitAt", state.AuraLastHitAt)
+            end
+            if state.AuraPendingError then
+                local message = state.AuraPendingError
+                state.AuraPendingError = nil
+                setError(message)
+            end
         end
 
         local function currentLevel()
@@ -12131,17 +12266,19 @@ function Window:BuildBloxFruitsFeatures()
                 if enabled then
                     resolveRegisterHitClosure()
                 end
-                auraLabel.Text = enabled and "Aura Kill: Armed | Range: 10 studs" or "Aura Kill: Off | Range: 10 studs"
+                auraLabel.Text = enabled
+                    and string.format("Aura Kill: Armed | Range: %.0f studs", state.AuraRange)
+                    or string.format("Aura Kill: Off | Range: %.0f studs", state.AuraRange)
                 auraLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
                 gui:SetAttribute("BloxAuraKill", enabled)
-                gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
+                gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
                 -- Compatibility for existing external status readers.
                 gui:SetAttribute("BloxAutoAttack", enabled)
             end,
         })
         AttackSection:AddToggle({
             Name = "Aura Kill Turbo",
-            Description = "Uses a 35 ms silent-hit cadence instead of the normal 50 ms cadence",
+            Description = "Uses the shortest validated silent-hit cadence instead of the tool's native cooldown",
             Flag = "blox_fast_attack",
             Default = false,
             Callback = function(enabled)
@@ -12544,6 +12681,7 @@ function Window:BuildBloxFruitsFeatures()
             local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
             if not attackBlocked and state.AuraKill then
                 auraKillOnce()
+                return
             end
             gatherStep()
             if state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
@@ -12570,6 +12708,7 @@ function Window:BuildBloxFruitsFeatures()
             local lastEsp = 0
             while state.Alive do
                 local ok, message = pcall(function()
+                    flushAuraTelemetry()
                     if state.AutoRaid then
                         stepRaid()
                     elseif state.AutoBoss then
@@ -12583,11 +12722,16 @@ function Window:BuildBloxFruitsFeatures()
                         local target = targets[1]
                         if target then
                             state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
-                            targetLabel.Text = string.format("Aura target: %s | %.1f / %d studs", state.CurrentEnemyName, target.Distance, AURA_KILL_RANGE)
+                            targetLabel.Text = string.format("Aura target: %s | %.1f / %.0f studs", state.CurrentEnemyName, target.Distance, state.AuraRange)
                         else
-                            targetLabel.Text = "Aura target: No living NPC within 10 studs"
+                            targetLabel.Text = string.format("Aura target: No living NPC within %.0f studs", state.AuraRange)
                         end
-                        auraLabel.Text = string.format("Aura Kill: Armed | In range: %d | Hits: %d", #targets, state.AuraHits)
+                        auraLabel.Text = string.format(
+                            "Aura Kill: Armed | In range: %d | Damage hits: %d | Requests: %d",
+                            #targets,
+                            state.AuraHits,
+                            state.AuraRequests
+                        )
                         auraLabel.TextColor3 = #targets > 0 and COLORS.success or COLORS.muted
                     end
 
@@ -12692,11 +12836,19 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxFruitsRuntimeDependency", "None")
             gui:SetAttribute("RuntimeDependency", "None")
             gui:SetAttribute("BloxFruitsEnemyGatherSource", "NativeVOR")
-            gui:SetAttribute("BloxAuraKill", false)
-            gui:SetAttribute("BloxAuraKillRange", AURA_KILL_RANGE)
+            gui:SetAttribute("BloxAuraKill", state.AuraKill)
+            gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", 0)
-            gui:SetAttribute("BloxAuraKillHitCount", 0)
+            gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
+            gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
+            gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
+            gui:SetAttribute("BloxAuraKillLastTarget", "")
+            gui:SetAttribute("BloxAuraKillLastDistance", 0)
+            gui:SetAttribute("BloxAuraKillLastRequestAt", 0)
+            gui:SetAttribute("BloxAuraKillLastHitAt", 0)
             gui:SetAttribute("BloxAutoAttack", false)
+            gui:SetAttribute("BloxLastAttackAt", 0)
+            gui:SetAttribute("BloxAttackCount", state.AuraRequests)
             track(gui.Destroying:Connect(cleanup))
         end
 
