@@ -15882,6 +15882,17 @@ if SETTINGS.IsBloxFruits then
         Labels = setmetatable({}, {__mode = "k"}),
         Accumulator = 0,
     }
+    local kitsuneFloatState = {
+        Enabled = false,
+        Motors = setmetatable({}, {__mode = "k"}),
+        StartedAt = 0,
+    }
+    local voidDarkBladeState = {
+        Enabled = false,
+        WeaponModels = setmetatable({}, {__mode = "k"}),
+        Originals = setmetatable({}, {__mode = "k"}),
+        Accumulator = 0,
+    }
     local VOID_KITSUNE_COLORS = {
         Color3.fromRGB(151, 70, 255),
         Color3.fromRGB(31, 7, 54),
@@ -15954,56 +15965,131 @@ if SETTINGS.IsBloxFruits then
         end
 
         local visualNames = {"Body", "Accessory", "Mouth", "Eyes", "Neon"}
-        local snapshot = {}
-        local compatible = false
-        for _, name in ipairs(visualNames) do
-            local part = rig:FindFirstChild(name)
-            if part and part:IsA("BasePart") then
-                compatible = true
+        local record = {
+            Parts = {},
+            Glow = nil,
+            GalaxyApplied = false,
+        }
+        for _, part in ipairs(rig:GetDescendants()) do
+            if part:IsA("BasePart") and part.Transparency < 0.95 then
                 local appearances = {}
                 for _, child in ipairs(part:GetChildren()) do
                     if child:IsA("SurfaceAppearance") then
                         table.insert(appearances, child:Clone())
                     end
                 end
-                snapshot[part] = {
+                record.Parts[part] = {
                     Color = part.Color,
                     Material = part.Material,
                     Appearances = appearances,
                 }
             end
         end
-        if not compatible then
-            gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Waiting for compatible transformed rig")
-            return
+
+        local compatible = false
+        for _, name in ipairs(visualNames) do
+            local part = rig:FindFirstChild(name)
+            if part and part:IsA("BasePart") then
+                compatible = true
+            end
         end
 
-        local applied = pcall(function()
-            local SkinUtil = require(ReplicatedStorage.Modules.SkinUtil)
-            SkinUtil.applySkin("Galaxy", {
-                [rig] = "Transformations.Empyrean (Kitsune)-Empyrean (Kitsune)",
-            })
-        end)
-        if not applied then
-            for _, data in pairs(snapshot) do
-                for _, appearance in ipairs(data.Appearances) do
-                    appearance:Destroy()
+        if compatible then
+            record.GalaxyApplied = pcall(function()
+                local SkinUtil = require(ReplicatedStorage.Modules.SkinUtil)
+                SkinUtil.applySkin("Galaxy", {
+                    [rig] = "Transformations.Empyrean (Kitsune)-Empyrean (Kitsune)",
+                })
+            end)
+        end
+
+        for part in pairs(record.Parts) do
+            if part and part.Parent then
+                local isArmor = string.find(string.lower(part.Name), "armor", 1, true) ~= nil
+                local color = isArmor and VOID_KITSUNE_COLORS[3] or VOID_KITSUNE_COLORS[1]
+                part.Material = Enum.Material.Neon
+                part.Color = color
+                for _, child in ipairs(part:GetChildren()) do
+                    if child:IsA("SurfaceAppearance") then
+                        pcall(function()
+                            child.Color = color
+                        end)
+                        pcall(function()
+                            child.EmissiveStrength = isArmor and 2.5 or 1.8
+                        end)
+                    end
                 end
             end
-            gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Galaxy skin apply failed")
-            return
         end
 
-        local neon = rig:FindFirstChild("Neon")
-        if neon and neon:IsA("BasePart") then
-            neon.Color = VOID_KITSUNE_COLORS[1]
+        local glow = Instance.new("Folder")
+        glow.Name = "VORVoidGalaxyGlow"
+        glow.Parent = rig
+        record.Glow = glow
+
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "VORVoidOutline"
+        highlight.Adornee = rig
+        highlight.FillColor = VOID_KITSUNE_COLORS[1]
+        highlight.FillTransparency = 0.72
+        highlight.OutlineColor = VOID_KITSUNE_COLORS[3]
+        highlight.OutlineTransparency = 0.05
+        highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+        highlight.Parent = glow
+
+        local root = rig:FindFirstChild("RootPart", true) or rig:FindFirstChildWhichIsA("BasePart", true)
+        if root and root:IsA("BasePart") then
+            local anchor = Instance.new("Part")
+            anchor.Name = "VORVoidEmitterAnchor"
+            anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+            anchor.Transparency = 1
+            anchor.Anchored = false
+            anchor.CanCollide = false
+            anchor.CanTouch = false
+            anchor.CanQuery = false
+            anchor.Massless = true
+            anchor.CFrame = root.CFrame
+            anchor.Parent = glow
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = root
+            weld.Part1 = anchor
+            weld.Parent = anchor
+
+            local attachment = Instance.new("Attachment")
+            attachment.Name = "VORVoidEmitter"
+            attachment.Parent = anchor
+            local source = ReplicatedStorage:FindFirstChild("FX")
+            source = source and source:FindFirstChild("Kitsune")
+            source = source and source:FindFirstChild("KitsuneTailSpawn")
+            source = source and source:FindFirstChildWhichIsA("ParticleEmitter", true)
+            if source then
+                local emitter = source:Clone()
+                emitter.Name = "VORVoidEmbers"
+                emitter.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, VOID_KITSUNE_COLORS[1]),
+                    ColorSequenceKeypoint.new(0.55, VOID_KITSUNE_COLORS[3]),
+                    ColorSequenceKeypoint.new(1, VOID_KITSUNE_COLORS[2]),
+                })
+                emitter.LightEmission = 1
+                emitter.Rate = math.max(18, emitter.Rate)
+                emitter.Enabled = true
+                emitter.Parent = attachment
+            end
+
+            local light = Instance.new("PointLight")
+            light.Name = "VORVoidLight"
+            light.Color = VOID_KITSUNE_COLORS[1]
+            light.Brightness = 2.4
+            light.Range = 20
+            light.Shadows = false
+            light.Parent = anchor
         end
-        local eyes = rig:FindFirstChild("Eyes")
-        if eyes and eyes:IsA("BasePart") then
-            eyes.Color = VOID_KITSUNE_COLORS[3]
-        end
-        voidKitsuneState.GalaxyRigs[rig] = snapshot
-        gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Galaxy model active")
+
+        voidKitsuneState.GalaxyRigs[rig] = record
+        gui:SetAttribute(
+            "BloxVoidKitsuneGalaxyRigStatus",
+            record.GalaxyApplied and "Galaxy model + void glow active" or "Void glow active on standard Kitsune rig"
+        )
     end
 
     local function applyVoidKitsuneColors()
@@ -16049,9 +16135,12 @@ if SETTINGS.IsBloxFruits then
             end
         end
         voidKitsuneState.GalaxyMarkers = setmetatable({}, {__mode = "k"})
-        for rig, snapshot in pairs(voidKitsuneState.GalaxyRigs) do
+        for rig, record in pairs(voidKitsuneState.GalaxyRigs) do
             if rig and rig.Parent then
-                for part, data in pairs(snapshot) do
+                if record.Glow and record.Glow.Parent then
+                    record.Glow:Destroy()
+                end
+                for part, data in pairs(record.Parts) do
                     if part and part.Parent then
                         part.Color = data.Color
                         part.Material = data.Material
@@ -16087,6 +16176,282 @@ if SETTINGS.IsBloxFruits then
         identityMaskState.Humanoids = setmetatable({}, {__mode = "k"})
         identityMaskState.Labels = setmetatable({}, {__mode = "k"})
         gui:SetAttribute("BloxIdentityMask", "Original")
+    end
+
+    local function restoreKitsuneFloat()
+        for motor, originalTransform in pairs(kitsuneFloatState.Motors) do
+            if motor and motor.Parent then
+                motor.Transform = originalTransform
+            end
+        end
+        kitsuneFloatState.Motors = setmetatable({}, {__mode = "k"})
+        gui:SetAttribute("BloxVoidKitsuneFloat", false)
+        gui:SetAttribute("BloxVoidKitsuneFloatStatus", "Off")
+    end
+
+    local function animateKitsuneFloat()
+        if not kitsuneFloatState.Enabled then
+            return
+        end
+        local foundMotor = false
+        for _, tool in ipairs(collectKitsuneTools()) do
+            local transformedObject = tool:FindFirstChild("TransformedRigObject")
+            local rig = transformedObject and transformedObject:IsA("ObjectValue") and transformedObject.Value or nil
+            if rig and rig.Parent then
+                for _, descendant in ipairs(rig:GetDescendants()) do
+                    if descendant:IsA("Motor6D")
+                        and (descendant.Name == "KitsuneMotor6D" or descendant.Name == "ArmorMotor6D") then
+                        foundMotor = true
+                        if kitsuneFloatState.Motors[descendant] == nil then
+                            kitsuneFloatState.Motors[descendant] = descendant.Transform
+                        end
+                    end
+                end
+            end
+        end
+
+        local elapsed = os.clock() - kitsuneFloatState.StartedAt
+        local height = 0.85 + math.sin(elapsed * 2.15) * 0.24
+        local pitch = math.rad(math.sin(elapsed * 1.45) * 1.8)
+        local roll = math.rad(math.sin(elapsed * 1.8) * 2.5)
+        local offset = CFrame.new(0, height, 0) * CFrame.Angles(pitch, 0, roll)
+        for motor, originalTransform in pairs(kitsuneFloatState.Motors) do
+            if motor and motor.Parent then
+                motor.Transform = originalTransform * offset
+            end
+        end
+        gui:SetAttribute("BloxVoidKitsuneFloat", true)
+        gui:SetAttribute(
+            "BloxVoidKitsuneFloatStatus",
+            foundMotor and "Floating transformed rig" or "Waiting for Kitsune transformation"
+        )
+    end
+
+    local function setVoidVisualProperty(object, property, value)
+        local original = voidDarkBladeState.Originals[object]
+        if not original then
+            original = {}
+            voidDarkBladeState.Originals[object] = original
+        end
+        if original[property] == nil then
+            local readable, current = pcall(function()
+                return object[property]
+            end)
+            if not readable then
+                return
+            end
+            original[property] = current
+        end
+        pcall(function()
+            object[property] = value
+        end)
+    end
+
+    local function recolorVoidVisual(object)
+        local sequence = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, VOID_KITSUNE_COLORS[1]),
+            ColorSequenceKeypoint.new(0.55, VOID_KITSUNE_COLORS[3]),
+            ColorSequenceKeypoint.new(1, VOID_KITSUNE_COLORS[2]),
+        })
+        if object:IsA("ParticleEmitter") or object:IsA("Trail") or object:IsA("Beam") then
+            setVoidVisualProperty(object, "Color", sequence)
+            if object:IsA("ParticleEmitter") then
+                setVoidVisualProperty(object, "LightEmission", math.max(0.75, object.LightEmission))
+            end
+        elseif object:IsA("BasePart") then
+            local lowerName = string.lower(object.Name)
+            local dark = string.find(lowerName, "black", 1, true)
+                or string.find(lowerName, "shadow", 1, true)
+            setVoidVisualProperty(object, "Color", dark and VOID_KITSUNE_COLORS[2] or VOID_KITSUNE_COLORS[1])
+        elseif object:IsA("PointLight") or object:IsA("SpotLight") or object:IsA("SurfaceLight") then
+            setVoidVisualProperty(object, "Color", VOID_KITSUNE_COLORS[1])
+        elseif object:IsA("Decal") or object:IsA("Texture") then
+            setVoidVisualProperty(object, "Color3", VOID_KITSUNE_COLORS[3])
+        elseif object:IsA("SurfaceAppearance") then
+            setVoidVisualProperty(object, "Color", VOID_KITSUNE_COLORS[1])
+            setVoidVisualProperty(object, "EmissiveStrength", 2)
+        elseif object:IsA("Highlight") then
+            setVoidVisualProperty(object, "FillColor", VOID_KITSUNE_COLORS[1])
+            setVoidVisualProperty(object, "OutlineColor", VOID_KITSUNE_COLORS[3])
+        elseif object:IsA("Color3Value") then
+            setVoidVisualProperty(object, "Value", VOID_KITSUNE_COLORS[1])
+        elseif object:IsA("ColorCorrectionEffect") then
+            setVoidVisualProperty(object, "TintColor", VOID_KITSUNE_COLORS[1])
+        elseif object:IsA("UIGradient") then
+            setVoidVisualProperty(object, "Color", sequence)
+        elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
+            setVoidVisualProperty(object, "ImageColor3", VOID_KITSUNE_COLORS[1])
+        elseif object:IsA("Smoke") then
+            setVoidVisualProperty(object, "Color", VOID_KITSUNE_COLORS[2])
+        elseif object:IsA("Fire") then
+            setVoidVisualProperty(object, "Color", VOID_KITSUNE_COLORS[1])
+            setVoidVisualProperty(object, "SecondaryColor", VOID_KITSUNE_COLORS[3])
+        elseif object:IsA("Sparkles") then
+            setVoidVisualProperty(object, "SparkleColor", VOID_KITSUNE_COLORS[3])
+        end
+    end
+
+    local function recolorMidnightBladeEffects()
+        local fx = ReplicatedStorage:FindFirstChild("FX")
+        for _, root in ipairs({
+            fx and fx:FindFirstChild("MidnightBlade"),
+            fx and fx:FindFirstChild("PortalEffects"),
+        }) do
+            if root then
+                recolorVoidVisual(root)
+                for _, descendant in ipairs(root:GetDescendants()) do
+                    recolorVoidVisual(descendant)
+                end
+            end
+        end
+    end
+
+    local function midnightBladeVisualModels()
+        local found = {}
+        local character = LocalPlayer.Character
+        if not character then
+            return found
+        end
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Model")
+                and string.lower(tostring(child:GetAttribute("WeaponName") or "")) == "midnightblade" then
+                table.insert(found, child)
+            end
+        end
+        return found
+    end
+
+    local function applyVoidDarkBladeModel(weaponModel)
+        if voidDarkBladeState.WeaponModels[weaponModel] then
+            return
+        end
+        local right = weaponModel:FindFirstChild("Right")
+        local handle = right and right:FindFirstChild("Handle")
+        local cutscene = ReplicatedStorage:FindFirstChild("Effect")
+        cutscene = cutscene and cutscene:FindFirstChild("Container")
+        cutscene = cutscene and cutscene:FindFirstChild("IndraCutscene")
+        cutscene = cutscene and cutscene:FindFirstChild("IndraIsland")
+        cutscene = cutscene and cutscene:FindFirstChild("anim")
+        cutscene = cutscene and cutscene:FindFirstChild("mygame43")
+        local darkBlade = cutscene and cutscene:FindFirstChild("DarkBlade")
+        local template = darkBlade and darkBlade:FindFirstChild("Right")
+        if not right or not handle or not template then
+            return
+        end
+
+        local oldTest = right:FindFirstChild("VORVoidDarkBlade")
+        if oldTest then
+            oldTest:Destroy()
+        end
+        local record = {
+            Transparencies = setmetatable({}, {__mode = "k"}),
+            Clone = nil,
+        }
+        for _, child in ipairs(right:GetChildren()) do
+            if child:IsA("MeshPart") then
+                record.Transparencies[child] = child.Transparency
+                child.Transparency = 1
+            end
+        end
+
+        local clone = template:Clone()
+        clone.Name = "VORVoidDarkBladeV3"
+        clone:SetAttribute("VORCosmetic", true)
+        clone.Parent = right
+        record.Clone = clone
+        local hold = clone:FindFirstChild("Hold")
+        for _, descendant in ipairs(clone:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                descendant.Anchored = false
+                descendant.CanCollide = false
+                descendant.CanTouch = false
+                descendant.CanQuery = false
+                descendant.Massless = true
+                descendant.CastShadow = false
+                local lowerName = string.lower(descendant.Name)
+                if lowerName == "runes" or lowerName == "gems" then
+                    descendant.Color = VOID_KITSUNE_COLORS[3]
+                    descendant.Material = Enum.Material.Neon
+                elseif lowerName == "tape" or lowerName == "hold" then
+                    descendant.Color = VOID_KITSUNE_COLORS[2]
+                    descendant.Material = Enum.Material.SmoothPlastic
+                else
+                    descendant.Color = VOID_KITSUNE_COLORS[1]
+                    descendant.Material = Enum.Material.Neon
+                end
+            end
+        end
+        if hold and hold:IsA("BasePart") then
+            hold.CFrame = handle.CFrame * CFrame.Angles(math.rad(90), 0, 0)
+            local weld = Instance.new("WeldConstraint")
+            weld.Name = "VORGripWeld"
+            weld.Part0 = handle
+            weld.Part1 = hold
+            weld.Parent = hold
+            local light = Instance.new("PointLight")
+            light.Name = "VORDarkBladeLight"
+            light.Color = VOID_KITSUNE_COLORS[1]
+            light.Brightness = 2.2
+            light.Range = 14
+            light.Shadows = false
+            light.Parent = hold
+        end
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "VORDarkBladeOutline"
+        highlight.Adornee = clone
+        highlight.FillColor = VOID_KITSUNE_COLORS[1]
+        highlight.FillTransparency = 0.75
+        highlight.OutlineColor = VOID_KITSUNE_COLORS[3]
+        highlight.OutlineTransparency = 0.05
+        highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+        highlight.Parent = clone
+
+        local auraModel = right:FindFirstChild("AuraModel")
+        if auraModel then
+            for _, descendant in ipairs(auraModel:GetDescendants()) do
+                recolorVoidVisual(descendant)
+            end
+        end
+        voidDarkBladeState.WeaponModels[weaponModel] = record
+        gui:SetAttribute("BloxVoidDarkBladeStatus", "Dark Blade V3 model + Midnight abilities active")
+    end
+
+    local function applyVoidDarkBlade()
+        if not voidDarkBladeState.Enabled then
+            return
+        end
+        for _, weaponModel in ipairs(midnightBladeVisualModels()) do
+            applyVoidDarkBladeModel(weaponModel)
+        end
+        gui:SetAttribute("BloxVoidDarkBlade", true)
+    end
+
+    local function restoreVoidDarkBlade()
+        for weaponModel, record in pairs(voidDarkBladeState.WeaponModels) do
+            if record.Clone and record.Clone.Parent then
+                record.Clone:Destroy()
+            end
+            if weaponModel and weaponModel.Parent then
+                for part, transparency in pairs(record.Transparencies) do
+                    if part and part.Parent then
+                        part.Transparency = transparency
+                    end
+                end
+            end
+        end
+        voidDarkBladeState.WeaponModels = setmetatable({}, {__mode = "k"})
+        for object, original in pairs(voidDarkBladeState.Originals) do
+            if object and object.Parent then
+                for property, value in pairs(original) do
+                    pcall(function()
+                        object[property] = value
+                    end)
+                end
+            end
+        end
+        voidDarkBladeState.Originals = setmetatable({}, {__mode = "k"})
+        gui:SetAttribute("BloxVoidDarkBlade", false)
+        gui:SetAttribute("BloxVoidDarkBladeStatus", "Off")
     end
 
     local function applyIdentityMask()
@@ -16158,6 +16523,38 @@ if SETTINGS.IsBloxFruits then
             applyIdentityMask()
         end,
     })
+    CosmeticsSection:AddToggle({
+        Name = "Void Kitsune Float",
+        Description = "Smooth visual hover for the transformed fox without moving your real root",
+        Flag = "blox_void_kitsune_float",
+        Default = false,
+        Callback = function(enabled)
+            restoreKitsuneFloat()
+            kitsuneFloatState.Enabled = enabled == true
+            kitsuneFloatState.StartedAt = os.clock()
+            if kitsuneFloatState.Enabled then
+                animateKitsuneFloat()
+            end
+        end,
+    })
+    CosmeticsSection:AddToggle({
+        Name = "Void Dark Blade V3",
+        Description = "Replace Midnight Blade's local model and recolor its abilities to the VOR theme",
+        Flag = "blox_void_dark_blade_v3",
+        Default = false,
+        Callback = function(enabled)
+            restoreVoidDarkBlade()
+            voidDarkBladeState.Enabled = enabled == true
+            if voidDarkBladeState.Enabled then
+                recolorMidnightBladeEffects()
+                applyVoidDarkBlade()
+            end
+        end,
+    })
+
+    track(RunService.RenderStepped:Connect(function()
+        animateKitsuneFloat()
+    end))
 
     track(RunService.Heartbeat:Connect(function(deltaTime)
         if voidKitsuneState.Enabled then
@@ -16172,6 +16569,13 @@ if SETTINGS.IsBloxFruits then
             if identityMaskState.Accumulator >= 0.35 then
                 identityMaskState.Accumulator = 0
                 applyIdentityMask()
+            end
+        end
+        if voidDarkBladeState.Enabled then
+            voidDarkBladeState.Accumulator = voidDarkBladeState.Accumulator + deltaTime
+            if voidDarkBladeState.Accumulator >= 0.35 then
+                voidDarkBladeState.Accumulator = 0
+                applyVoidDarkBlade()
             end
         end
     end))
