@@ -15868,6 +15868,7 @@ local AppearanceSection = SettingsPage:AddSection("VOR Appearance", "Right")
 local CommunitySection = SettingsPage:AddSection("Access & Community", "Left")
 
 if SETTINGS.IsBloxFruits then
+    (function()
     local CosmeticsSection = SettingsPage:AddSection("Blox Fruits Cosmetics", "Right")
     local voidKitsuneState = {
         Enabled = false,
@@ -16579,6 +16580,7 @@ if SETTINGS.IsBloxFruits then
             end
         end
     end))
+    end)()
 end
 
 CommunitySection:AddLabel("Discord provides the current key, supported-game list, updates, feedback, and suggestions.")
