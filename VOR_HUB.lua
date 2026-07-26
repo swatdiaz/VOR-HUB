@@ -10620,6 +10620,22 @@ function Window:BuildBloxFruitsFeatures()
             AutoStartRaid = false,
             AutoBuyRaidChip = false,
             AutoAwaken = false,
+            RaidMultiGrab = false,
+            RaidGathered = 0,
+            RaidVoidKill = false,
+            RaidVoidActive = false,
+            RaidVoidMoved = 0,
+            RaidVoidStaged = 0,
+            RaidVoidKillCount = 0,
+            RaidVoidTargets = setmetatable({}, {__mode = "k"}),
+            RaidVoidOriginalCFrames = setmetatable({}, {__mode = "k"}),
+            LastRaidVoidStep = 0,
+            RaidSafeHeight = 35,
+            RaidEnteredAt = 0,
+            RaidEntryGrace = 8,
+            RaidHasEntered = false,
+            RaidLastInactiveAt = os.clock(),
+            RaidCastleStart = CFrame.new(-5064, 314, -2938),
             SelectedRaid = "Flame",
             RaidIslandIndex = 0,
             RaidIslandName = nil,
@@ -10710,6 +10726,9 @@ function Window:BuildBloxFruitsFeatures()
             PositionJitter = Vector3.zero,
             ActiveFarmTarget = nil,
             ActiveFarmVerticalLock = false,
+            ActiveFarmHeightOverride = nil,
+            AntiRagdollApplied = false,
+            AntiRagdollHumanoid = nil,
             SafeMode = false,
             SafeHealthPercent = 30,
             CurrentEnemyName = nil,
@@ -11076,6 +11095,68 @@ function Window:BuildBloxFruitsFeatures()
             root.CFrame += Vector3.new(0, state.FarmHoldY - root.Position.Y, 0)
         end
 
+        function FarmVertical.RecoverBody()
+            if state.Traveling then
+                return
+            end
+            local root = rootPart()
+            local body = humanoid()
+            if not root or not body or body.Health <= 0 then
+                return
+            end
+            local staleGuard = root:FindFirstChild("VORTravelVelocity")
+            if staleGuard then
+                pcall(function()
+                    staleGuard:Destroy()
+                end)
+            end
+            root.Anchored = false
+            body.Sit = false
+            body.PlatformStand = false
+            body.AutoRotate = true
+            local bodyState = body:GetState()
+            if bodyState == Enum.HumanoidStateType.Physics
+                or bodyState == Enum.HumanoidStateType.PlatformStanding
+                or bodyState == Enum.HumanoidStateType.Ragdoll
+                or bodyState == Enum.HumanoidStateType.FallingDown then
+                pcall(function()
+                    body:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end)
+                task.defer(function()
+                    if body.Parent and body.Health > 0 and not state.Traveling then
+                        pcall(function()
+                            body:ChangeState(Enum.HumanoidStateType.Running)
+                        end)
+                    end
+                end)
+            end
+        end
+
+        function FarmVertical.SetAntiRagdoll(enabled)
+            local body = humanoid()
+            enabled = enabled == true and body ~= nil and body.Health > 0
+            if state.AntiRagdollHumanoid == body and state.AntiRagdollApplied == enabled then
+                return
+            end
+            if state.AntiRagdollHumanoid and state.AntiRagdollHumanoid.Parent then
+                pcall(function()
+                    state.AntiRagdollHumanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                    state.AntiRagdollHumanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+                end)
+            end
+            state.AntiRagdollHumanoid = body
+            state.AntiRagdollApplied = enabled
+            if body then
+                pcall(function()
+                    body:SetStateEnabled(Enum.HumanoidStateType.FallingDown, not enabled)
+                    body:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, not enabled)
+                end)
+                if enabled then
+                    FarmVertical.RecoverBody()
+                end
+            end
+        end
+
         local function releaseMoveRide()
             local root = state.MoveRoot
             local body = state.MoveHumanoid
@@ -11088,16 +11169,26 @@ function Window:BuildBloxFruitsFeatures()
             if root and root.Parent then
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
-                root.Anchored = state.MoveRootWasAnchored == true
-            end
-            if body and body.Parent and state.MoveAutoRotate ~= nil then
-                body.AutoRotate = state.MoveAutoRotate
-                if state.MovePlatformStand ~= nil then
-                    body.PlatformStand = state.MovePlatformStand
+                if body and body.Parent and body.Health > 0 then
+                    root.Anchored = false
+                else
+                    root.Anchored = state.MoveRootWasAnchored == true
                 end
-                if not state.MoveRootWasAnchored and state.MovePlatformStand ~= true then
+            end
+            if body and body.Parent then
+                body.Sit = false
+                body.PlatformStand = false
+                body.AutoRotate = state.MoveAutoRotate == nil and true or state.MoveAutoRotate
+                if body.Health > 0 then
                     pcall(function()
-                        body:ChangeState(Enum.HumanoidStateType.Freefall)
+                        body:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end)
+                    task.defer(function()
+                        if body.Parent and body.Health > 0 and not state.Traveling then
+                            pcall(function()
+                                body:ChangeState(Enum.HumanoidStateType.Running)
+                            end)
+                        end
                     end)
                 end
             end
@@ -11168,10 +11259,8 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxTravelGoal", targetCFrame.Position)
             if state.MoveHumanoid then
                 state.MoveHumanoid.AutoRotate = false
-                state.MoveHumanoid.PlatformStand = true
-                pcall(function()
-                    state.MoveHumanoid:ChangeState(Enum.HumanoidStateType.Physics)
-                end)
+                state.MoveHumanoid.Sit = false
+                state.MoveHumanoid.PlatformStand = false
             end
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
@@ -11250,7 +11339,7 @@ function Window:BuildBloxFruitsFeatures()
             return enemyRoot.Position.Y
         end
 
-        local function positionAtEnemy(enemy, lockVertical)
+        local function positionAtEnemy(enemy, lockVertical, heightOverride)
             local enemyRoot = modelRoot(enemy)
             if not enemyRoot then
                 return nil
@@ -11323,15 +11412,21 @@ function Window:BuildBloxFruitsFeatures()
             end
             local localOffset = Vector3.new(
                 horizontalOffset.X,
-                math.max(3, tonumber(state.MobAuraHeight) or 20),
+                math.max(3, tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20),
                 horizontalOffset.Z
             )
             local worldOffset = state.PositionBasis:VectorToWorldSpace(localOffset)
+            local gatheredFrom = state.GatherOriginalCFrames[enemy]
+            local useGatherAnchor = typeof(gatheredFrom) == "CFrame" and (
+                state.GatherEnemies
+                or (state.RaidMultiGrab and state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true)
+            )
+            local livePosition = useGatherAnchor and gatheredFrom.Position or enemyRoot.Position
             local enemyAnchor = lockVertical and Vector3.new(
-                enemyRoot.Position.X,
-                state.PositionAnchorY or enemyRoot.Position.Y,
-                enemyRoot.Position.Z
-            ) or enemyRoot.Position
+                livePosition.X,
+                state.PositionAnchorY or livePosition.Y,
+                livePosition.Z
+            ) or livePosition
             local position = enemyAnchor + worldOffset
             return CFrame.lookAt(position, enemyAnchor)
         end
@@ -11355,10 +11450,10 @@ function Window:BuildBloxFruitsFeatures()
             return true
         end
 
-        local function syncFarmAuraRange()
+        local function syncFarmAuraRange(heightOverride)
             local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
                 or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
-            local height = math.max(3, tonumber(state.MobAuraHeight) or 20)
+            local height = math.max(3, tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20)
             local required = math.min(
                 AURA_KILL_MAX_RANGE,
                 math.ceil(math.sqrt(height * height + radius * radius) + 8)
@@ -11985,7 +12080,11 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
             local attackTargets = {target}
-            if state.GatherEnemies and #targets > 1 then
+            if (state.GatherEnemies or (
+                state.RaidMultiGrab
+                and state.AutoRaid
+                and LocalPlayer:GetAttribute("IslandRaiding") == true
+            )) and #targets > 1 then
                 attackTargets = {}
                 -- Non-Buddha melee validation accepts two rigs in one bundled
                 -- hit but rejects oversized lists. Rotate pairs through the
@@ -12430,6 +12529,14 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxMultiGrabLimit", MULTI_GRAB_LIMIT)
             gui:SetAttribute("BloxMultiGrabRange", MULTI_GRAB_RANGE)
             gui:SetAttribute("BloxMultiGrabCount", state.Gathered)
+            gui:SetAttribute("BloxRaidMultiGrab", state.RaidMultiGrab)
+            gui:SetAttribute("BloxRaidMultiGrabCount", state.RaidGathered)
+            gui:SetAttribute("BloxRaidVoidKill", state.RaidVoidKill)
+            gui:SetAttribute("BloxRaidVoidActive", state.RaidVoidActive)
+            gui:SetAttribute("BloxRaidVoidMoved", state.RaidVoidMoved)
+            gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
+            gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
+            gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
             gui:SetAttribute(
                 "BloxMultiGrabSingleFallback",
                 state.GatherSingleFallbackEnemy and normalizeEnemyName(state.GatherSingleFallbackEnemy.Name) or ""
@@ -12629,6 +12736,7 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function stepAutoLevel()
+            state.ActiveFarmHeightOverride = nil
             local quest = selectedLevelQuest()
             if not quest then
                 state.ActiveFarmTarget = nil
@@ -12734,6 +12842,7 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function stepBossFarm()
+            state.ActiveFarmHeightOverride = nil
             if state.SelectedBoss == "None" then
                 state.ActiveFarmTarget = nil
                 setError("Choose a boss first")
@@ -12846,50 +12955,252 @@ function Window:BuildBloxFruitsFeatures()
             return nearest, nearestDistance
         end
 
+        function RaidRuntime.RaidChip()
+            for _, container in ipairs({character(), LocalPlayer:FindFirstChildOfClass("Backpack")}) do
+                if container then
+                    for _, child in ipairs(container:GetChildren()) do
+                        if child:IsA("Tool") then
+                            local name = string.lower(child.Name)
+                            if string.find(name, "microchip", 1, true)
+                                or string.find(name, "raid chip", 1, true) then
+                                return child
+                            end
+                        end
+                    end
+                end
+            end
+            return nil
+        end
+
+        function RaidRuntime.StartStation()
+            local map = workspace:FindFirstChild("Map")
+            local root = rootPart()
+            if not map or not root then
+                return nil
+            end
+            local bestYellow = nil
+            local bestDetector = nil
+            local bestDistance = math.huge
+            for _, station in ipairs(map:GetDescendants()) do
+                if station:IsA("Model") and station.Name == "RaidSummon2" then
+                    local mainRaid = station:FindFirstChild("MainRaid")
+                    local yellow = mainRaid and (mainRaid:FindFirstChild("Color")
+                        or mainRaid:FindFirstChildWhichIsA("BasePart"))
+                    local button = station:FindFirstChild("Button")
+                    local buttonPart = button and (button:FindFirstChild("Main")
+                        or button:FindFirstChildWhichIsA("BasePart"))
+                    local detector = buttonPart and buttonPart:FindFirstChildOfClass("ClickDetector")
+                    if yellow and yellow:IsA("BasePart") and detector then
+                        local distance = (yellow.Position - root.Position).Magnitude
+                        if distance < bestDistance then
+                            bestYellow = yellow
+                            bestDetector = detector
+                            bestDistance = distance
+                        end
+                    end
+                end
+            end
+            return bestYellow, bestDetector, bestDistance
+        end
+
+        function RaidRuntime.VoidKillStep(island)
+            local enabled = state.AutoRaid
+                and state.RaidVoidKill
+                and RaidRuntime.Active()
+                and island
+                and island.Index >= 5
+            if not enabled then
+                for enemy, originalCFrame in pairs(state.RaidVoidOriginalCFrames) do
+                    local enemyRoot = modelRoot(enemy)
+                    local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
+                    if enemyRoot and enemyBody and enemyBody.Health > 0 then
+                        pcall(function()
+                            enemyBody.PlatformStand = false
+                            enemyRoot.CFrame = originalCFrame
+                            enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                            enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                    end
+                end
+                table.clear(state.RaidVoidOriginalCFrames)
+                state.RaidVoidActive = false
+                state.RaidVoidMoved = 0
+                state.RaidVoidStaged = 0
+                return 0
+            end
+            state.RaidVoidActive = true
+            if os.clock() - state.LastRaidVoidStep < 0.06 then
+                return state.RaidVoidMoved
+            end
+            state.LastRaidVoidStep = os.clock()
+            pcall(function()
+                if type(sethiddenproperty) == "function" then
+                    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                end
+            end)
+            local playerRoot = rootPart()
+            if not playerRoot then
+                state.RaidVoidMoved = 0
+                state.RaidVoidStaged = 0
+                return 0
+            end
+            -- Solix's live Island 5 sequence is ownership-gated, not a raw void
+            -- teleport: a full-health raid boss becomes network-owned, Health
+            -- reaches server-visible zero, and the replicated corpse then falls
+            -- naturally for several seconds before removal.
+            local killed = 0
+            local waitingForOwnership = 0
+            for _, enemy in ipairs(loadedEnemies()) do
+                local enemyRoot = modelRoot(enemy)
+                local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
+                if enemyRoot and enemyBody and enemyBody.Health > 0
+                    and (enemyRoot.Position - island.Part.Position).Magnitude <= 2500 then
+                    local owned = false
+                    if type(isnetworkowner) == "function" then
+                        local ownerOk, ownerResult = pcall(isnetworkowner, enemyRoot)
+                        owned = ownerOk and ownerResult == true
+                    end
+                    local actionOk = pcall(function()
+                        if owned then
+                            enemyBody.Health = -9e9
+                        end
+                    end)
+                    if owned and actionOk then
+                        if not state.RaidVoidTargets[enemy] then
+                            state.RaidVoidTargets[enemy] = true
+                            state.RaidVoidKillCount += 1
+                        end
+                        killed += 1
+                    else
+                        waitingForOwnership += 1
+                    end
+                end
+            end
+            state.RaidVoidMoved = killed
+            state.RaidVoidStaged = waitingForOwnership
+            state.RaidGathered = 0
+            return killed
+        end
+
         local function fireRaidButton()
             if type(fireclickdetector) ~= "function" then
                 return false, "fireclickdetector is unavailable"
             end
-            local map = workspace:FindFirstChild("Map")
-            if not map then
-                return false, "Map is unavailable"
+            if RaidRuntime.Active() then
+                return true, "Raid is already active"
             end
-            for _, descendant in ipairs(map:GetDescendants()) do
-                if descendant:IsA("ClickDetector") then
-                    local path = string.lower(descendant:GetFullName())
-                    if string.find(path, "raid", 1, true) and string.find(path, "button", 1, true) then
-                        local ok, result = pcall(fireclickdetector, descendant)
-                        return ok, result
-                    end
-                end
+            local root = rootPart()
+            if not root then
+                return false, "Character is unavailable"
             end
-            return false, "Raid start button was not found"
+            local chip = RaidRuntime.RaidChip()
+            if not chip then
+                return false, "No raid microchip found; buy one first"
+            end
+            local yellow, detector, distance = RaidRuntime.StartStation()
+            if not yellow or not detector then
+                moveTo(state.RaidCastleStart)
+                return true, "Moving to Castle on the Sea raid room"
+            end
+            local standingCFrame = CFrame.new(
+                yellow.Position + Vector3.new(0, yellow.Size.Y * 0.5 + 2.8, 0)
+            )
+            if distance > 7 then
+                moveTo(standingCFrame)
+                return true, "Moving to the nearest yellow raid pad"
+            end
+            cancelMove(false)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = standingCFrame
+            local body = humanoid()
+            if body and chip.Parent ~= character() then
+                pcall(function()
+                    body:EquipTool(chip)
+                end)
+            end
+            if type(firetouchinterest) == "function" then
+                pcall(firetouchinterest, root, yellow, 0)
+                pcall(firetouchinterest, root, yellow, 1)
+            end
+            task.wait(0.15)
+            local ok, result = pcall(fireclickdetector, detector)
+            return ok, ok and "Green raid button activated" or result
         end
 
         local function stepRaid()
             local island = RaidRuntime.LatestIsland()
             if not island then
                 state.ActiveFarmTarget = nil
+                state.ActiveFarmHeightOverride = nil
                 state.RaidIslandIndex = 0
                 state.RaidIslandName = nil
                 state.RaidTargetName = nil
+                RaidRuntime.VoidKillStep(nil)
                 raidLabel.Text = "Dungeon / Raid: Waiting to start"
+                return
+            end
+            local entryRemaining = state.RaidEntryGrace - (os.clock() - state.RaidEnteredAt)
+            if state.RaidEnteredAt > 0 and entryRemaining > 0 then
+                state.ActiveFarmTarget = nil
+                state.ActiveFarmHeightOverride = nil
+                state.RaidIslandIndex = 0
+                state.RaidIslandName = nil
+                state.RaidTargetName = nil
+                RaidRuntime.VoidKillStep(nil)
+                raidLabel.Text = string.format(
+                    "Dungeon / Raid: Waiting for server teleport | %.1fs",
+                    entryRemaining
+                )
                 return
             end
             state.RaidIslandIndex = island.Index
             state.RaidIslandName = island.Name
+            local safeHeight = math.max(state.RaidSafeHeight, tonumber(state.MobAuraHeight) or 20)
+            state.ActiveFarmHeightOverride = safeHeight
+            local voided = RaidRuntime.VoidKillStep(island)
+            if state.RaidVoidActive then
+                state.ActiveFarmTarget = nil
+                state.ActiveFarmVerticalLock = false
+                state.RaidTargetName = nil
+                moveTo(island.Part.CFrame + Vector3.new(0, safeHeight, 0))
+                raidLabel.Text = string.format(
+                    "Dungeon / Raid: Island %d FORCE KILL | Waiting ownership: %d | Killed: %d | Total: %d",
+                    island.Index,
+                    state.RaidVoidStaged,
+                    voided,
+                    state.RaidVoidKillCount
+                )
+                return
+            end
             local enemy, distance = RaidRuntime.NearestEnemy(island)
             if enemy then
                 state.ActiveFarmTarget = enemy
-                state.ActiveFarmVerticalLock = false
+                state.ActiveFarmVerticalLock = true
                 state.CurrentEnemyName = normalizeEnemyName(enemy.Name)
                 state.RaidTargetName = state.CurrentEnemyName
+                if healthPercent() <= 50 then
+                    state.ActiveFarmTarget = nil
+                    local enemyRoot = modelRoot(enemy)
+                    if enemyRoot then
+                        local retreatHeight = math.max(55, safeHeight + 15)
+                        moveTo(CFrame.lookAt(
+                            enemyRoot.Position + Vector3.new(0, retreatHeight, 0),
+                            enemyRoot.Position
+                        ))
+                    end
+                    raidLabel.Text = string.format(
+                        "Dungeon / Raid: Emergency recovery at %.0f%% health",
+                        healthPercent()
+                    )
+                    return
+                end
                 if safeModeRetreat(enemy) then
                     raidLabel.Text = "Dungeon / Raid: Safe mode recovery"
                     return
                 end
-                syncFarmAuraRange()
-                local targetCFrame = positionAtEnemy(enemy)
+                syncFarmAuraRange(safeHeight)
+                local targetCFrame = positionAtEnemy(enemy, true, safeHeight)
                 if targetCFrame then
                     moveToFarmPosition(targetCFrame)
                 end
@@ -12906,7 +13217,7 @@ function Window:BuildBloxFruitsFeatures()
                     "Dungeon / Raid: Moving to latest island %d",
                     island.Index
                 )
-                moveTo(island.Part.CFrame + Vector3.new(0, math.max(15, state.MobAuraHeight), 0))
+                moveTo(island.Part.CFrame + Vector3.new(0, safeHeight, 0))
             end
         end
 
@@ -12920,9 +13231,18 @@ function Window:BuildBloxFruitsFeatures()
             if not root then
                 return
             end
-            local enabled = state.GatherEnemies or (state.AutoMagnet and (state.AutoFarmLevel or state.AutoBoss or state.AutoRaid))
+            local raidIsland = state.AutoRaid and RaidRuntime.LatestIsland() or nil
+            local raidVoidActive = state.RaidVoidKill and raidIsland and raidIsland.Index >= 5
+            local raidGatherEnabled = state.RaidMultiGrab and state.AutoRaid
+                and RaidRuntime.Active() and not raidVoidActive
+            local multiGrabEnabled = state.GatherEnemies or raidGatherEnabled
+            local enabled = not raidVoidActive and (
+                multiGrabEnabled
+                or (state.AutoMagnet and (state.AutoFarmLevel or state.AutoBoss or state.AutoRaid))
+            )
             if not enabled then
                 state.Gathered = 0
+                state.RaidGathered = 0
                 state.GatherSingleFallbackEnemy = nil
                 for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
                     local enemyRoot = modelRoot(enemy)
@@ -12940,8 +13260,9 @@ function Window:BuildBloxFruitsFeatures()
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
                 end
             end)
-            local gatherRange = state.GatherEnemies and MULTI_GRAB_RANGE or state.MagnetRange
-            local targetName = state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName
+            local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
+            local targetName = raidGatherEnabled and nil
+                or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
             -- Stack every grabbed NPC directly underneath the player. This
             -- keeps the pile inside Aura range while the player remains above
             -- it instead of dragging the enemies in front of the character.
@@ -12950,8 +13271,12 @@ function Window:BuildBloxFruitsFeatures()
             for _, enemy in ipairs(loadedEnemies()) do
                 local enemyRoot = modelRoot(enemy)
                 local distance = enemyRoot and (enemyRoot.Position - root.Position).Magnitude or math.huge
-                if enemyRoot and modelAlive(enemy) and distance <= gatherRange then
-                    if targetName and enemyMatches(enemy, targetName) then
+                local insideRaid = not raidGatherEnabled or (
+                    raidIsland and enemyRoot
+                        and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
+                )
+                if enemyRoot and modelAlive(enemy) and distance <= gatherRange and insideRaid then
+                    if not targetName or enemyMatches(enemy, targetName) then
                         table.insert(candidates, {Enemy = enemy, Root = enemyRoot, Distance = distance})
                     end
                 end
@@ -12959,7 +13284,7 @@ function Window:BuildBloxFruitsFeatures()
             table.sort(candidates, function(left, right)
                 return left.Distance < right.Distance
             end)
-            if state.GatherEnemies then
+            if multiGrabEnabled then
                 for _, candidate in ipairs(candidates) do
                     if state.GatherOriginalCFrames[candidate.Enemy] == nil then
                         state.GatherOriginalCFrames[candidate.Enemy] = candidate.Root.CFrame
@@ -12987,7 +13312,7 @@ function Window:BuildBloxFruitsFeatures()
                 end
             end
             local gathered = 0
-            local limit = state.GatherEnemies and MULTI_GRAB_LIMIT or math.huge
+            local limit = multiGrabEnabled and MULTI_GRAB_LIMIT or math.huge
             for index, candidate in ipairs(candidates) do
                 if index > limit then
                     break
@@ -13000,6 +13325,7 @@ function Window:BuildBloxFruitsFeatures()
                 gathered += 1
             end
             state.Gathered = gathered
+            state.RaidGathered = raidGatherEnabled and gathered or 0
         end
 
         local function chestPart()
@@ -14631,7 +14957,7 @@ function Window:BuildBloxFruitsFeatures()
             Name = "Start Dungeon / Raid Once",
             Callback = function()
                 local ok, result = fireRaidButton()
-                Window:Notify("Raid", ok and "Start button activated" or tostring(result), 3)
+                Window:Notify("Raid", tostring(result), 3)
             end,
         })
         RaidSection:AddToggle({
@@ -14657,12 +14983,48 @@ function Window:BuildBloxFruitsFeatures()
                     state.RaidIslandIndex = 0
                     state.RaidIslandName = nil
                     state.RaidTargetName = nil
+                    state.ActiveFarmHeightOverride = nil
+                    state.RaidVoidActive = false
+                    state.RaidVoidMoved = 0
                     cancelMove()
                 end
                 gui:SetAttribute("BloxAutoRaid", enabled)
                 gui:SetAttribute("BloxRaidIslandIndex", state.RaidIslandIndex)
                 gui:SetAttribute("BloxRaidIslandName", state.RaidIslandName or "")
                 gui:SetAttribute("BloxRaidTarget", state.RaidTargetName or "")
+            end,
+        })
+        RaidSection:AddLabel("Raid farm stays at least 35 studs above NPCs. Combat Height can raise it, never lower it.")
+        RaidSection:AddToggle({
+            Name = "Raid Multi Grab",
+            Description = "Stacks up to 3 living raid NPCs 8 studs below you; disabled automatically during final-island Void Kill",
+            Flag = "blox_raid_multi_grab",
+            Default = false,
+            Callback = function(enabled)
+                state.RaidMultiGrab = enabled
+                if not enabled then
+                    state.RaidGathered = 0
+                end
+                gui:SetAttribute("BloxRaidMultiGrab", enabled)
+            end,
+        })
+        RaidSection:AddToggle({
+            Name = "Force Kill Aura [Island 5]",
+            Description = "Matches Solix: network-finishes Island 5 NPCs at full health and leaves each corpse replicated to fall naturally",
+            Flag = "blox_raid_void_kill",
+            Default = false,
+            Callback = function(enabled)
+                state.RaidVoidKill = enabled
+                state.RaidVoidActive = false
+                state.RaidVoidMoved = 0
+                state.RaidVoidStaged = 0
+                if enabled then
+                    state.LastRaidVoidStep = 0
+                    state.RaidVoidKillCount = 0
+                    table.clear(state.RaidVoidTargets)
+                    table.clear(state.RaidVoidOriginalCFrames)
+                end
+                gui:SetAttribute("BloxRaidVoidKill", enabled)
             end,
         })
         RaidSection:AddToggle({
@@ -14785,6 +15147,7 @@ function Window:BuildBloxFruitsFeatures()
         end))
 
         track(LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+            cancelMove(false)
             FarmVertical.Release()
             state.LastAttack = 0
             state.LastAuraScan = 0
@@ -14809,6 +15172,10 @@ function Window:BuildBloxFruitsFeatures()
             state.MobAuraStableAnchor = nil
             state.GatherSingleFallbackEnemy = nil
             table.clear(state.GatherOriginalCFrames)
+            state.ActiveFarmTarget = nil
+            state.ActiveFarmHeightOverride = nil
+            state.AntiRagdollApplied = false
+            state.AntiRagdollHumanoid = nil
             if state.AutoBuso then
                 task.delay(0.5, function()
                     if state.Alive and state.AutoBuso then
@@ -14816,6 +15183,46 @@ function Window:BuildBloxFruitsFeatures()
                     end
                 end)
             end
+            task.delay(0.15, function()
+                if state.Alive and newCharacter.Parent then
+                    FarmVertical.RecoverBody()
+                end
+            end)
+        end))
+
+        track(LocalPlayer:GetAttributeChangedSignal("IslandRaiding"):Connect(function()
+            cancelMove(false)
+            FarmVertical.Release()
+            state.ActiveFarmTarget = nil
+            state.ActiveFarmHeightOverride = nil
+            state.PositionTarget = nil
+            state.MobAuraAnchorTarget = nil
+            state.MobAuraStableAnchor = nil
+            state.RaidVoidActive = false
+            state.RaidVoidMoved = 0
+            state.RaidVoidStaged = 0
+            state.RaidGathered = 0
+            if LocalPlayer:GetAttribute("IslandRaiding") == true then
+                local now = os.clock()
+                local freshRaid = not state.RaidHasEntered
+                    or now - state.RaidLastInactiveAt >= 3
+                state.RaidHasEntered = true
+                state.RaidEnteredAt = freshRaid and now or 0
+                if freshRaid then
+                    state.RaidVoidKillCount = 0
+                    state.LastRaidVoidStep = 0
+                    table.clear(state.RaidVoidTargets)
+                    table.clear(state.RaidVoidOriginalCFrames)
+                end
+            else
+                state.RaidEnteredAt = 0
+                state.RaidLastInactiveAt = os.clock()
+            end
+            task.defer(function()
+                if state.Alive then
+                    FarmVertical.RecoverBody()
+                end
+            end)
         end))
 
         track(RunService.Heartbeat:Connect(function()
@@ -14831,19 +15238,27 @@ function Window:BuildBloxFruitsFeatures()
                 auraKillOnce()
             end
             local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
+            FarmVertical.SetAntiRagdoll(combatFarmEnabled)
             local activeCombatFarm = combatFarmEnabled and modelAlive(state.ActiveFarmTarget)
             -- Noclip remains enabled while waiting at a quest/boss/raid spawn.
             -- Keep a vertical hold for that entire session or gravity sends the
             -- player through the map the moment the current NPC disappears.
             if combatFarmEnabled then
                 applyNoclip()
+                if not state.Traveling then
+                    FarmVertical.RecoverBody()
+                end
             end
             if activeCombatFarm
                 and not attackBlocked
                 and not state.AuraFruitBusy then
                 local farmTarget = state.ActiveFarmTarget
                 if modelAlive(farmTarget) then
-                    local targetCFrame = positionAtEnemy(farmTarget, state.ActiveFarmVerticalLock)
+                    local targetCFrame = positionAtEnemy(
+                        farmTarget,
+                        state.ActiveFarmVerticalLock,
+                        state.ActiveFarmHeightOverride
+                    )
                     if targetCFrame then
                         if state.MobAuraOrbit or state.MobAuraRandomSquare then
                             moveToFarmPosition(targetCFrame)
@@ -15093,7 +15508,9 @@ function Window:BuildBloxFruitsFeatures()
                     fruitStoreLabel.TextColor3 = state.InventoryBusy and COLORS.warning
                         or (state.FruitsStored > 0 and COLORS.success or COLORS.muted)
 
-                    if state.AutoBuyRaidChip and not RaidRuntime.Active() and os.clock() - lastRaidPurchase >= 15 then
+                    if state.AutoBuyRaidChip and not RaidRuntime.Active()
+                        and not RaidRuntime.RaidChip()
+                        and os.clock() - lastRaidPurchase >= 15 then
                         lastRaidPurchase = os.clock()
                         invoke("RaidsNpc", "Select", state.SelectedRaid)
                     end
@@ -15149,6 +15566,14 @@ function Window:BuildBloxFruitsFeatures()
                         gui:SetAttribute("BloxRaidIslandIndex", state.RaidIslandIndex)
                         gui:SetAttribute("BloxRaidIslandName", state.RaidIslandName or "")
                         gui:SetAttribute("BloxRaidTarget", state.RaidTargetName or "")
+                        gui:SetAttribute("BloxRaidMultiGrab", state.RaidMultiGrab)
+                        gui:SetAttribute("BloxRaidMultiGrabCount", state.RaidGathered)
+                        gui:SetAttribute("BloxRaidVoidKill", state.RaidVoidKill)
+                        gui:SetAttribute("BloxRaidVoidActive", state.RaidVoidActive)
+                        gui:SetAttribute("BloxRaidVoidMoved", state.RaidVoidMoved)
+                        gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
+                        gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
+                        gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
                     end
                 end)
                 if not ok then
@@ -15177,6 +15602,13 @@ function Window:BuildBloxFruitsFeatures()
             state.MobAuraStableAnchor = nil
             state.GatherSingleFallbackEnemy = nil
             state.ActiveFarmTarget = nil
+            state.ActiveFarmHeightOverride = nil
+            state.RaidMultiGrab = false
+            state.RaidVoidKill = false
+            state.RaidVoidActive = false
+            state.RaidVoidMoved = 0
+            state.RaidVoidStaged = 0
+            FarmVertical.SetAntiRagdoll(false)
             FarmVertical.Release()
             for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
                 local enemyRoot = modelRoot(enemy)
@@ -15187,6 +15619,20 @@ function Window:BuildBloxFruitsFeatures()
                 end
             end
             table.clear(state.GatherOriginalCFrames)
+            for enemy, originalCFrame in pairs(state.RaidVoidOriginalCFrames) do
+                local enemyRoot = modelRoot(enemy)
+                local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
+                if enemyRoot and enemyBody and enemyBody.Health > 0 then
+                    pcall(function()
+                        enemyBody.PlatformStand = false
+                        enemyRoot.CFrame = originalCFrame
+                        enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                        enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                    end)
+                end
+            end
+            table.clear(state.RaidVoidTargets)
+            table.clear(state.RaidVoidOriginalCFrames)
             local char = character()
             if char and state.OriginalFruitTapCooldown ~= nil then
                 char:SetAttribute("FruitTAPCooldown", state.OriginalFruitTapCooldown)
@@ -15281,6 +15727,14 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxRaidIslandIndex", state.RaidIslandIndex)
             gui:SetAttribute("BloxRaidIslandName", "")
             gui:SetAttribute("BloxRaidTarget", "")
+            gui:SetAttribute("BloxRaidMultiGrab", state.RaidMultiGrab)
+            gui:SetAttribute("BloxRaidMultiGrabCount", 0)
+            gui:SetAttribute("BloxRaidVoidKill", state.RaidVoidKill)
+            gui:SetAttribute("BloxRaidVoidActive", false)
+            gui:SetAttribute("BloxRaidVoidMoved", 0)
+            gui:SetAttribute("BloxRaidVoidStaged", 0)
+            gui:SetAttribute("BloxRaidVoidKillCount", 0)
+            gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
             gui:SetAttribute("BloxBossVerticalLocked", false)
             gui:SetAttribute("BloxBossAnchorY", 0)
             gui:SetAttribute("BloxAutoBuso", state.AutoBuso)
