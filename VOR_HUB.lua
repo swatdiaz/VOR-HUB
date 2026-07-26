@@ -152,17 +152,19 @@ local IS_BLOX_FRUITS_DUNGEON = ACTIVE_GAME_SUPPORT
     and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
     and game.PlaceId == BLOX_FRUITS_DUNGEON_PLACE_ID
 
--- Optional game modules are fetched from the exact GitHub commit that is live
--- when the hub starts. Keeping large integrations separate prevents one game's
--- controls and runtime hooks from leaking into another supported experience.
+-- Optional modules are pinned to an audited immutable commit. A public commit
+-- SHA is an identifier, never a credential, but following `main` would allow a
+-- future authorized repository push to change code already distributed to users.
 local function loadVORGameModule(fileName)
-    local repository = "swatdiaz/VOR-HUB"
-    local commitApi = "https://api.github.com/repos/" .. repository .. "/commits/main"
-    local metadata = HttpService:JSONDecode(game:HttpGet(commitApi))
-    local commit = metadata and metadata.sha
-    assert(type(commit) == "string" and #commit >= 7, "Could not resolve the current VOR Hub commit")
-
-    local url = "https://raw.githubusercontent.com/" .. repository .. "/" .. commit .. "/" .. tostring(fileName)
+    local auditedCommit = "0a66da5169b8f1accec30cf6dcc14ede3a5fff8a"
+    local allowedModules = {
+        ["anime_expeditions.lua"] = true,
+        ["blox_fruits_dungeons.lua"] = true,
+        ["codex_revive_hub.lua"] = true,
+    }
+    assert(allowedModules[fileName] == true, "VOR rejected an unapproved game module")
+    local url = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/"
+        .. auditedCommit .. "/" .. fileName
     local source = game:HttpGet(url)
     local chunk, compileError = loadstring(source)
     assert(chunk, "VOR game module compile failed: " .. tostring(compileError))
