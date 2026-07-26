@@ -15867,6 +15867,234 @@ local AutoLoadSection = SettingsPage:AddSection("Auto Load", "Right")
 local AppearanceSection = SettingsPage:AddSection("VOR Appearance", "Right")
 local CommunitySection = SettingsPage:AddSection("Access & Community", "Left")
 
+if SETTINGS.IsBloxFruits then
+    local CosmeticsSection = SettingsPage:AddSection("Blox Fruits Cosmetics", "Right")
+    local voidKitsuneState = {
+        Enabled = false,
+        Originals = setmetatable({}, {__mode = "k"}),
+        GalaxyMarkers = setmetatable({}, {__mode = "k"}),
+        GalaxyRigs = setmetatable({}, {__mode = "k"}),
+        Accumulator = 0,
+    }
+    local VOID_KITSUNE_COLORS = {
+        Color3.fromRGB(151, 70, 255),
+        Color3.fromRGB(31, 7, 54),
+        Color3.fromRGB(205, 77, 255),
+    }
+
+    local function collectKitsuneTools()
+        local tools = {}
+        local seen = setmetatable({}, {__mode = "k"})
+        local function scanTools(container)
+            if not container then
+                return
+            end
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Tool")
+                    and string.find(string.lower(child.Name), "kitsune", 1, true)
+                    and not seen[child] then
+                    seen[child] = true
+                    table.insert(tools, child)
+                end
+            end
+        end
+        scanTools(LocalPlayer:FindFirstChildOfClass("Backpack"))
+        scanTools(LocalPlayer.Character)
+        return tools
+    end
+
+    local function collectKitsuneShiftedFolders(kitsuneTools)
+        local found = {}
+        local seen = setmetatable({}, {__mode = "k"})
+        local function addColorFolder(colorFolder)
+            local shifted = colorFolder and colorFolder:FindFirstChild("Shifted")
+            if shifted and shifted:IsA("Folder") and not seen[shifted] then
+                seen[shifted] = true
+                table.insert(found, shifted)
+            end
+        end
+
+        addColorFolder(LocalPlayer:FindFirstChild("KitsuneFruitVFXColor"))
+        for _, tool in ipairs(kitsuneTools) do
+            addColorFolder(tool:FindFirstChild("VFXColor"))
+        end
+        return found
+    end
+
+    local function enableGalaxyTool(tool)
+        local marker = tool:FindFirstChild("IsGalaxy")
+        if marker and not marker:IsA("BoolValue") then
+            return
+        end
+        if not marker then
+            marker = Instance.new("BoolValue")
+            marker.Name = "IsGalaxy"
+            marker.Value = true
+            marker.Parent = tool
+            voidKitsuneState.GalaxyMarkers[marker] = {Created = true}
+        elseif not voidKitsuneState.GalaxyMarkers[marker] then
+            voidKitsuneState.GalaxyMarkers[marker] = {Created = false, Value = marker.Value}
+            marker.Value = true
+        elseif marker.Value ~= true then
+            marker.Value = true
+        end
+    end
+
+    local function applyGalaxyTransformation(tool)
+        local transformedObject = tool:FindFirstChild("TransformedRigObject")
+        local rig = transformedObject and transformedObject:IsA("ObjectValue") and transformedObject.Value or nil
+        if not rig or not rig.Parent or voidKitsuneState.GalaxyRigs[rig] then
+            return
+        end
+
+        local visualNames = {"Body", "Accessory", "Mouth", "Eyes", "Neon"}
+        local snapshot = {}
+        local compatible = false
+        for _, name in ipairs(visualNames) do
+            local part = rig:FindFirstChild(name)
+            if part and part:IsA("BasePart") then
+                compatible = true
+                local appearances = {}
+                for _, child in ipairs(part:GetChildren()) do
+                    if child:IsA("SurfaceAppearance") then
+                        table.insert(appearances, child:Clone())
+                    end
+                end
+                snapshot[part] = {
+                    Color = part.Color,
+                    Material = part.Material,
+                    Appearances = appearances,
+                }
+            end
+        end
+        if not compatible then
+            gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Waiting for compatible transformed rig")
+            return
+        end
+
+        local applied = pcall(function()
+            local SkinUtil = require(ReplicatedStorage.Modules.SkinUtil)
+            SkinUtil.applySkin("Galaxy", {
+                [rig] = "Transformations.Empyrean (Kitsune)-Empyrean (Kitsune)",
+            })
+        end)
+        if not applied then
+            for _, data in pairs(snapshot) do
+                for _, appearance in ipairs(data.Appearances) do
+                    appearance:Destroy()
+                end
+            end
+            gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Galaxy skin apply failed")
+            return
+        end
+
+        local neon = rig:FindFirstChild("Neon")
+        if neon and neon:IsA("BasePart") then
+            neon.Color = VOID_KITSUNE_COLORS[1]
+        end
+        local eyes = rig:FindFirstChild("Eyes")
+        if eyes and eyes:IsA("BasePart") then
+            eyes.Color = VOID_KITSUNE_COLORS[3]
+        end
+        voidKitsuneState.GalaxyRigs[rig] = snapshot
+        gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Galaxy model active")
+    end
+
+    local function applyVoidKitsuneColors()
+        local kitsuneTools = collectKitsuneTools()
+        for _, shifted in ipairs(collectKitsuneShiftedFolders(kitsuneTools)) do
+            if not voidKitsuneState.Originals[shifted] then
+                voidKitsuneState.Originals[shifted] = {
+                    shifted:GetAttribute("Shifted_Color1"),
+                    shifted:GetAttribute("Shifted_Color2"),
+                    shifted:GetAttribute("Shifted_Color3"),
+                }
+            end
+            for index, color in ipairs(VOID_KITSUNE_COLORS) do
+                local attribute = "Shifted_Color" .. tostring(index)
+                if shifted:GetAttribute(attribute) ~= color then
+                    shifted:SetAttribute(attribute, color)
+                end
+            end
+        end
+        for _, tool in ipairs(kitsuneTools) do
+            enableGalaxyTool(tool)
+            applyGalaxyTransformation(tool)
+        end
+        gui:SetAttribute("BloxVoidKitsuneTheme", true)
+    end
+
+    local function restoreKitsuneColors()
+        for shifted, originals in pairs(voidKitsuneState.Originals) do
+            if shifted and shifted.Parent then
+                for index = 1, 3 do
+                    shifted:SetAttribute("Shifted_Color" .. tostring(index), originals[index])
+                end
+            end
+        end
+        voidKitsuneState.Originals = setmetatable({}, {__mode = "k"})
+        for marker, original in pairs(voidKitsuneState.GalaxyMarkers) do
+            if marker and marker.Parent then
+                if original.Created then
+                    marker:Destroy()
+                else
+                    marker.Value = original.Value == true
+                end
+            end
+        end
+        voidKitsuneState.GalaxyMarkers = setmetatable({}, {__mode = "k"})
+        for rig, snapshot in pairs(voidKitsuneState.GalaxyRigs) do
+            if rig and rig.Parent then
+                for part, data in pairs(snapshot) do
+                    if part and part.Parent then
+                        part.Color = data.Color
+                        part.Material = data.Material
+                        for _, child in ipairs(part:GetChildren()) do
+                            if child:IsA("SurfaceAppearance") then
+                                child:Destroy()
+                            end
+                        end
+                        for _, appearance in ipairs(data.Appearances) do
+                            appearance.Parent = part
+                        end
+                    end
+                end
+            end
+        end
+        voidKitsuneState.GalaxyRigs = setmetatable({}, {__mode = "k"})
+        gui:SetAttribute("BloxVoidKitsuneTheme", false)
+        gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Off")
+    end
+
+    CosmeticsSection:AddLabel("Uses Kitsune's native three-channel VFX system plus its Galaxy mutation hooks, so the model, tails, and local abilities stay synchronized.")
+    CosmeticsSection:AddToggle({
+        Name = "Void Kitsune Theme",
+        Description = "Galaxy mutation model with VOR violet, abyss purple, and void magenta VFX",
+        Flag = "blox_void_kitsune_theme",
+        Default = false,
+        Callback = function(enabled)
+            voidKitsuneState.Enabled = enabled == true
+            if voidKitsuneState.Enabled then
+                applyVoidKitsuneColors()
+                Window:Notify("Void Kitsune", "Your fox has joined the evil purple department.", 3)
+            else
+                restoreKitsuneColors()
+            end
+        end,
+    })
+
+    track(RunService.Heartbeat:Connect(function(deltaTime)
+        if not voidKitsuneState.Enabled then
+            return
+        end
+        voidKitsuneState.Accumulator = voidKitsuneState.Accumulator + deltaTime
+        if voidKitsuneState.Accumulator >= 0.35 then
+            voidKitsuneState.Accumulator = 0
+            applyVoidKitsuneColors()
+        end
+    end))
+end
+
 CommunitySection:AddLabel("Discord provides the current key, supported-game list, updates, feedback, and suggestions.")
 CommunitySection:AddButton({
     Name = "Copy VOR Hub Discord",
