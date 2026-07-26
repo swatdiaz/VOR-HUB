@@ -10584,12 +10584,16 @@ function Window:BuildBloxFruitsFeatures()
         local NATIVE_FRUIT_MAX_RANGE = 25
         local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.28
         local NATIVE_FRUIT_SETTLE_TIME = 0.24
+        local MULTI_GRAB_LIMIT = 3
+        local MULTI_GRAB_RANGE = 600
+        local MULTI_ATTACK_TARGET_LIMIT = 2
 
         local state = {
             Alive = true,
             Status = "Native Blox Fruits module ready",
             LastError = nil,
             AutoFarmLevel = false,
+            SelectedLevelQuest = "Best for My Level",
             AutoChest = false,
             AutoBerry = false,
             LastBerryClaim = 0,
@@ -10613,6 +10617,7 @@ function Window:BuildBloxFruitsFeatures()
             AuraSwordRequests = 0,
             AuraFruitRequests = 0,
             AuraTargetCount = 0,
+            AuraMultiTargetCount = 0,
             AuraAttackPending = false,
             AuraCombo = 0,
             AuraCombos = {},
@@ -10627,6 +10632,7 @@ function Window:BuildBloxFruitsFeatures()
             AuraFruitBusy = false,
             AuraFruitInRange = nil,
             AuraFruitLastDistance = nil,
+            FruitM1ReadyAt = 0,
             DoubleAttack = false,
             FruitM1CooldownReduction = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
             OriginalFruitTapCooldown = nil,
@@ -10639,10 +10645,22 @@ function Window:BuildBloxFruitsFeatures()
             MobAuraOrbitStartedAt = os.clock(),
             MobAuraOrbitStartAngle = math.random() * math.pi * 2,
             MobAuraOrbitDirection = math.random(0, 1) == 0 and -1 or 1,
+            MobAuraRandomSquare = false,
+            MobAuraSquareSize = 8,
+            MobAuraSquareInterval = 0.18,
+            MobAuraSquareOffset = Vector3.zero,
+            MobAuraSquareCorner = 0,
+            MobAuraLastSquareStep = 0,
             MobAuraTarget = nil,
             MobAuraTargetName = nil,
             MobAuraDistance = nil,
             MobAuraPreTeleportDistance = nil,
+            MobAuraAnchorTarget = nil,
+            MobAuraStableAnchor = nil,
+            SelectedMobFarm = false,
+            SelectedMobName = "None",
+            SelectedMobSearchRange = 30000,
+            SelectedMobWaitingAtSpawn = false,
             RegisterHitClosure = nil,
             LastRegisterHitResolve = -math.huge,
             WeaponType = "Sword",
@@ -10651,21 +10669,29 @@ function Window:BuildBloxFruitsFeatures()
             AutoObservation = false,
             LastObservation = 0,
             GatherEnemies = false,
-            GatherRange = 5000,
-            GatherDistance = 2,
+            GatherRange = MULTI_GRAB_RANGE,
+            GatherDistance = 8,
             GatherQuestOnly = true,
+            GatherMode = "Selected / Current Mob",
+            GatherSelectedMob = "Current Farm Target",
+            GatherLimit = MULTI_GRAB_LIMIT,
             Gathered = 0,
+            GatherSingleFallbackEnemy = nil,
+            GatherOriginalCFrames = setmetatable({}, {__mode = "k"}),
             AutoMagnet = false,
             MagnetRange = 300,
             TweenSpeed = 300,
-            FarmDistance = 7,
-            FarmHeight = 0,
+            FarmDistance = 0,
+            FarmHeight = 8,
             FarmOffsetX = 0,
-            FarmOffsetY = 0,
-            FarmOffsetZ = -7,
-            FarmPositionPreset = "Front",
+            FarmOffsetY = 8,
+            FarmOffsetZ = 0,
+            FarmPositionPreset = "Above",
             RandomPosition = false,
-            RandomPositionRange = 0,
+            RandomPositionRange = 8,
+            RandomPositionInterval = 0.20,
+            LastPositionJitterAt = 0,
+            PositionJitterCorner = 0,
             PositionTarget = nil,
             PositionBasis = nil,
             PositionJitter = Vector3.zero,
@@ -10691,9 +10717,15 @@ function Window:BuildBloxFruitsFeatures()
             },
             AutoGacha = false,
             LastGacha = 0,
-            GachaInterval = 120,
+            GachaInterval = 30,
+            GachaBusy = false,
+            GachaRolls = 0,
+            GachaStatus = "Ready anywhere",
             AutoStoreFruit = false,
             LastStore = 0,
+            InventoryBusy = false,
+            FruitsStored = 0,
+            StoreStatus = "Waiting for a physical fruit",
             SelectedLocation = "None",
             SelectedNPC = "None",
             Noclip = false,
@@ -10722,8 +10754,11 @@ function Window:BuildBloxFruitsFeatures()
         local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
         local auraLabel = AttackSection:AddLabel("Aura Kill: Off | Range: 10 studs")
         local mobAuraLabel = AttackSection:AddLabel("Mob Aura TP: Off | Distance: --")
+        local selectedMobFarmLabel = AttackSection:AddLabel("Selected Mob Farm: Off | Enemy: None")
         local busoLabel = AttackSection:AddLabel("Buso: Detecting...")
         local observationLabel = AttackSection:AddLabel("Observation: Reading live state...")
+        local fruitGachaLabel = FruitSection:AddLabel("Fruit Gacha: Ready anywhere")
+        local fruitStoreLabel = FruitSection:AddLabel("Fruit Storage: Waiting for a physical fruit")
 
         local function setStatus(message, success)
             state.Status = tostring(message)
@@ -10774,14 +10809,13 @@ function Window:BuildBloxFruitsFeatures()
             if not char then
                 return false
             end
-            if char:FindFirstChild("HasBuso") or char:FindFirstChild("Aura") then
-                return true
+            local enabledAttribute = char:GetAttribute("BusoEnabled")
+            if enabledAttribute ~= nil then
+                return enabledAttribute == true
             end
-            local tagged = false
-            pcall(function()
-                tagged = CollectionService:HasTag(char, "Buso") or char:HasTag("Buso")
-            end)
-            return tagged
+            -- Aura is the always-present ability LocalScript and the Buso tag
+            -- means the ability is owned; neither proves it is switched on.
+            return char:FindFirstChild("HasBuso") ~= nil
         end
 
         local function refreshBusoStatus()
@@ -10800,29 +10834,60 @@ function Window:BuildBloxFruitsFeatures()
             return active
         end
 
+        local function sendBusoInput()
+            local okService, inputManager = pcall(function()
+                return game:GetService("VirtualInputManager")
+            end)
+            if okService and inputManager then
+                local ok, message = pcall(function()
+                    inputManager:SendKeyEvent(true, Enum.KeyCode.J, false, game)
+                    inputManager:SendKeyEvent(false, Enum.KeyCode.J, false, game)
+                end)
+                if ok then
+                    return true, "Virtual J"
+                end
+                state.LastError = tostring(message)
+            end
+            if type(keypress) == "function" and type(keyrelease) == "function" then
+                local ok, message = pcall(function()
+                    keypress(0x4A)
+                    keyrelease(0x4A)
+                end)
+                if ok then
+                    return true, "Executor J"
+                end
+                state.LastError = tostring(message)
+            end
+            -- Older Blox Fruits builds used CommF_ for Buso. Keep it only as
+            -- a fallback; the current Aura Ability is driven by the J input.
+            local ok, message = invoke("Buso")
+            return ok, ok and "Legacy CommF" or message
+        end
+
         local function ensureBuso(force)
             if refreshBusoStatus() then
                 return true
             end
-            if not state.AutoBuso then
+            if not state.AutoBuso and not force and not state.AuraKill then
                 return false
             end
             local now = os.clock()
-            if not force and now - state.LastBuso < 0.75 then
+            if now - state.LastBuso < 1.25 then
                 return false
             end
             state.LastBuso = now
             gui:SetAttribute("BloxLastBusoAttemptAt", now)
-            local ok, message = invoke("Buso")
+            local ok, message = sendBusoInput()
             gui:SetAttribute("BloxLastBusoRequestSucceeded", ok)
+            gui:SetAttribute("BloxLastBusoInputMethod", ok and tostring(message) or "Failed")
             if not ok then
                 busoLabel.Text = "Buso: Activation failed"
                 busoLabel.TextColor3 = COLORS.error
                 setError("Auto Buso failed: " .. tostring(message))
                 return false
             end
-            -- The server adds HasBuso/Aura and the Buso tag asynchronously.
-            -- Keep retrying until one of those authoritative markers appears.
+            -- BusoEnabled and its visuals replicate asynchronously after J.
+            task.delay(0.25, refreshBusoStatus)
             busoLabel.Text = "Buso: Activation requested"
             busoLabel.TextColor3 = COLORS.muted
             return true
@@ -10875,6 +10940,88 @@ function Window:BuildBloxFruitsFeatures()
             return best, bestDistance
         end
 
+        local function nearestEnemySpawn(enemyName)
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local spawns = origin and origin:FindFirstChild("EnemySpawns")
+            if not spawns then
+                return nil
+            end
+            local root = rootPart()
+            local best = nil
+            local bestDistance = math.huge
+            for _, descendant in ipairs(spawns:GetDescendants()) do
+                if descendant:IsA("BasePart") and enemyMatches(descendant, enemyName) then
+                    local distance = root and (descendant.Position - root.Position).Magnitude or 0
+                    if distance < bestDistance then
+                        best = descendant
+                        bestDistance = distance
+                    end
+                end
+            end
+            return best, bestDistance
+        end
+
+        local function mobFarmOptions()
+            local options = {"None"}
+            local seen = {None = true}
+            local origin = workspace:FindFirstChild("_WorldOrigin")
+            local spawns = origin and origin:FindFirstChild("EnemySpawns")
+            if spawns then
+                for _, descendant in ipairs(spawns:GetDescendants()) do
+                    if descendant:IsA("BasePart") then
+                        local name = normalizeEnemyName(descendant.Name)
+                        if name ~= "" and not seen[name] then
+                            seen[name] = true
+                            table.insert(options, name)
+                        end
+                    end
+                end
+            end
+            local enemies = workspace:FindFirstChild("Enemies")
+            if enemies then
+                for _, enemy in ipairs(enemies:GetChildren()) do
+                    local name = normalizeEnemyName(enemy.Name)
+                    if name ~= "" and not seen[name] then
+                        seen[name] = true
+                        table.insert(options, name)
+                    end
+                end
+            end
+            table.sort(options, function(left, right)
+                if left == "None" then
+                    return true
+                end
+                if right == "None" then
+                    return false
+                end
+                return string.lower(left) < string.lower(right)
+            end)
+            return options
+        end
+
+        local CURRENT_GATHER_TARGET = "Current Farm Target"
+
+        local function gatherMobOptions()
+            local options = {CURRENT_GATHER_TARGET}
+            for _, name in ipairs(mobFarmOptions()) do
+                if name ~= "None" then
+                    table.insert(options, name)
+                end
+            end
+            return options
+        end
+
+        local function selectedGatherEnemyName()
+            local selected = tostring(state.GatherSelectedMob or CURRENT_GATHER_TARGET)
+            if selected ~= CURRENT_GATHER_TARGET and selected ~= "None" then
+                return selected
+            end
+            if state.SelectedMobFarm and state.SelectedMobName ~= "None" then
+                return state.SelectedMobName
+            end
+            return state.CurrentEnemyName
+        end
+
         local function cancelMove()
             if state.MoveTween then
                 pcall(function()
@@ -10912,7 +11059,14 @@ function Window:BuildBloxFruitsFeatures()
                 TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
                 {CFrame = targetCFrame}
             )
-            state.MoveTween:Play()
+            local activeTween = state.MoveTween
+            activeTween.Completed:Once(function()
+                if state.MoveTween == activeTween then
+                    state.MoveTween = nil
+                    state.MoveGoal = nil
+                end
+            end)
+            activeTween:Play()
             return true
         end
 
@@ -10927,16 +11081,35 @@ function Window:BuildBloxFruitsFeatures()
             if state.PositionTarget ~= enemy or state.PositionBasis == nil then
                 state.PositionTarget = enemy
                 state.PositionBasis = enemyRoot.CFrame - enemyRoot.Position
-                local range = state.RandomPosition and math.max(0, state.RandomPositionRange) or 0
-                state.PositionJitter = range > 0 and Vector3.new(
-                    math.random(-range, range),
-                    0,
-                    math.random(-range, range)
-                ) or Vector3.zero
+                state.PositionJitter = Vector3.zero
+                state.PositionJitterCorner = 0
+                state.LastPositionJitterAt = 0
+            end
+            if state.RandomPosition then
+                local now = os.clock()
+                local interval = math.max(0.08, tonumber(state.RandomPositionInterval) or 0.20)
+                if state.LastPositionJitterAt == 0 or now - state.LastPositionJitterAt >= interval then
+                    local range = math.max(2, tonumber(state.RandomPositionRange) or 8)
+                    local nextCorner = math.random(1, 4)
+                    if nextCorner == state.PositionJitterCorner then
+                        nextCorner = nextCorner % 4 + 1
+                    end
+                    local corners = {
+                        Vector3.new(-range, 0, -range),
+                        Vector3.new(range, 0, -range),
+                        Vector3.new(range, 0, range),
+                        Vector3.new(-range, 0, range),
+                    }
+                    state.PositionJitterCorner = nextCorner
+                    state.PositionJitter = corners[nextCorner]
+                    state.LastPositionJitterAt = now
+                end
+            else
+                state.PositionJitter = Vector3.zero
             end
             local localOffset = Vector3.new(
                 state.FarmOffsetX,
-                state.FarmOffsetY,
+                state.RandomPosition and math.max(state.FarmOffsetY, 6) or state.FarmOffsetY,
                 state.FarmOffsetZ
             ) + state.PositionJitter
             if localOffset.Magnitude < 1 then
@@ -10945,6 +11118,42 @@ function Window:BuildBloxFruitsFeatures()
             local worldOffset = state.PositionBasis:VectorToWorldSpace(localOffset)
             local position = enemyRoot.Position + worldOffset
             return CFrame.lookAt(position, enemyRoot.Position)
+        end
+
+        local function moveToFarmPosition(targetCFrame)
+            if not state.RandomPosition then
+                return moveTo(targetCFrame)
+            end
+            local root = rootPart()
+            if not root or typeof(targetCFrame) ~= "CFrame" then
+                return false
+            end
+            -- Square mode is deliberately a teleport, not a diagonal tween.
+            -- That produces distinct aim/position updates for native Fruit M1
+            -- instead of drawing a useless zigzag path between corners.
+            cancelMove()
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = targetCFrame
+            return true
+        end
+
+        local function syncFarmAuraRange()
+            local jitter = state.RandomPosition and math.max(2, state.RandomPositionRange) or 0
+            local x = math.abs(state.FarmOffsetX) + jitter
+            local y = math.abs(state.RandomPosition and math.max(state.FarmOffsetY, 6) or state.FarmOffsetY)
+            local z = math.abs(state.FarmOffsetZ) + jitter
+            local required = math.min(AURA_KILL_MAX_RANGE, math.ceil(math.sqrt(x * x + y * y + z * z) + 5))
+            if state.AuraRange < required then
+                local rangeControl = Window.PersistentControls["blox_aura_kill_range"]
+                if rangeControl then
+                    rangeControl:Set(required)
+                else
+                    state.AuraRange = required
+                    gui:SetAttribute("BloxAuraKillRange", required)
+                end
+            end
+            return required
         end
 
         local function healthPercent()
@@ -11149,10 +11358,19 @@ function Window:BuildBloxFruitsFeatures()
             if not root or not enemies then
                 return targets
             end
+            local selectedFilter = nil
+            if state.GatherEnemies then
+                selectedFilter = selectedGatherEnemyName()
+            elseif state.SelectedMobFarm and state.SelectedMobName ~= "None" then
+                selectedFilter = state.SelectedMobName
+            elseif state.AutoFarmLevel then
+                selectedFilter = state.CurrentEnemyName
+            end
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
                 local hitPart = enemyHitPart(enemy)
-                if enemyRoot and hitPart and modelAlive(enemy) then
+                if enemyRoot and hitPart and modelAlive(enemy)
+                    and (not selectedFilter or enemyMatches(enemy, selectedFilter)) then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance <= state.AuraRange then
                         table.insert(targets, {
@@ -11286,7 +11504,7 @@ function Window:BuildBloxFruitsFeatures()
                 or message == "the fruit M1 target left before activation"
         end
 
-        local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile)
+        local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile, attackTargets)
             local _, changed = equipTool(tool)
             if changed then
                 task.wait(0.04)
@@ -11313,26 +11531,55 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraStage = "attack-started"
             task.wait(AURA_KILL_HIT_DELAY)
             state.AuraStage = "hit-window"
-            if not state.Alive or not state.AuraKill or not target.Enemy.Parent or not modelAlive(target.Enemy) then
+            if not state.Alive or not state.AuraKill then
                 return false, "the target left before the hit window"
             end
 
             local currentRoot = rootPart()
-            local enemyRoot = modelRoot(target.Enemy)
-            local hitPart = enemyHitPart(target.Enemy)
-            if not currentRoot or not enemyRoot or not hitPart
-                or (enemyRoot.Position - currentRoot.Position).Magnitude > state.AuraRange then
+            if not currentRoot then
                 return false, "the target left Aura range"
             end
 
-            -- Queue and flush in one call. The fifth argument must be a table;
-            -- nil only creates a fake client highlight and sends no damage.
+            -- One native attack can register every enemy touched by the same
+            -- melee window. Multi Grab uses that window for the entire stack so
+            -- two or more NPCs take real damage together instead of waiting for
+            -- the Aura cursor to visit them one by one.
+            state.AuraStage = "queue-build"
+            local validHits = {}
+            for _, candidate in ipairs(attackTargets or {target}) do
+                local enemy = candidate.Enemy
+                local enemyRoot = modelRoot(enemy)
+                local hitPart = enemyHitPart(enemy)
+                if enemy and enemy.Parent and enemyRoot and hitPart and modelAlive(enemy)
+                    and (enemyRoot.Position - currentRoot.Position).Magnitude <= state.AuraRange then
+                    table.insert(validHits, {
+                        Enemy = enemy,
+                        HitPart = hitPart,
+                    })
+                end
+            end
+            local registered = #validHits
+            if registered == 0 then
+                return false, "the target left Aura range"
+            end
+
+            -- Native combat queues every rig touched during one swing, then
+            -- flushes the queue once. Sending one flush per NPC makes the
+            -- server accept the first target and discard the rest as duplicate
+            -- attacks. Mirror CombatUtil's real batching shape here instead.
+            local primary = validHits[1]
+            local extraHits = {}
+            for index = 2, registered do
+                local hit = validHits[index]
+                table.insert(extraHits, {hit.Enemy, hit.HitPart})
+            end
+            registerHit(character(), primary.Enemy, primary.HitPart, weaponData, extraHits)
             state.AuraStage = "queue-flush"
-            registerHit(true, target.Enemy, hitPart, weaponData, {})
+            registerHit(true)
             state.AuraCombos[attackProfile.ComboKey] = attackProfile.Combo
             state.AuraCombo = attackProfile.Combo
-            state.AuraStage = "registered-hit-sent"
-            return true
+            state.AuraStage = registered > 1 and "registered-multi-hit-sent" or "registered-hit-sent"
+            return true, nil, registered
         end
 
         local function playingTrackSet()
@@ -11389,6 +11636,9 @@ function Window:BuildBloxFruitsFeatures()
             if not state.AuraFruitInRange then
                 return false, "fruit-out-of-range"
             end
+            if os.clock() < (state.FruitM1ReadyAt or 0) then
+                return false, "fruit-cooldown"
+            end
 
             local silentRemote = tool:FindFirstChild("LeftClickRemote", true)
             silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
@@ -11411,6 +11661,9 @@ function Window:BuildBloxFruitsFeatures()
                     return false, fireError
                 end
                 state.NativeFruitCombos[comboKey] = combo
+                local nativeCooldown = (combo < 5 and 0.3 or 1)
+                    - math.max(tonumber(state.FruitM1CooldownReduction) or 0, 0)
+                state.FruitM1ReadyAt = os.clock() + math.max(0.02, nativeCooldown)
                 state.AuraStage = "silent-fruit-m1-sent"
                 return true
             end
@@ -11483,7 +11736,12 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function auraKillOnce()
-            if not state.AuraKill or state.AuraAttackPending then
+            if not state.AuraKill or state.AuraAttackPending or state.InventoryBusy then
+                return false
+            end
+            if not busoActive() then
+                state.AuraStage = "waiting-for-buso"
+                ensureBuso(true)
                 return false
             end
             local now = os.clock()
@@ -11496,11 +11754,26 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraTargetCount = #targets
             if #targets == 0 then
                 state.AuraTargetCursor = 0
+                state.AuraMultiTargetCount = 0
                 return false
             end
 
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
+            local attackTargets = {target}
+            if state.GatherEnemies and #targets > 1 then
+                attackTargets = {}
+                -- Non-Buddha melee validation accepts two rigs in one bundled
+                -- hit but rejects oversized lists. Rotate pairs through the
+                -- three-enemy pile so every NPC is covered without fake hits.
+                local multiLimit = math.min(#targets, MULTI_ATTACK_TARGET_LIMIT)
+                for offset = 0, multiLimit - 1 do
+                    local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
+                    table.insert(attackTargets, targets[index])
+                end
+                target = attackTargets[1]
+            end
+            state.AuraMultiTargetCount = #attackTargets
             local extraDelay = math.max(tonumber(state.AttackInterval) or 0, 0)
             local plan = {Double = state.DoubleAttack}
 
@@ -11583,17 +11856,23 @@ function Window:BuildBloxFruitsFeatures()
             state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
             state.AuraLastDistance = target.Distance
 
-            local targetHumanoid = target.Enemy:FindFirstChildOfClass("Humanoid")
-            local healthBefore = targetHumanoid and targetHumanoid.Health or nil
+            local healthBefore = {}
+            for _, attackTarget in ipairs(attackTargets) do
+                local targetHumanoid = attackTarget.Enemy:FindFirstChildOfClass("Humanoid")
+                if targetHumanoid then
+                    healthBefore[targetHumanoid] = targetHumanoid.Health
+                end
+            end
             local dispatched = 0
             local fruitOutOfRange = false
             local hitOk, hitError = pcall(function()
                 if plan.Double then
-                    local swordSent, swordSendError = sendRegisteredAuraHit(
+                    local swordSent, swordSendError, swordHitCount = sendRegisteredAuraHit(
                         plan.Sword,
                         plan.SwordData,
                         target,
-                        plan.SwordProfile
+                        plan.SwordProfile,
+                        attackTargets
                     )
                     if not swordSent then
                         if transientAuraMiss(swordSendError) then
@@ -11602,8 +11881,9 @@ function Window:BuildBloxFruitsFeatures()
                         end
                         error("Sword M1 failed: " .. tostring(swordSendError))
                     end
-                    dispatched += 1
-                    state.AuraSwordRequests += 1
+                    swordHitCount = math.max(tonumber(swordHitCount) or 1, 1)
+                    dispatched += swordHitCount
+                    state.AuraSwordRequests += swordHitCount
 
                     -- Keep the Sword equipped and layer the fruit's native M1
                     -- remote beside it. Humanoid:EquipTool is never called for
@@ -11615,6 +11895,10 @@ function Window:BuildBloxFruitsFeatures()
                             state.AuraStage = "double-sword-only-fruit-out-of-range"
                             return
                         end
+                        if fruitSendError == "fruit-cooldown" then
+                            state.AuraStage = "double-sword-only-fruit-cooldown"
+                            return
+                        end
                         if transientAuraMiss(fruitSendError) then
                             state.AuraStage = "double-sword-only-target-left"
                             return
@@ -11623,13 +11907,17 @@ function Window:BuildBloxFruitsFeatures()
                     end
                     dispatched += 1
                     state.AuraFruitRequests += 1
-                    state.AuraStage = "double-sent"
+                    state.AuraStage = #attackTargets > 1 and "double-multi-sent" or "double-sent"
                 elseif plan.NativeFruit then
                     local sent, sendError = sendNativeFruitM1(plan.Tool, target)
                     if not sent then
                         if sendError == "fruit-out-of-range" then
                             fruitOutOfRange = true
                             state.AuraStage = "fruit-out-of-range"
+                            return
+                        end
+                        if sendError == "fruit-cooldown" then
+                            state.AuraStage = "fruit-cooldown"
                             return
                         end
                         if transientAuraMiss(sendError) then
@@ -11641,11 +11929,12 @@ function Window:BuildBloxFruitsFeatures()
                     dispatched = 1
                     state.AuraFruitRequests += 1
                 else
-                    local sent, sendError = sendRegisteredAuraHit(
+                    local sent, sendError, registeredCount = sendRegisteredAuraHit(
                         plan.Tool,
                         plan.WeaponData,
                         target,
-                        plan.Profile
+                        plan.Profile,
+                        attackTargets
                     )
                     if not sent then
                         if transientAuraMiss(sendError) then
@@ -11654,11 +11943,12 @@ function Window:BuildBloxFruitsFeatures()
                         end
                         error(sendError)
                     end
-                    dispatched = 1
+                    registeredCount = math.max(tonumber(registeredCount) or 1, 1)
+                    dispatched = registeredCount
                     if isFruitWeaponType(plan.WeaponType) then
-                        state.AuraFruitRequests += 1
+                        state.AuraFruitRequests += registeredCount
                     elseif string.lower(plan.WeaponType) == "sword" then
-                        state.AuraSwordRequests += 1
+                        state.AuraSwordRequests += registeredCount
                     end
                 end
             end)
@@ -11676,9 +11966,16 @@ function Window:BuildBloxFruitsFeatures()
             end
 
             task.delay(0.35, function()
-                if state.Alive and targetHumanoid and healthBefore ~= nil
-                    and targetHumanoid.Health < healthBefore then
-                    state.AuraHits += 1
+                local damaged = 0
+                if state.Alive then
+                    for targetHumanoid, before in pairs(healthBefore) do
+                        if targetHumanoid.Parent and targetHumanoid.Health < before then
+                            damaged += 1
+                        end
+                    end
+                end
+                if damaged > 0 then
+                    state.AuraHits += damaged
                     state.AuraLastHitAt = os.clock()
                 end
                 state.AuraStage = "idle"
@@ -11687,7 +11984,8 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function stepMobAuraTp()
-            if not state.MobAuraTp or state.AuraFruitBusy then
+            local selectedMode = state.SelectedMobFarm
+            if (not state.MobAuraTp and not selectedMode) or state.AuraFruitBusy then
                 return false
             end
             local root = rootPart()
@@ -11695,22 +11993,56 @@ function Window:BuildBloxFruitsFeatures()
                 state.MobAuraTarget = nil
                 state.MobAuraTargetName = nil
                 state.MobAuraDistance = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
+                state.SelectedMobWaitingAtSpawn = false
                 return false
             end
+
+            local selectedName = selectedMode and state.SelectedMobName or nil
+            if selectedMode and (not selectedName or selectedName == "None") then
+                state.MobAuraTarget = nil
+                state.MobAuraTargetName = nil
+                state.MobAuraDistance = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
+                state.SelectedMobWaitingAtSpawn = false
+                return false
+            end
+            local searchRange = selectedMode and state.SelectedMobSearchRange or state.MobAuraSearchRange
 
             local target = state.MobAuraTarget
             local targetRoot = modelRoot(target)
             if not targetRoot or not modelAlive(target)
-                or (targetRoot.Position - root.Position).Magnitude > state.MobAuraSearchRange then
+                or (selectedMode and not enemyMatches(target, selectedName))
+                or (targetRoot.Position - root.Position).Magnitude > searchRange then
                 target = nil
             end
             if not target then
-                local nearest, distance = nearestEnemy(nil, true)
+                local nearest, distance = nearestEnemy(selectedName, not selectedMode)
                 state.MobAuraPreTeleportDistance = distance
-                if not nearest or not distance or distance > state.MobAuraSearchRange then
+                if not nearest or not distance or distance > searchRange then
                     state.MobAuraTarget = nil
                     state.MobAuraTargetName = nil
-                    state.MobAuraDistance = distance
+                    state.MobAuraAnchorTarget = nil
+                    state.MobAuraStableAnchor = nil
+                    state.MobAuraDistance = distance ~= math.huge and distance or nil
+                    if selectedMode then
+                        state.CurrentEnemyName = selectedName
+                        local spawn, spawnDistance = nearestEnemySpawn(selectedName)
+                        state.SelectedMobWaitingAtSpawn = spawn ~= nil
+                        if spawn then
+                            local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
+                            local goalPosition = spawn.Position + Vector3.new(0, height, 0)
+                            root.AssemblyLinearVelocity = Vector3.zero
+                            root.AssemblyAngularVelocity = Vector3.zero
+                            root.CFrame = CFrame.new(goalPosition)
+                            state.MobAuraDistance = spawnDistance
+                            return true
+                        end
+                    else
+                        state.SelectedMobWaitingAtSpawn = false
+                    end
                     return false
                 end
                 if nearest ~= state.MobAuraTarget then
@@ -11727,10 +12059,51 @@ function Window:BuildBloxFruitsFeatures()
             end
 
             local head = target:FindFirstChild("Head", true)
-            local anchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
+            local liveAnchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
+            local singleFallback = state.GatherSingleFallbackEnemy == target
+                and modelAlive(state.GatherSingleFallbackEnemy)
+            if singleFallback then
+                state.MobAuraAnchorTarget = target
+                state.MobAuraStableAnchor = liveAnchor
+            elseif state.MobAuraAnchorTarget ~= target then
+                state.MobAuraAnchorTarget = target
+                -- A replacement target may already be inside the grabbed pile.
+                -- Retain the original ground anchor across target swaps or the
+                -- new, raised NPC position feeds height back into the player.
+                if not state.GatherEnemies or not state.MobAuraStableAnchor then
+                    state.MobAuraStableAnchor = liveAnchor
+                end
+            elseif not state.GatherEnemies or not state.MobAuraStableAnchor then
+                state.MobAuraStableAnchor = liveAnchor
+            end
+            -- Once Multi Grab moves the target underneath the player, keep
+            -- using its original ground anchor. Following the moved NPC would
+            -- add MobAuraHeight again every frame and launch the player upward.
+            local anchor = state.GatherEnemies and not singleFallback
+                and state.MobAuraStableAnchor or liveAnchor
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
-            if state.MobAuraOrbit then
+            if state.MobAuraRandomSquare then
+                local now = os.clock()
+                local interval = math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
+                if state.MobAuraLastSquareStep == 0 or now - state.MobAuraLastSquareStep >= interval then
+                    local size = math.max(2, tonumber(state.MobAuraSquareSize) or 8)
+                    local nextCorner = math.random(1, 4)
+                    if nextCorner == state.MobAuraSquareCorner then
+                        nextCorner = nextCorner % 4 + 1
+                    end
+                    local corners = {
+                        Vector3.new(-size, 0, -size),
+                        Vector3.new(size, 0, -size),
+                        Vector3.new(size, 0, size),
+                        Vector3.new(-size, 0, size),
+                    }
+                    state.MobAuraSquareCorner = nextCorner
+                    state.MobAuraSquareOffset = corners[nextCorner]
+                    state.MobAuraLastSquareStep = now
+                end
+                orbitOffset = state.MobAuraSquareOffset
+            elseif state.MobAuraOrbit then
                 local elapsed = os.clock() - state.MobAuraOrbitStartedAt
                 local angle = state.MobAuraOrbitStartAngle
                     + elapsed * math.rad(state.MobAuraOrbitSpeed) * state.MobAuraOrbitDirection
@@ -11750,7 +12123,7 @@ function Window:BuildBloxFruitsFeatures()
 
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            if state.MobAuraOrbit and orbitOffset.Magnitude > 0.05 then
+            if (state.MobAuraOrbit or state.MobAuraRandomSquare) and orbitOffset.Magnitude > 0.05 then
                 root.CFrame = CFrame.lookAt(
                     goalPosition,
                     Vector3.new(anchor.X, goalPosition.Y, anchor.Z)
@@ -11760,12 +12133,15 @@ function Window:BuildBloxFruitsFeatures()
             end
             state.MobAuraTargetName = normalizeEnemyName(target.Name)
             state.MobAuraDistance = (targetRoot.Position - root.Position).Magnitude
+            state.SelectedMobWaitingAtSpawn = false
+            state.CurrentEnemyName = state.MobAuraTargetName
             return true
         end
 
         local function flushAuraTelemetry()
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", state.AuraTargetCount)
+            gui:SetAttribute("BloxAuraMultiTargetCount", state.AuraMultiTargetCount)
             gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
             gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
             gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
@@ -11795,14 +12171,42 @@ function Window:BuildBloxFruitsFeatures()
                 gui:SetAttribute("BloxAuraKillLastHitAt", state.AuraLastHitAt)
             end
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
+            gui:SetAttribute("BloxSelectedMobFarm", state.SelectedMobFarm)
+            gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
+            gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
+            gui:SetAttribute("BloxSelectedMobWaitingAtSpawn", state.SelectedMobWaitingAtSpawn)
+            gui:SetAttribute("BloxMobAuraMode", state.SelectedMobFarm and "Selected" or (state.MobAuraTp and "Nearest" or "Off"))
             gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
             gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
             gui:SetAttribute("BloxMobAuraOrbit", state.MobAuraOrbit)
             gui:SetAttribute("BloxMobAuraOrbitRadius", state.MobAuraOrbitRadius)
             gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
             gui:SetAttribute("BloxMobAuraOrbitDirection", state.MobAuraOrbitDirection)
+            gui:SetAttribute("BloxMobAuraRandomSquare", state.MobAuraRandomSquare)
+            gui:SetAttribute("BloxMobAuraSquareSize", state.MobAuraSquareSize)
+            gui:SetAttribute("BloxMobAuraSquareInterval", state.MobAuraSquareInterval)
             gui:SetAttribute("BloxMobAuraTarget", state.MobAuraTargetName or "")
             gui:SetAttribute("BloxMobAuraDistance", state.MobAuraDistance or 0)
+            gui:SetAttribute("BloxMultiGrabEnemies", state.GatherEnemies)
+            gui:SetAttribute("BloxMultiGrabFilter", state.GatherMode)
+            gui:SetAttribute("BloxMultiGrabEnemy", state.GatherSelectedMob)
+            gui:SetAttribute("BloxMultiGrabLimit", MULTI_GRAB_LIMIT)
+            gui:SetAttribute("BloxMultiGrabRange", MULTI_GRAB_RANGE)
+            gui:SetAttribute("BloxMultiGrabCount", state.Gathered)
+            gui:SetAttribute(
+                "BloxMultiGrabSingleFallback",
+                state.GatherSingleFallbackEnemy and normalizeEnemyName(state.GatherSingleFallbackEnemy.Name) or ""
+            )
+            gui:SetAttribute("BloxSelectedLevelQuest", state.SelectedLevelQuest)
+            gui:SetAttribute("BloxAutoGacha", state.AutoGacha)
+            gui:SetAttribute("BloxGachaRetrySeconds", state.GachaInterval)
+            gui:SetAttribute("BloxGachaBusy", state.GachaBusy)
+            gui:SetAttribute("BloxGachaRollCount", state.GachaRolls)
+            gui:SetAttribute("BloxGachaStatus", state.GachaStatus)
+            gui:SetAttribute("BloxAutoStoreFruit", state.AutoStoreFruit)
+            gui:SetAttribute("BloxFruitStoreBusy", state.InventoryBusy)
+            gui:SetAttribute("BloxFruitStoredCount", state.FruitsStored)
+            gui:SetAttribute("BloxFruitStoreStatus", state.StoreStatus)
             if state.AuraPendingError then
                 local message = state.AuraPendingError
                 state.AuraPendingError = nil
@@ -11835,39 +12239,99 @@ function Window:BuildBloxFruitsFeatures()
             return nil
         end
 
+        local AUTO_LEVEL_BEST_OPTION = "Best for My Level"
+        local levelQuestByOption = {}
+
+        local function questCandidate(internalName, index, quest)
+            if type(quest) ~= "table" or type(quest.LevelReq) ~= "number" then
+                return nil
+            end
+            local enemyName = type(quest.Task) == "table" and next(quest.Task) or nil
+            if not enemyName then
+                return nil
+            end
+            return {
+                InternalName = internalName,
+                Index = tonumber(index) or index,
+                LevelReq = quest.LevelReq,
+                DisplayName = tostring(quest.Name or enemyName),
+                EnemyName = tostring(enemyName),
+                Npc = questNpcData(internalName),
+            }
+        end
+
         local function bestQuest()
             local level = currentLevel()
             local best = nil
             for internalName, questList in pairs(Quests) do
                 if type(questList) == "table" then
                     for index, quest in pairs(questList) do
-                        if type(quest) == "table" and type(quest.LevelReq) == "number" and quest.LevelReq <= level then
-                            local enemyName = nil
-                            if type(quest.Task) == "table" then
-                                enemyName = next(quest.Task)
-                            end
-                            if enemyName then
-                                local candidate = {
-                                    InternalName = internalName,
-                                    Index = tonumber(index) or index,
-                                    LevelReq = quest.LevelReq,
-                                    DisplayName = tostring(quest.Name or enemyName),
-                                    EnemyName = tostring(enemyName),
-                                    Npc = questNpcData(internalName),
-                                }
-                                local candidateBoss = string.find(candidate.EnemyName, "Boss", 1, true) ~= nil
-                                local bestBoss = best and string.find(best.EnemyName, "Boss", 1, true) ~= nil
-                                if not best
-                                    or candidate.LevelReq > best.LevelReq
-                                    or (candidate.LevelReq == best.LevelReq and bestBoss and not candidateBoss) then
-                                    best = candidate
-                                end
+                        local candidate = questCandidate(internalName, index, quest)
+                        -- GuideModule only exposes quest givers from the current
+                        -- sea. Requiring Npc prevents Auto Level from selecting a
+                        -- higher-level quest whose giver exists in another sea.
+                        if candidate and candidate.Npc and candidate.LevelReq <= level then
+                            local candidateBoss = string.find(candidate.EnemyName, "Boss", 1, true) ~= nil
+                            local bestBoss = best and string.find(best.EnemyName, "Boss", 1, true) ~= nil
+                            if not best
+                                or candidate.LevelReq > best.LevelReq
+                                or (candidate.LevelReq == best.LevelReq and bestBoss and not candidateBoss) then
+                                best = candidate
                             end
                         end
                     end
                 end
             end
             return best
+        end
+
+        local function currentSeaQuestOptions()
+            local options = {AUTO_LEVEL_BEST_OPTION}
+            local candidates = {}
+            table.clear(levelQuestByOption)
+            for internalName, questList in pairs(Quests) do
+                if type(questList) == "table" then
+                    for index, quest in pairs(questList) do
+                        local candidate = questCandidate(internalName, index, quest)
+                        if candidate and candidate.Npc then
+                            table.insert(candidates, candidate)
+                        end
+                    end
+                end
+            end
+            table.sort(candidates, function(left, right)
+                if left.LevelReq == right.LevelReq then
+                    return string.lower(left.EnemyName) < string.lower(right.EnemyName)
+                end
+                return left.LevelReq < right.LevelReq
+            end)
+            for _, candidate in ipairs(candidates) do
+                local label = string.format("Lv. %d | %s", candidate.LevelReq, candidate.EnemyName)
+                if levelQuestByOption[label] then
+                    label = string.format(
+                        "Lv. %d | %s (%s:%s)",
+                        candidate.LevelReq,
+                        candidate.EnemyName,
+                        candidate.InternalName,
+                        tostring(candidate.Index)
+                    )
+                end
+                levelQuestByOption[label] = candidate
+                table.insert(options, label)
+            end
+            return options
+        end
+
+        local function selectedLevelQuest()
+            if state.SelectedLevelQuest == AUTO_LEVEL_BEST_OPTION then
+                return bestQuest()
+            end
+            local selected = levelQuestByOption[state.SelectedLevelQuest]
+            if not selected then
+                currentSeaQuestOptions()
+                selected = levelQuestByOption[state.SelectedLevelQuest]
+            end
+            return selected
         end
 
         local function questVisible()
@@ -11895,30 +12359,13 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function enemySpawn(enemyName)
-            local origin = workspace:FindFirstChild("_WorldOrigin")
-            local spawns = origin and origin:FindFirstChild("EnemySpawns")
-            if not spawns then
-                return nil
-            end
-            local root = rootPart()
-            local best = nil
-            local bestDistance = math.huge
-            for _, descendant in ipairs(spawns:GetDescendants()) do
-                if descendant:IsA("BasePart") and enemyMatches(descendant, enemyName) then
-                    local distance = root and (descendant.Position - root.Position).Magnitude or 0
-                    if distance < bestDistance then
-                        best = descendant
-                        bestDistance = distance
-                    end
-                end
-            end
-            return best
+            return nearestEnemySpawn(enemyName)
         end
 
         local function stepAutoLevel()
-            local quest = bestQuest()
+            local quest = selectedLevelQuest()
             if not quest then
-                setError("No level quest was found for this sea")
+                setError("Choose a valid quest available in this sea")
                 return
             end
             state.CurrentQuestName = quest.DisplayName
@@ -11957,9 +12404,10 @@ function Window:BuildBloxFruitsFeatures()
                 if safeModeRetreat(enemy) then
                     return
                 end
+                syncFarmAuraRange()
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
-                    moveTo(targetCFrame)
+                    moveToFarmPosition(targetCFrame)
                 end
                 setStatus("Farming " .. normalizeEnemyName(enemy.Name), true)
                 return
@@ -12027,9 +12475,10 @@ function Window:BuildBloxFruitsFeatures()
                 if safeModeRetreat(enemy) then
                     return
                 end
+                syncFarmAuraRange()
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
-                    moveTo(targetCFrame)
+                    moveToFarmPosition(targetCFrame)
                 end
                 setStatus("Farming boss " .. state.SelectedBoss, true)
                 return
@@ -12095,9 +12544,10 @@ function Window:BuildBloxFruitsFeatures()
                     raidLabel.Text = "Raid: Safe mode recovery"
                     return
                 end
+                syncFarmAuraRange()
                 local targetCFrame = positionAtEnemy(enemy)
                 if targetCFrame then
-                    moveTo(targetCFrame)
+                    moveToFarmPosition(targetCFrame)
                 end
                 raidLabel.Text = "Raid: Attacking " .. normalizeEnemyName(enemy.Name)
             else
@@ -12138,6 +12588,16 @@ function Window:BuildBloxFruitsFeatures()
             local enabled = state.GatherEnemies or (state.AutoMagnet and (state.AutoFarmLevel or state.AutoBoss or state.AutoRaid))
             if not enabled then
                 state.Gathered = 0
+                state.GatherSingleFallbackEnemy = nil
+                for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
+                    local enemyRoot = modelRoot(enemy)
+                    if enemyRoot and modelAlive(enemy) then
+                        pcall(function()
+                            enemyRoot.CFrame = originalCFrame
+                        end)
+                    end
+                end
+                table.clear(state.GatherOriginalCFrames)
                 return
             end
             pcall(function()
@@ -12145,25 +12605,64 @@ function Window:BuildBloxFruitsFeatures()
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
                 end
             end)
-            local gathered = 0
-            local gatherRange = state.GatherEnemies and state.GatherRange or state.MagnetRange
-            local targetName = nil
-            if state.GatherQuestOnly or not state.GatherEnemies then
-                targetName = state.CurrentEnemyName
-            end
-            local targetCFrame = root.CFrame * CFrame.new(0, 0, -state.GatherDistance)
+            local gatherRange = state.GatherEnemies and MULTI_GRAB_RANGE or state.MagnetRange
+            local targetName = state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName
+            -- Stack every grabbed NPC directly underneath the player. This
+            -- keeps the pile inside Aura range while the player remains above
+            -- it instead of dragging the enemies in front of the character.
+            local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
+            local candidates = {}
             for _, enemy in ipairs(loadedEnemies()) do
                 local enemyRoot = modelRoot(enemy)
-                if enemyRoot and modelAlive(enemy) and (enemyRoot.Position - root.Position).Magnitude <= gatherRange then
-                    if not targetName or enemyMatches(enemy, targetName) then
-                        pcall(function()
-                            enemyRoot.CFrame = targetCFrame
-                            enemyRoot.AssemblyLinearVelocity = Vector3.zero
-                            enemyRoot.AssemblyAngularVelocity = Vector3.zero
-                        end)
-                        gathered += 1
+                local distance = enemyRoot and (enemyRoot.Position - root.Position).Magnitude or math.huge
+                if enemyRoot and modelAlive(enemy) and distance <= gatherRange then
+                    if targetName and enemyMatches(enemy, targetName) then
+                        table.insert(candidates, {Enemy = enemy, Root = enemyRoot, Distance = distance})
                     end
                 end
+            end
+            table.sort(candidates, function(left, right)
+                return left.Distance < right.Distance
+            end)
+            if state.GatherEnemies then
+                for _, candidate in ipairs(candidates) do
+                    if state.GatherOriginalCFrames[candidate.Enemy] == nil then
+                        state.GatherOriginalCFrames[candidate.Enemy] = candidate.Root.CFrame
+                    end
+                end
+                if #candidates == 1 then
+                    local remaining = candidates[1]
+                    local originalCFrame = state.GatherOriginalCFrames[remaining.Enemy]
+                    if originalCFrame then
+                        pcall(function()
+                            remaining.Root.CFrame = originalCFrame
+                            remaining.Root.AssemblyLinearVelocity = Vector3.zero
+                            remaining.Root.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                    end
+                    state.GatherSingleFallbackEnemy = remaining.Enemy
+                    state.MobAuraAnchorTarget = nil
+                    state.MobAuraStableAnchor = nil
+                    state.Gathered = 0
+                    return
+                elseif #candidates > 1 then
+                    state.GatherSingleFallbackEnemy = nil
+                elseif not modelAlive(state.GatherSingleFallbackEnemy) then
+                    state.GatherSingleFallbackEnemy = nil
+                end
+            end
+            local gathered = 0
+            local limit = state.GatherEnemies and MULTI_GRAB_LIMIT or math.huge
+            for index, candidate in ipairs(candidates) do
+                if index > limit then
+                    break
+                end
+                pcall(function()
+                    candidate.Root.CFrame = targetCFrame
+                    candidate.Root.AssemblyLinearVelocity = Vector3.zero
+                    candidate.Root.AssemblyAngularVelocity = Vector3.zero
+                end)
+                gathered += 1
             end
             state.Gathered = gathered
         end
@@ -12325,27 +12824,135 @@ function Window:BuildBloxFruitsFeatures()
         end
 
         local function storeFruits()
-            local stored = 0
-            for _, tool in ipairs(fruitTools()) do
-                local ok = invoke("StoreFruit", tool.Name, tool)
-                if ok then
-                    stored += 1
-                end
-                task.wait(0.15)
+            if state.InventoryBusy then
+                return 0, "Fruit storage is already busy"
             end
-            return stored
+            local tools = fruitTools()
+            if #tools == 0 then
+                state.StoreStatus = "No physical fruit is being carried"
+                return 0, state.StoreStatus
+            end
+
+            state.InventoryBusy = true
+            local stored = 0
+            local lastMessage = nil
+            local operationOk, operationError = xpcall(function()
+                local deadline = os.clock() + 0.75
+                while state.AuraAttackPending and os.clock() < deadline do
+                    task.wait()
+                end
+                local char = character()
+                local body = humanoid()
+                local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                if not char or not body or not backpack then
+                    error("character inventory is unavailable")
+                end
+                local previousTool = nil
+                for _, child in ipairs(char:GetChildren()) do
+                    if child:IsA("Tool") then
+                        previousTool = child
+                        break
+                    end
+                end
+
+                for _, tool in ipairs(tools) do
+                    if tool.Parent then
+                        body:UnequipTools()
+                        task.wait(0.10)
+                        body:EquipTool(tool)
+                        task.wait(0.18)
+                        if tool.Parent and tool.Parent ~= char then
+                            tool.Parent = char
+                            task.wait(0.10)
+                        end
+                        if tool.Parent == char then
+                            local originalName = tostring(tool:GetAttribute("OriginalName") or tool.Name)
+                            local requestOk, requestResult = invoke("StoreFruit", originalName, tool)
+                            task.wait(0.65)
+                            local stillCarried = tool.Parent == char or tool.Parent == backpack
+                            if requestOk and not stillCarried then
+                                stored += 1
+                                state.FruitsStored += 1
+                                lastMessage = "Stored " .. originalName
+                            else
+                                lastMessage = stillCarried
+                                    and ("Server kept " .. tool.Name .. " (storage full or duplicate)")
+                                    or tostring(requestResult)
+                            end
+                        else
+                            lastMessage = "Could not equip " .. tool.Name .. " for storage"
+                        end
+                    end
+                end
+
+                body:UnequipTools()
+                task.wait(0.08)
+                if previousTool and previousTool.Parent then
+                    body:EquipTool(previousTool)
+                elseif state.DoubleAttack then
+                    local sword = toolForSelection("Sword")
+                    if sword then
+                        body:EquipTool(sword)
+                    end
+                end
+            end, debug.traceback)
+            state.InventoryBusy = false
+            if not operationOk then
+                state.StoreStatus = "Storage failed: " .. tostring(operationError)
+                return stored, state.StoreStatus
+            end
+            state.StoreStatus = lastMessage or string.format("Stored %d fruit(s)", stored)
+            return stored, state.StoreStatus
         end
 
         local function rollFruitOnce()
-            local checkOk, checkResult = invoke("Cousin", "Check", "DLCBoxData")
-            if not checkOk then
-                return false, checkResult
+            if state.GachaBusy then
+                return false, "Fruit Gacha is already checking the server"
             end
-            local timeOk, timeResult = invoke("Cousin", "CheckTime")
-            if not timeOk then
-                return false, timeResult
+            state.GachaBusy = true
+            local before = {}
+            for _, tool in ipairs(fruitTools()) do
+                before[tool] = true
             end
-            return invoke("Cousin", "DLCBoxData")
+            local operationOk, requestOk, requestResult = pcall(function()
+                -- The current server requires the gacha box name on CheckTime.
+                -- The old missing argument raised "boxName is nil" and stopped
+                -- every automatic roll before the purchase request.
+                local timeOk, timeResult = invoke("Cousin", "CheckTime", "DLCBoxData")
+                if not timeOk then
+                    return false, timeResult
+                end
+                local loweredTime = string.lower(tostring(timeResult or ""))
+                if string.find(loweredTime, "must wait", 1, true)
+                    or string.find(loweredTime, "wait ", 1, true) then
+                    return false, timeResult
+                end
+
+                local buyOk, buyResult = invoke("Cousin", "DLCBoxData")
+                if not buyOk then
+                    return false, buyResult
+                end
+                task.wait(0.45)
+                local wonTool = nil
+                for _, tool in ipairs(fruitTools()) do
+                    if not before[tool] then
+                        wonTool = tool
+                        break
+                    end
+                end
+                state.GachaRolls += 1
+                return true, wonTool and ("Won " .. wonTool.Name) or tostring(buyResult)
+            end)
+            state.GachaBusy = false
+            if not operationOk then
+                state.GachaStatus = "Gacha failed: " .. tostring(requestOk)
+                return false, state.GachaStatus
+            end
+            state.GachaStatus = tostring(requestResult)
+            if requestOk and state.AutoStoreFruit then
+                task.defer(storeFruits)
+            end
+            return requestOk, requestResult
         end
 
         local function locationOptions()
@@ -12555,6 +13162,7 @@ function Window:BuildBloxFruitsFeatures()
             end
         end
 
+        local auraToggle
         local bossDropdown
         bossDropdown = BossSection:AddDropdown({
             Name = "Boss",
@@ -12566,9 +13174,29 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
 
+        local levelQuestDropdown
+        levelQuestDropdown = LevelSection:AddDropdown({
+            Name = "Quest to Farm",
+            Description = "Best automatically follows your level; manual choices list every quest giver available in this sea",
+            Flag = "blox_level_quest",
+            Options = currentSeaQuestOptions(),
+            Default = AUTO_LEVEL_BEST_OPTION,
+            Callback = function(value)
+                state.SelectedLevelQuest = tostring(value or AUTO_LEVEL_BEST_OPTION)
+                local quest = selectedLevelQuest()
+                if quest then
+                    questLabel.Text = string.format(
+                        "Quest: %s | Target: %s | Lv. %d",
+                        quest.DisplayName,
+                        quest.EnemyName,
+                        quest.LevelReq
+                    )
+                end
+            end,
+        })
         LevelSection:AddToggle({
             Name = "Auto Farm Level",
-            Description = "Reads the live quest table, starts the best quest, and farms its enemy",
+            Description = "Starts the selected current-sea quest and farms its required enemy",
             Flag = "blox_auto_level",
             Default = false,
             Callback = function(enabled)
@@ -12576,6 +13204,17 @@ function Window:BuildBloxFruitsFeatures()
                 if enabled then
                     state.AutoBoss = false
                     state.AutoRaid = false
+                    state.PositionTarget = nil
+                    state.LastPositionJitterAt = 0
+                    for _, flag in ipairs({"blox_mob_aura_tp", "blox_selected_mob_farm"}) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
+                    if not state.AuraKill and auraToggle then
+                        auraToggle:Set(true)
+                    end
                 else
                     state.CurrentQuestName = nil
                     state.CurrentEnemyName = nil
@@ -12609,14 +13248,14 @@ function Window:BuildBloxFruitsFeatures()
             Name = "Position Preset",
             Flag = "blox_farm_position_preset",
             Options = {"Front", "Behind", "Above", "Below", "Left", "Right", "Custom"},
-            Default = "Front",
+            Default = "Above",
             Callback = function(value)
                 local preset = tostring(value or "Custom")
                 state.FarmPositionPreset = preset
                 local offsets = {
                     Front = Vector3.new(0, 0, -7),
                     Behind = Vector3.new(0, 0, 7),
-                    Above = Vector3.new(0, 8, -2),
+                    Above = Vector3.new(0, 8, 0),
                     Below = Vector3.new(0, -5, -2),
                     Left = Vector3.new(-7, 0, 0),
                     Right = Vector3.new(7, 0, 0),
@@ -12648,7 +13287,7 @@ function Window:BuildBloxFruitsFeatures()
             Min = -20,
             Max = 40,
             Step = 1,
-            Default = 0,
+            Default = 8,
             Callback = function(value)
                 state.FarmOffsetY = value
                 state.FarmHeight = value
@@ -12661,7 +13300,7 @@ function Window:BuildBloxFruitsFeatures()
             Min = -30,
             Max = 30,
             Step = 1,
-            Default = -7,
+            Default = 0,
             Callback = function(value)
                 state.FarmOffsetZ = value
                 state.FarmDistance = math.abs(value)
@@ -12669,25 +13308,39 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
         FarmSettingsSection:AddToggle({
-            Name = "Random Position Per Target",
-            Description = "Chooses one stable offset per enemy instead of orbiting every frame",
+            Name = "Random Square Movement",
+            Description = "Teleports between random square corners around the enemy so Fruit M1 keeps refreshing its aim",
             Flag = "blox_random_position",
             Default = false,
             Callback = function(enabled)
                 state.RandomPosition = enabled
                 state.PositionTarget = nil
+                state.LastPositionJitterAt = 0
             end,
         })
         FarmSettingsSection:AddSlider({
-            Name = "Random Position Range",
+            Name = "Random Square Size",
             Flag = "blox_random_position_range",
-            Min = 0,
-            Max = 20,
+            Min = 2,
+            Max = 15,
             Step = 1,
-            Default = 0,
+            Default = 8,
             Callback = function(value)
-                state.RandomPositionRange = value
+                state.RandomPositionRange = math.clamp(tonumber(value) or 8, 2, 15)
                 state.PositionTarget = nil
+            end,
+        })
+        FarmSettingsSection:AddSlider({
+            Name = "Random Square Step Delay",
+            Description = "Seconds between corner teleports; lower is faster",
+            Flag = "blox_random_position_interval",
+            Min = 0.08,
+            Max = 0.80,
+            Step = 0.02,
+            Default = 0.20,
+            Callback = function(value)
+                state.RandomPositionInterval = math.clamp(tonumber(value) or 0.20, 0.08, 0.80)
+                state.LastPositionJitterAt = 0
             end,
         })
         FarmSettingsSection:AddToggle({
@@ -12733,21 +13386,25 @@ function Window:BuildBloxFruitsFeatures()
 
         WorldFarmSection:AddButton({
             Name = "Refresh Live Quest Data",
-            Description = "Re-reads your current level and best available quest",
+            Description = "Refreshes every quest available in this sea and re-reads the selected quest",
             Callback = function()
-                local quest = bestQuest()
+                local options = currentSeaQuestOptions()
+                if levelQuestDropdown then
+                    levelQuestDropdown:SetOptions(options, true)
+                end
+                local quest = selectedLevelQuest()
                 if quest then
                     questLabel.Text = string.format("Quest: %s | %s", quest.DisplayName, quest.EnemyName)
-                    Window:Notify("Blox Fruits", "Best quest: " .. quest.DisplayName, 3)
+                    Window:Notify("Blox Fruits", "Selected quest: " .. quest.DisplayName, 3)
                 else
-                    setError("No quest data is available yet")
+                    setError("The selected quest is not available in this sea")
                 end
             end,
         })
 
         ExploitSection:AddToggle({
-            Name = "Enemy Gather Aura",
-            Description = "Pulls every loaded enemy in range directly in front of you",
+            Name = "Multi Grab Enemies",
+            Description = "Stacks several matching loaded enemies underneath you while Aura Kill attacks the pile",
             Flag = "blox_enemy_gather",
             Default = false,
             Callback = function(enabled)
@@ -12755,49 +13412,60 @@ function Window:BuildBloxFruitsFeatures()
                 if not enabled then
                     state.Gathered = 0
                 end
+                gui:SetAttribute("BloxMultiGrabEnemies", enabled)
             end,
         })
-        ExploitSection:AddSlider({
-            Name = "Enemy Gather Range",
-            Flag = "blox_gather_range",
-            Min = 50,
-            Max = 30000,
-            Step = 50,
-            Default = 5000,
+        ExploitSection:AddLabel("Locked: Selected / Current Mob | 3 enemies | 600 studs")
+        local gatherMobDropdown = ExploitSection:AddDropdown({
+            Name = "Multi Grab Enemy",
+            Description = "Uses its own NPC choice; Current Farm Target follows Auto Level or Mob Farm",
+            Flag = "blox_multi_grab_enemy",
+            Options = gatherMobOptions(),
+            Default = CURRENT_GATHER_TARGET,
             Callback = function(value)
-                state.GatherRange = value
+                state.GatherSelectedMob = tostring(value or CURRENT_GATHER_TARGET)
+                gui:SetAttribute("BloxMultiGrabEnemy", state.GatherSelectedMob)
             end,
         })
         ExploitSection:AddSlider({
-            Name = "Gather Distance",
+            Name = "Grab Below Distance",
+            Description = "How many studs underneath your character to hold the enemy stack",
             Flag = "blox_gather_distance",
-            Min = 1,
-            Max = 20,
+            Min = 3,
+            Max = 30,
             Step = 1,
-            Default = 2,
+            Default = 8,
             Callback = function(value)
-                state.GatherDistance = value
+                state.GatherDistance = math.clamp(tonumber(value) or 8, 3, 30)
             end,
         })
-        local auraToggle
         local auraRangeSlider
         local mobAuraHeightSlider
+        local mobAuraToggle
+        local mobAuraSquareToggle
+        local selectedMobFarmToggle
+        local selectedMobDropdown
 
         local function resetMobAuraOrbit()
             state.MobAuraOrbitStartedAt = os.clock()
             state.MobAuraOrbitStartAngle = math.random() * math.pi * 2
             state.MobAuraOrbitDirection = math.random(0, 1) == 0 and -1 or 1
+            state.MobAuraSquareOffset = Vector3.zero
+            state.MobAuraSquareCorner = 0
+            state.MobAuraLastSquareStep = 0
         end
 
         local function requiredMobAuraRange()
-            local radius = state.MobAuraOrbit and state.MobAuraOrbitRadius or 0
+            local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
+                or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
             local pathDistance = math.sqrt(state.MobAuraHeight ^ 2 + radius ^ 2)
             return math.min(AURA_KILL_MAX_RANGE, math.ceil(pathDistance + 8))
         end
 
         local function syncMobAuraRange()
             local requiredRange = requiredMobAuraRange()
-            if state.MobAuraTp and state.AuraRange < requiredRange and auraRangeSlider then
+            if (state.MobAuraTp or state.SelectedMobFarm)
+                and state.AuraRange < requiredRange and auraRangeSlider then
                 auraRangeSlider:Set(requiredRange)
             end
         end
@@ -12816,6 +13484,13 @@ function Window:BuildBloxFruitsFeatures()
                 state.AuraTargetCursor = 0
                 if enabled then
                     resolveRegisterHitClosure()
+                    local busoControl = Window.PersistentControls["blox_auto_buso"]
+                    if busoControl and not busoControl:Get() then
+                        busoControl:Set(true)
+                    else
+                        state.AutoBuso = true
+                        ensureBuso(true)
+                    end
                 end
                 auraLabel.Text = enabled
                     and string.format("Aura Kill: Armed | Range: %.0f studs", state.AuraRange)
@@ -12837,7 +13512,8 @@ function Window:BuildBloxFruitsFeatures()
             Default = AURA_KILL_DEFAULT_RANGE,
             Callback = function(value)
                 state.AuraRange = math.clamp(tonumber(value) or AURA_KILL_DEFAULT_RANGE, 5, AURA_KILL_MAX_RANGE)
-                if state.MobAuraTp and state.MobAuraHeight > state.AuraRange - 8 then
+                if (state.MobAuraTp or state.SelectedMobFarm)
+                    and state.MobAuraHeight > state.AuraRange - 8 then
                     local adjustedHeight = math.max(3, state.AuraRange - 8)
                     if mobAuraHeightSlider then
                         mobAuraHeightSlider:Set(adjustedHeight)
@@ -12849,7 +13525,7 @@ function Window:BuildBloxFruitsFeatures()
                     and string.format("Aura Kill: Armed | Range: %.0f studs", state.AuraRange)
                     or string.format("Aura Kill: Off | Range: %.0f studs", state.AuraRange)
                 gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
-                if state.MobAuraTp then
+                if state.MobAuraTp or state.SelectedMobFarm then
                     task.defer(syncMobAuraRange)
                 end
             end,
@@ -12934,16 +13610,21 @@ function Window:BuildBloxFruitsFeatures()
                 state.AttackInterval = value
             end,
         })
-        AttackSection:AddToggle({
+        mobAuraToggle = AttackSection:AddToggle({
             Name = "Mob Aura TP",
             Description = "Teleports above the nearest living workspace.Enemies NPC and keeps Aura Kill armed",
             Flag = "blox_mob_aura_tp",
             Default = false,
             Callback = function(enabled)
+                if enabled and state.SelectedMobFarm and selectedMobFarmToggle then
+                    selectedMobFarmToggle:Set(false)
+                end
                 state.MobAuraTp = enabled
                 state.MobAuraTarget = nil
                 state.MobAuraTargetName = nil
                 state.MobAuraDistance = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
                 if enabled then
                     resetMobAuraOrbit()
                     state.AutoFarmLevel = false
@@ -12960,7 +13641,7 @@ function Window:BuildBloxFruitsFeatures()
                 else
                     mobAuraLabel.Text = "Mob Aura TP: Off | Distance: --"
                     mobAuraLabel.TextColor3 = COLORS.muted
-                    if not state.Noclip and not state.AutoFarmLevel and not state.AutoBoss
+                    if not state.SelectedMobFarm and not state.Noclip and not state.AutoFarmLevel and not state.AutoBoss
                         and not state.AutoRaid and not state.AutoChest then
                         restoreCollision()
                     end
@@ -12979,7 +13660,94 @@ function Window:BuildBloxFruitsFeatures()
             Callback = function(value)
                 state.MobAuraSearchRange = math.clamp(tonumber(value) or 500, 25, 2500)
                 state.MobAuraTarget = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
                 gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            end,
+        })
+        selectedMobDropdown = AttackSection:AddDropdown({
+            Name = "Mob Farm Enemy",
+            Flag = "blox_selected_mob_name",
+            Options = mobFarmOptions(),
+            Default = "None",
+            Callback = function(value)
+                state.SelectedMobName = tostring(value or "None")
+                state.MobAuraTarget = nil
+                state.MobAuraTargetName = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
+                state.SelectedMobWaitingAtSpawn = false
+                gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
+            end,
+        })
+        selectedMobFarmToggle = AttackSection:AddToggle({
+            Name = "Selected Mob Farm TP",
+            Description = "Farms only the chosen enemy and waits above its spawn when none are currently loaded",
+            Flag = "blox_selected_mob_farm",
+            Default = false,
+            Callback = function(enabled)
+                if enabled and state.MobAuraTp and mobAuraToggle then
+                    mobAuraToggle:Set(false)
+                end
+                state.SelectedMobFarm = enabled
+                state.MobAuraTarget = nil
+                state.MobAuraTargetName = nil
+                state.MobAuraDistance = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
+                state.SelectedMobWaitingAtSpawn = false
+                if enabled then
+                    resetMobAuraOrbit()
+                    state.AutoFarmLevel = false
+                    state.AutoBoss = false
+                    state.AutoRaid = false
+                    state.AutoChest = false
+                    cancelMove()
+                    if not state.AuraKill and auraToggle then
+                        auraToggle:Set(true)
+                    end
+                    syncMobAuraRange()
+                    selectedMobFarmLabel.Text = state.SelectedMobName == "None"
+                        and "Selected Mob Farm: Choose an enemy"
+                        or ("Selected Mob Farm: Searching for " .. state.SelectedMobName)
+                    selectedMobFarmLabel.TextColor3 = state.SelectedMobName == "None"
+                        and COLORS.warning or COLORS.success
+                else
+                    selectedMobFarmLabel.Text = "Selected Mob Farm: Off | Enemy: " .. state.SelectedMobName
+                    selectedMobFarmLabel.TextColor3 = COLORS.muted
+                    if not state.MobAuraTp and not state.Noclip and not state.AutoFarmLevel and not state.AutoBoss
+                        and not state.AutoRaid and not state.AutoChest then
+                        restoreCollision()
+                    end
+                end
+                gui:SetAttribute("BloxSelectedMobFarm", enabled)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Selected Mob Search Distance",
+            Description = "Maximum distance for the chosen loaded enemy; spawn waiting still works anywhere in this sea",
+            Flag = "blox_selected_mob_search_range",
+            Min = 500,
+            Max = 30000,
+            Step = 500,
+            Default = 30000,
+            Callback = function(value)
+                state.SelectedMobSearchRange = math.clamp(tonumber(value) or 30000, 500, 30000)
+                state.MobAuraTarget = nil
+                state.MobAuraAnchorTarget = nil
+                state.MobAuraStableAnchor = nil
+                gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
+            end,
+        })
+        AttackSection:AddButton({
+            Name = "Refresh Mob Farm Enemies",
+            Description = "Re-reads enemy spawns and currently loaded workspace.Enemies names",
+            Callback = function()
+                selectedMobDropdown:SetOptions(mobFarmOptions(), true)
+                if gatherMobDropdown then
+                    gatherMobDropdown:SetOptions(gatherMobOptions(), true)
+                end
+                Window:Notify("Mob Farm", "Enemy list refreshed", 2.5)
             end,
         })
         mobAuraHeightSlider = AttackSection:AddSlider({
@@ -13002,6 +13770,9 @@ function Window:BuildBloxFruitsFeatures()
             Flag = "blox_mob_aura_orbit",
             Default = false,
             Callback = function(enabled)
+                if enabled and state.MobAuraRandomSquare and mobAuraSquareToggle then
+                    mobAuraSquareToggle:Set(false)
+                end
                 state.MobAuraOrbit = enabled
                 resetMobAuraOrbit()
                 syncMobAuraRange()
@@ -13028,18 +13799,65 @@ function Window:BuildBloxFruitsFeatures()
             Description = "Degrees per second to spin around the NPC",
             Flag = "blox_mob_aura_orbit_speed",
             Min = 20,
-            Max = 240,
-            Step = 5,
+            Max = 720,
+            Step = 10,
             Default = 110,
             Callback = function(value)
-                state.MobAuraOrbitSpeed = math.clamp(tonumber(value) or 110, 20, 240)
+                state.MobAuraOrbitSpeed = math.clamp(tonumber(value) or 110, 20, 720)
                 resetMobAuraOrbit()
                 gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
             end,
         })
+        mobAuraSquareToggle = AttackSection:AddToggle({
+            Name = "Mob Aura Random Square",
+            Description = "Teleports between square corners above the NPC for reliable Fruit M1 position updates",
+            Flag = "blox_mob_aura_random_square",
+            Default = false,
+            Callback = function(enabled)
+                if enabled and state.MobAuraOrbit then
+                    local orbitControl = Window.PersistentControls["blox_mob_aura_orbit"]
+                    if orbitControl then
+                        orbitControl:Set(false)
+                    end
+                end
+                state.MobAuraRandomSquare = enabled
+                resetMobAuraOrbit()
+                syncMobAuraRange()
+                gui:SetAttribute("BloxMobAuraRandomSquare", enabled)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Mob Aura Square Size",
+            Description = "Distance from the NPC center to each square corner",
+            Flag = "blox_mob_aura_square_size",
+            Min = 2,
+            Max = 15,
+            Step = 1,
+            Default = 8,
+            Callback = function(value)
+                state.MobAuraSquareSize = math.clamp(tonumber(value) or 8, 2, 15)
+                resetMobAuraOrbit()
+                syncMobAuraRange()
+                gui:SetAttribute("BloxMobAuraSquareSize", state.MobAuraSquareSize)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Mob Aura Square Step Delay",
+            Description = "Seconds between square corner teleports; lower is faster",
+            Flag = "blox_mob_aura_square_interval",
+            Min = 0.06,
+            Max = 0.80,
+            Step = 0.02,
+            Default = 0.18,
+            Callback = function(value)
+                state.MobAuraSquareInterval = math.clamp(tonumber(value) or 0.18, 0.06, 0.80)
+                resetMobAuraOrbit()
+                gui:SetAttribute("BloxMobAuraSquareInterval", state.MobAuraSquareInterval)
+            end,
+        })
         AttackSection:AddToggle({
             Name = "Auto Buso",
-            Description = "Immediately enables Armament Buso and restores it after respawn if its live markers disappear",
+            Description = "Uses the real Aura Ability J input on PC and mobile, then restores Buso after respawn",
             Flag = "blox_auto_buso",
             Default = false,
             Callback = function(enabled)
@@ -13123,26 +13941,47 @@ function Window:BuildBloxFruitsFeatures()
 
         FruitSection:AddButton({
             Name = "Roll Blox Fruit Once",
+            Description = "Rolls remotely from your current position; no dealer teleport",
             Callback = function()
-                local ok, result = rollFruitOnce()
-                Window:Notify("Fruit Gacha", ok and "Roll requested" or tostring(result), 3)
+                task.spawn(function()
+                    local ok, result = rollFruitOnce()
+                    Window:Notify("Fruit Gacha", ok and tostring(result) or tostring(result), 4)
+                end)
             end,
         })
         FruitSection:AddToggle({
             Name = "Auto Fruit Gacha",
-            Description = "Requests one roll every two minutes",
+            Description = "Checks and rolls remotely from anywhere without moving your character",
             Flag = "blox_auto_gacha",
             Default = false,
             Callback = function(enabled)
                 state.AutoGacha = enabled
+                if enabled then
+                    state.LastGacha = -math.huge
+                    state.GachaStatus = "Checking remote gacha..."
+                end
+                gui:SetAttribute("BloxAutoGacha", enabled)
+            end,
+        })
+        FruitSection:AddSlider({
+            Name = "Gacha Retry Seconds",
+            Description = "How often Auto Gacha checks the server cooldown",
+            Flag = "blox_gacha_interval",
+            Min = 10,
+            Max = 120,
+            Step = 5,
+            Default = 30,
+            Callback = function(value)
+                state.GachaInterval = math.clamp(tonumber(value) or 30, 10, 120)
+                gui:SetAttribute("BloxGachaRetrySeconds", state.GachaInterval)
             end,
         })
         FruitSection:AddButton({
             Name = "Store Carried Fruits",
             Callback = function()
                 task.spawn(function()
-                    local stored = storeFruits()
-                    Window:Notify("Fruit Storage", "Store requests sent: " .. tostring(stored), 3)
+                    local stored, message = storeFruits()
+                    Window:Notify("Fruit Storage", string.format("Stored: %d | %s", stored, tostring(message)), 4)
                 end)
             end,
         })
@@ -13152,6 +13991,10 @@ function Window:BuildBloxFruitsFeatures()
             Default = false,
             Callback = function(enabled)
                 state.AutoStoreFruit = enabled
+                if enabled then
+                    state.LastStore = -math.huge
+                end
+                gui:SetAttribute("BloxAutoStoreFruit", enabled)
             end,
         })
 
@@ -13398,7 +14241,9 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraCombo = 0
             table.clear(state.AuraCombos)
             table.clear(state.NativeFruitCombos)
+            state.FruitM1ReadyAt = 0
             state.AuraFruitBusy = false
+            state.InventoryBusy = false
             state.AuraFruitInRange = nil
             state.AuraFruitLastDistance = nil
             state.OriginalFruitTapCooldown = tonumber(newCharacter:GetAttribute("FruitTAPCooldown")) or 0
@@ -13407,6 +14252,10 @@ function Window:BuildBloxFruitsFeatures()
             state.MobAuraTarget = nil
             state.MobAuraTargetName = nil
             state.MobAuraDistance = nil
+            state.MobAuraAnchorTarget = nil
+            state.MobAuraStableAnchor = nil
+            state.GatherSingleFallbackEnemy = nil
+            table.clear(state.GatherOriginalCFrames)
             if state.AutoBuso then
                 task.delay(0.5, function()
                     if state.Alive and state.AutoBuso then
@@ -13420,17 +14269,17 @@ function Window:BuildBloxFruitsFeatures()
             if not state.Alive then
                 return
             end
-            if state.MobAuraTp then
+            if state.MobAuraTp or state.SelectedMobFarm then
                 applyNoclip()
                 stepMobAuraTp()
             end
             local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
             if not attackBlocked and state.AuraKill then
                 auraKillOnce()
-                return
             end
             gatherStep()
-            if state.Noclip or state.MobAuraTp or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
+            if state.Noclip or state.MobAuraTp or state.SelectedMobFarm
+                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
                 applyNoclip()
             end
             updateEnergy()
@@ -13488,9 +14337,43 @@ function Window:BuildBloxFruitsFeatures()
                             weaponStatusLabel.TextColor3 = COLORS.muted
                         end
                     end
-                    if state.MobAuraTp then
+                    if state.SelectedMobFarm then
+                        if state.SelectedMobName == "None" then
+                            selectedMobFarmLabel.Text = "Selected Mob Farm: Choose an enemy"
+                            selectedMobFarmLabel.TextColor3 = COLORS.warning
+                        elseif state.MobAuraTargetName and state.MobAuraDistance then
+                            selectedMobFarmLabel.Text = string.format(
+                                "Selected Mob Farm: %s | Distance: %.1f | Height: %.0f%s",
+                                state.MobAuraTargetName,
+                                state.MobAuraDistance,
+                                state.MobAuraHeight,
+                                state.MobAuraRandomSquare and string.format(" | Square: %.0f", state.MobAuraSquareSize)
+                                    or (state.MobAuraOrbit and string.format(" | Orbit: %.0f", state.MobAuraOrbitRadius) or "")
+                            )
+                            selectedMobFarmLabel.TextColor3 = COLORS.success
+                        elseif state.SelectedMobWaitingAtSpawn then
+                            selectedMobFarmLabel.Text = string.format(
+                                "Selected Mob Farm: Waiting above %s spawn | Height: %.0f",
+                                state.SelectedMobName,
+                                state.MobAuraHeight
+                            )
+                            selectedMobFarmLabel.TextColor3 = COLORS.muted
+                        else
+                            selectedMobFarmLabel.Text = "Selected Mob Farm: No spawn found for " .. state.SelectedMobName
+                            selectedMobFarmLabel.TextColor3 = COLORS.warning
+                        end
+                    elseif state.MobAuraTp then
                         if state.MobAuraTargetName and state.MobAuraDistance then
-                            if state.MobAuraOrbit then
+                            if state.MobAuraRandomSquare then
+                                mobAuraLabel.Text = string.format(
+                                    "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Square: %.0f @ %.2fs",
+                                    state.MobAuraTargetName,
+                                    state.MobAuraDistance,
+                                    state.MobAuraHeight,
+                                    state.MobAuraSquareSize,
+                                    state.MobAuraSquareInterval
+                                )
+                            elseif state.MobAuraOrbit then
                                 mobAuraLabel.Text = string.format(
                                     "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Orbit: %.0f @ %.0f deg/s",
                                     state.MobAuraTargetName,
@@ -13566,12 +14449,27 @@ function Window:BuildBloxFruitsFeatures()
 
                     if state.AutoGacha and os.clock() - state.LastGacha >= state.GachaInterval then
                         state.LastGacha = os.clock()
-                        rollFruitOnce()
+                        task.spawn(rollFruitOnce)
                     end
                     if state.AutoStoreFruit and os.clock() - state.LastStore >= 8 then
                         state.LastStore = os.clock()
                         task.spawn(storeFruits)
                     end
+                    fruitGachaLabel.Text = string.format(
+                        "Fruit Gacha: %s | Rolls this session: %d | Retry: %.0fs",
+                        state.GachaStatus,
+                        state.GachaRolls,
+                        state.GachaInterval
+                    )
+                    fruitGachaLabel.TextColor3 = state.GachaBusy and COLORS.warning
+                        or (state.GachaRolls > 0 and COLORS.success or COLORS.muted)
+                    fruitStoreLabel.Text = string.format(
+                        "Fruit Storage: %s | Stored this session: %d",
+                        state.StoreStatus,
+                        state.FruitsStored
+                    )
+                    fruitStoreLabel.TextColor3 = state.InventoryBusy and COLORS.warning
+                        or (state.FruitsStored > 0 and COLORS.success or COLORS.muted)
 
                     if state.AutoBuyRaidChip and os.clock() - lastRaidPurchase >= 15 then
                         lastRaidPurchase = os.clock()
@@ -13586,7 +14484,15 @@ function Window:BuildBloxFruitsFeatures()
                         invoke("Awakener", "Awaken")
                     end
 
-                    local gatherText = "Gathered enemies: " .. tostring(state.Gathered) .. " | Range: " .. tostring(state.GatherRange)
+                    local gatherText = string.format(
+                        "Multi Grab: %d / %d | %s | Range: %d | Below: %.0f%s",
+                        state.Gathered,
+                        MULTI_GRAB_LIMIT,
+                        state.GatherSelectedMob,
+                        MULTI_GRAB_RANGE,
+                        state.GatherDistance,
+                        state.GatherSingleFallbackEnemy and " | Last NPC: actual position" or ""
+                    )
                     if gatherText ~= state.LastGatherLabelText then
                         state.LastGatherLabelText = gatherText
                         gatherLabel.Text = gatherText
@@ -13628,8 +14534,23 @@ function Window:BuildBloxFruitsFeatures()
             state.Alive = false
             state.AuraKill = false
             state.MobAuraTp = false
+            state.SelectedMobFarm = false
             state.AuraFruitBusy = false
+            state.GachaBusy = false
+            state.InventoryBusy = false
             state.MobAuraTarget = nil
+            state.MobAuraAnchorTarget = nil
+            state.MobAuraStableAnchor = nil
+            state.GatherSingleFallbackEnemy = nil
+            for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
+                local enemyRoot = modelRoot(enemy)
+                if enemyRoot and modelAlive(enemy) then
+                    pcall(function()
+                        enemyRoot.CFrame = originalCFrame
+                    end)
+                end
+            end
+            table.clear(state.GatherOriginalCFrames)
             local char = character()
             if char and state.OriginalFruitTapCooldown ~= nil then
                 char:SetAttribute("FruitTAPCooldown", state.OriginalFruitTapCooldown)
@@ -13660,6 +14581,7 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraKill", state.AuraKill)
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", 0)
+            gui:SetAttribute("BloxAuraMultiTargetCount", 0)
             gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)
             gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
             gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
@@ -13679,14 +14601,39 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraFruitInRange", false)
             gui:SetAttribute("BloxAuraFruitLastDistance", 0)
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
+            gui:SetAttribute("BloxSelectedMobFarm", state.SelectedMobFarm)
+            gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
+            gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
+            gui:SetAttribute("BloxSelectedMobWaitingAtSpawn", false)
+            gui:SetAttribute("BloxMobAuraMode", "Off")
             gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
             gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
             gui:SetAttribute("BloxMobAuraOrbit", state.MobAuraOrbit)
             gui:SetAttribute("BloxMobAuraOrbitRadius", state.MobAuraOrbitRadius)
             gui:SetAttribute("BloxMobAuraOrbitSpeed", state.MobAuraOrbitSpeed)
             gui:SetAttribute("BloxMobAuraOrbitDirection", state.MobAuraOrbitDirection)
+            gui:SetAttribute("BloxMobAuraRandomSquare", state.MobAuraRandomSquare)
+            gui:SetAttribute("BloxMobAuraSquareSize", state.MobAuraSquareSize)
+            gui:SetAttribute("BloxMobAuraSquareInterval", state.MobAuraSquareInterval)
             gui:SetAttribute("BloxMobAuraTarget", "")
             gui:SetAttribute("BloxMobAuraDistance", 0)
+            gui:SetAttribute("BloxMultiGrabEnemies", state.GatherEnemies)
+            gui:SetAttribute("BloxMultiGrabFilter", state.GatherMode)
+            gui:SetAttribute("BloxMultiGrabEnemy", state.GatherSelectedMob)
+            gui:SetAttribute("BloxMultiGrabLimit", MULTI_GRAB_LIMIT)
+            gui:SetAttribute("BloxMultiGrabRange", MULTI_GRAB_RANGE)
+            gui:SetAttribute("BloxMultiGrabCount", 0)
+            gui:SetAttribute("BloxMultiGrabSingleFallback", "")
+            gui:SetAttribute("BloxSelectedLevelQuest", state.SelectedLevelQuest)
+            gui:SetAttribute("BloxAutoGacha", state.AutoGacha)
+            gui:SetAttribute("BloxGachaRetrySeconds", state.GachaInterval)
+            gui:SetAttribute("BloxGachaBusy", false)
+            gui:SetAttribute("BloxGachaRollCount", 0)
+            gui:SetAttribute("BloxGachaStatus", state.GachaStatus)
+            gui:SetAttribute("BloxAutoStoreFruit", state.AutoStoreFruit)
+            gui:SetAttribute("BloxFruitStoreBusy", false)
+            gui:SetAttribute("BloxFruitStoredCount", 0)
+            gui:SetAttribute("BloxFruitStoreStatus", state.StoreStatus)
             gui:SetAttribute("BloxAutoAttack", false)
             gui:SetAttribute("BloxLastAttackAt", 0)
             gui:SetAttribute("BloxAttackCount", state.AuraRequests)
@@ -13695,7 +14642,7 @@ function Window:BuildBloxFruitsFeatures()
 
         setStatus("Native Blox Fruits functions ready", true)
         refreshBusoStatus()
-        local quest = bestQuest()
+        local quest = selectedLevelQuest()
         if quest then
             questLabel.Text = string.format("Quest: %s | Target: %s", quest.DisplayName, quest.EnemyName)
         else
