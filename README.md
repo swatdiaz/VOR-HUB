@@ -2,21 +2,25 @@
 
 GitHub-backed source for VOR Hub.
 
-## Loader
+## Audited immutable loader (recommended)
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/01c3111d917ef395f207221648ccad985fc6888d/loader.lua"))()
 ```
 
-`loader.lua` resolves the latest `main` commit and then downloads the immutable
-commit-pinned `VOR_HUB.lua`, avoiding Roblox/GitHub's stale branch-file cache.
+This entrypoint and the hub release it loads are both commit-pinned. Future
+changes to `main` cannot alter what this exact command executes.
+
+The visible commit SHA is a public identifier, not a GitHub credential. It
+cannot grant push access. Only repository accounts explicitly given write or
+admin permission can update the original VOR Hub repository.
 
 ## Files
 
 - `VOR_HUB.lua` - complete hub source and supported-game router
 - `anime_expeditions.lua` - Anime Expeditions integration
-- `blox_fruits.lua` - Blox Fruits live legacy-runtime adapter
-- `loader.lua` - stable one-line loader
+- `blox_fruits_dungeons.lua` - Blox Fruits dungeon integration
+- `loader.lua` - audited commit-pinned loader
 - `update-github.ps1` - copies the parent source files, commits them, and pushes `main`
 
 ## Publish an update
