@@ -131,6 +131,7 @@ local SUPPORTED_GAMES = {
             [4442272183] = true,
             [7449423635] = true,
             [100117331123089] = true,
+            [73902483975735] = true,
         },
     },
 }
@@ -145,6 +146,10 @@ local function resolveGameSupport()
 end
 
 local ACTIVE_GAME_SUPPORT = resolveGameSupport()
+local BLOX_FRUITS_DUNGEON_PLACE_ID = 73902483975735
+local IS_BLOX_FRUITS_DUNGEON = ACTIVE_GAME_SUPPORT
+    and ACTIVE_GAME_SUPPORT.Key == "BloxFruits"
+    and game.PlaceId == BLOX_FRUITS_DUNGEON_PLACE_ID
 
 -- Optional game modules are fetched from the exact GitHub commit that is live
 -- when the hub starts. Keeping large integrations separate prevents one game's
@@ -10520,6 +10525,35 @@ local function buildAnimeExpeditionsFeatures()
     end
 end
 
+local function buildBloxFruitsDungeonFeatures()
+    local loaded, moduleOrError = pcall(loadVORGameModule, "blox_fruits_dungeons.lua")
+    if not loaded then
+        local DungeonPage = Window:AddPage("Dungeons")
+        Window:AddPage("Player")
+        local errorSection = DungeonPage:AddSection("Dungeon Module", "Left")
+        errorSection:AddLabel("The Blox Fruits dungeon module could not be loaded.")
+        errorSection:AddLabel(tostring(moduleOrError))
+        Window:Notify("VOR Hub", "Dungeon module failed to load", 5)
+        return
+    end
+
+    local built, buildError = xpcall(function()
+        moduleOrError({
+            Window = Window,
+            Colors = COLORS,
+            Track = track,
+            Gui = gui,
+        })
+    end, debug.traceback)
+    if not built then
+        warn("[VOR Hub] Blox Fruits dungeon controls failed: " .. tostring(buildError))
+        pcall(function()
+            gui:SetAttribute("BloxDungeonBuildError", tostring(buildError))
+        end)
+        Window:Notify("VOR Hub", "Dungeon controls failed: " .. tostring(buildError), 7)
+    end
+end
+
 function Window:BuildBloxFruitsFeatures()
     local built, buildError = xpcall(function()
         local Players = game:GetService("Players")
@@ -15813,7 +15847,11 @@ elseif ACTIVE_GAME_SUPPORT and ACTIVE_GAME_SUPPORT.Key == "BloxFruits" then
     gui:SetAttribute("GameSupported", true)
     gui:SetAttribute("GameSupportKey", ACTIVE_GAME_SUPPORT.Key)
     gui:SetAttribute("SupportedUniverseId", ACTIVE_GAME_SUPPORT.UniverseId)
-    Window:BuildBloxFruitsFeatures()
+    if IS_BLOX_FRUITS_DUNGEON then
+        buildBloxFruitsDungeonFeatures()
+    else
+        Window:BuildBloxFruitsFeatures()
+    end
 else
     statusGui.Enabled = false
     gui:SetAttribute("GameSupported", false)
@@ -15824,6 +15862,12 @@ end
 
 -- Generic Settings page. Keep this below your feature controls so Auto Load can restore them.
 local SettingsPage = Window:AddPage("Settings")
+if IS_BLOX_FRUITS_DUNGEON and SettingsPage.NavRow then
+    -- The Dungeon experience has its own compact surface. Profiles still load
+    -- underneath, but the visible navigation intentionally stays at exactly
+    -- Dungeons + Player as requested.
+    SettingsPage.NavRow.Visible = false
+end
 local ProfilesSection = SettingsPage:AddSection("Saved Profiles", "Left")
 local AutoLoadSection = SettingsPage:AddSection("Auto Load", "Right")
 local AppearanceSection = SettingsPage:AddSection("VOR Appearance", "Right")
@@ -16084,7 +16128,7 @@ else
     setSettingsStatus("Profile saving is unavailable: executor file API not found", false)
 end
 
-Window:SelectPage("Home")
+Window:SelectPage(IS_BLOX_FRUITS_DUNGEON and "Dungeons" or "Home")
 -- Optional global reference for adding controls later from the same environment.
 _G.VORHub = Window
 Window:RequestKeyAccess(function()
