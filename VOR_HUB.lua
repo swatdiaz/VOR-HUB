@@ -10569,17 +10569,12 @@ function Window:BuildBloxFruitsFeatures()
         local Quests = safeRequire(ReplicatedStorage:FindFirstChild("Quests")) or {}
         local Guide = safeRequire(ReplicatedStorage:FindFirstChild("GuideModule"))
         local CombatUtil = safeRequire(ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("CombatUtil"))
-        local Network = safeRequire(Net)
-        local function networkEvent(name, threaded)
-            if type(Network) ~= "table" or type(Network.RemoteEvent) ~= "function" then
-                return nil
-            end
-            local ok, remote = pcall(function()
-                return Network:RemoteEvent(name, threaded)
-            end)
-            return ok and remote or nil
-        end
-        local RegisterAttackEvent = networkEvent("RegisterAttack")
+        -- Calling Net:RemoteEvent from the executor's UI-building thread drops
+        -- its CoreGui capability in current Blox Fruits, so the next control
+        -- fails while parenting its Instance. RegisterAttack is non-virtual;
+        -- use its already-replicated event directly and leave RegisterHit on
+        -- CombatUtil's initialized internal sender.
+        local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
         local AURA_KILL_RANGE = 10
         local AURA_KILL_BASE_INTERVAL = 0.05
 
