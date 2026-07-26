@@ -10701,6 +10701,12 @@ function Window:BuildBloxFruitsFeatures()
             CurrentQuestName = nil,
             MoveTween = nil,
             MoveGoal = nil,
+            MoveToken = 0,
+            MoveRoot = nil,
+            MoveRootWasAnchored = false,
+            MoveHumanoid = nil,
+            MoveAutoRotate = nil,
+            Traveling = false,
             LastQuestRequest = 0,
             LastChestScan = 0,
             LastGatherScan = 0,
@@ -11022,14 +11028,56 @@ function Window:BuildBloxFruitsFeatures()
             return state.CurrentEnemyName
         end
 
-        local function cancelMove()
-            if state.MoveTween then
-                pcall(function()
-                    state.MoveTween:Cancel()
-                end)
-                state.MoveTween = nil
+        local function movementStillNeedsNoclip()
+            return state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
+                or state.AutoChest or state.MobAuraTp or state.SelectedMobFarm
+        end
+
+        local function releaseMoveRide()
+            local root = state.MoveRoot
+            local body = state.MoveHumanoid
+            if root and root.Parent then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.Anchored = state.MoveRootWasAnchored == true
             end
+            if body and body.Parent and state.MoveAutoRotate ~= nil then
+                body.AutoRotate = state.MoveAutoRotate
+                if not state.MoveRootWasAnchored then
+                    pcall(function()
+                        body:ChangeState(Enum.HumanoidStateType.Freefall)
+                    end)
+                end
+            end
+            state.MoveRoot = nil
+            state.MoveHumanoid = nil
+            state.MoveAutoRotate = nil
+            state.MoveRootWasAnchored = false
+            state.Traveling = false
+            gui:SetAttribute("BloxTraveling", false)
+            if not movementStillNeedsNoclip() then
+                for part, original in pairs(state.OriginalCollision) do
+                    if part and part.Parent then
+                        part.CanCollide = original
+                    end
+                end
+                table.clear(state.OriginalCollision)
+            end
+        end
+
+        local function cancelMove(keepRide)
+            state.MoveToken += 1
+            local activeTween = state.MoveTween
+            state.MoveTween = nil
             state.MoveGoal = nil
+            if activeTween then
+                pcall(function()
+                    activeTween:Cancel()
+                end)
+            end
+            if not keepRide then
+                releaseMoveRide()
+            end
         end
 
         local function moveTo(targetCFrame)
@@ -11039,32 +11087,63 @@ function Window:BuildBloxFruitsFeatures()
             end
             local distance = (root.Position - targetCFrame.Position).Magnitude
             if distance <= 3 then
-                cancelMove()
+                cancelMove(false)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
                 root.CFrame = targetCFrame
                 return true
             end
             if state.MoveGoal and (state.MoveGoal - targetCFrame.Position).Magnitude < 5 and state.MoveTween then
                 return true
             end
-            cancelMove()
+
+            if state.MoveRoot and state.MoveRoot ~= root then
+                cancelMove(false)
+            else
+                cancelMove(true)
+            end
+            if not state.MoveRoot then
+                state.MoveRoot = root
+                state.MoveRootWasAnchored = root.Anchored
+                state.MoveHumanoid = humanoid()
+                state.MoveAutoRotate = state.MoveHumanoid and state.MoveHumanoid.AutoRotate or nil
+            end
+            state.Traveling = true
+            gui:SetAttribute("BloxTraveling", true)
+            gui:SetAttribute("BloxTravelGoal", targetCFrame.Position)
+            if state.MoveHumanoid then
+                state.MoveHumanoid.AutoRotate = false
+            end
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.Anchored = true
+
             state.MoveGoal = targetCFrame.Position
             local duration = distance / math.max(state.TweenSpeed, 1)
             if duration <= 0.08 then
                 root.CFrame = targetCFrame
-                state.MoveGoal = nil
+                cancelMove(false)
                 return true
             end
-            state.MoveTween = TweenService:Create(
+
+            state.MoveToken += 1
+            local moveToken = state.MoveToken
+            local activeTween = TweenService:Create(
                 root,
                 TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
                 {CFrame = targetCFrame}
             )
-            local activeTween = state.MoveTween
-            activeTween.Completed:Once(function()
-                if state.MoveTween == activeTween then
-                    state.MoveTween = nil
-                    state.MoveGoal = nil
+            state.MoveTween = activeTween
+            activeTween.Completed:Once(function(playbackState)
+                if state.MoveToken ~= moveToken or state.MoveTween ~= activeTween then
+                    return
                 end
+                state.MoveTween = nil
+                state.MoveGoal = nil
+                if playbackState == Enum.PlaybackState.Completed and root.Parent then
+                    root.CFrame = targetCFrame
+                end
+                releaseMoveRide()
             end)
             activeTween:Play()
             return true
@@ -12992,6 +13071,37 @@ function Window:BuildBloxFruitsFeatures()
             return result
         end
 
+        local function prepareManualTravel()
+            -- A manual destination must own player movement until arrival.
+            -- Leaving Auto Level or Mob Aura active makes those loops overwrite
+            -- the travel tween every frame and produces the visible stutter.
+            for _, flag in ipairs({
+                "blox_auto_level",
+                "blox_auto_boss",
+                "blox_auto_raid",
+                "blox_auto_chest",
+                "blox_mob_aura_tp",
+                "blox_selected_mob_farm",
+                "blox_enemy_gather",
+            }) do
+                local control = Window.PersistentControls[flag]
+                if control and control:Get() then
+                    control:Set(false)
+                end
+            end
+            state.AutoFarmLevel = false
+            state.AutoBoss = false
+            state.AutoRaid = false
+            state.AutoChest = false
+            state.MobAuraTp = false
+            state.SelectedMobFarm = false
+            state.GatherEnemies = false
+            state.MobAuraTarget = nil
+            state.MobAuraAnchorTarget = nil
+            state.MobAuraStableAnchor = nil
+            cancelMove(false)
+        end
+
         local function teleportToLocation(name)
             local origin = workspace:FindFirstChild("_WorldOrigin")
             local locations = origin and origin:FindFirstChild("Locations")
@@ -13000,6 +13110,7 @@ function Window:BuildBloxFruitsFeatures()
                 return false
             end
             local targetCFrame = target:IsA("BasePart") and target.CFrame or target:GetPivot()
+            prepareManualTravel()
             return moveTo(targetCFrame + Vector3.new(0, 8, 0))
         end
 
@@ -13009,6 +13120,7 @@ function Window:BuildBloxFruitsFeatures()
             if not target then
                 return false
             end
+            prepareManualTravel()
             return moveTo(target:GetPivot() * CFrame.new(0, 0, -4))
         end
 
@@ -14278,7 +14390,7 @@ function Window:BuildBloxFruitsFeatures()
                 auraKillOnce()
             end
             gatherStep()
-            if state.Noclip or state.MobAuraTp or state.SelectedMobFarm
+            if state.Noclip or state.Traveling or state.MobAuraTp or state.SelectedMobFarm
                 or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
                 applyNoclip()
             end
@@ -14578,6 +14690,8 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxFruitsRuntimeDependency", "None")
             gui:SetAttribute("RuntimeDependency", "None")
             gui:SetAttribute("BloxFruitsEnemyGatherSource", "NativeVOR")
+            gui:SetAttribute("BloxTraveling", false)
+            gui:SetAttribute("BloxTravelGoal", Vector3.zero)
             gui:SetAttribute("BloxAuraKill", state.AuraKill)
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", 0)
