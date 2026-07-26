@@ -10769,11 +10769,17 @@ function Window:BuildBloxFruitsFeatures()
                 BoatFloatHeight = 0,
                 CombatHeight = 24,
                 SpamAllSkills = true,
+                WaterGuard = true,
                 ResetBrokenBoat = true,
                 Boat = nil,
                 BoatBaseY = nil,
+                IgnoredBoats = setmetatable({}, {__mode = "k"}),
+                ForceBoatPurchase = false,
                 Target = nil,
                 TargetKind = nil,
+                TargetLostAt = nil,
+                TargetLastSeenAt = 0,
+                TargetLastHealth = nil,
                 Heading = nil,
                 NextHeadingAt = 0,
                 LastPurchase = 0,
@@ -13867,13 +13873,19 @@ function Window:BuildBloxFruitsFeatures()
             if not boats then
                 return nil
             end
+            local root = rootPart()
+            local best, bestDistance = nil, math.huge
             for _, boat in ipairs(boats:GetChildren()) do
                 local owner = boat:FindFirstChild("Owner")
-                if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then
-                    return boat
+                if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer
+                    and not state.SeaEvent.IgnoredBoats[boat] then
+                    local distance = root and (boat:GetPivot().Position - root.Position).Magnitude or 0
+                    if distance < bestDistance then
+                        best, bestDistance = boat, distance
+                    end
                 end
             end
-            return nil
+            return best
         end
 
         function state.SeaEvent.BoatAlive(boat)
@@ -14032,9 +14044,33 @@ function Window:BuildBloxFruitsFeatures()
             end
         end
 
+        function state.SeaEvent.RequestNewBoat()
+            local boats = workspace:FindFirstChild("Boats")
+            if boats then
+                for _, boat in ipairs(boats:GetChildren()) do
+                    local owner = boat:FindFirstChild("Owner")
+                    if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then
+                        state.SeaEvent.IgnoredBoats[boat] = true
+                    end
+                end
+            end
+            state.SeaEvent.ForceBoatPurchase = true
+            state.SeaEvent.Boat = nil
+            state.SeaEvent.BoatBaseY = nil
+            state.SeaEvent.Heading = nil
+            state.SeaEvent.LastCommandedPosition = nil
+            state.SeaEvent.LastPurchase = 0
+            state.SeaEvent.Target = nil
+            state.SeaEvent.TargetKind = nil
+            state.SeaEvent.TargetLostAt = nil
+            state.SeaEvent.DestroySafety()
+            state.SeaEvent.Phase = "Going to Boat Dealer for a new boat"
+        end
+
         function state.SeaEvent.EnsureBoat()
             local current = state.SeaEvent.OwnedBoat()
             if current and state.SeaEvent.BoatAlive(current) then
+                state.SeaEvent.ForceBoatPurchase = false
                 if current ~= state.SeaEvent.Boat then
                     state.SeaEvent.Boat = current
                     -- Solix keeps the spawned boat at its exact native pivot Y.
@@ -14072,7 +14108,8 @@ function Window:BuildBloxFruitsFeatures()
             end
 
             state.SeaEvent.LastPurchase = os.clock()
-            state.SeaEvent.Phase = "Buying " .. state.SeaEvent.SelectedBoat
+            state.SeaEvent.Phase = (state.SeaEvent.ForceBoatPurchase and "Buying new " or "Buying ")
+                .. state.SeaEvent.SelectedBoat
             local purchaseName = state.SeaEvent.BoatPurchaseNames[state.SeaEvent.SelectedBoat]
                 or state.SeaEvent.SelectedBoat
             local ok, result = invoke("BuyBoat", purchaseName)
@@ -14294,6 +14331,32 @@ function Window:BuildBloxFruitsFeatures()
             end)
         end
 
+        function state.SeaEvent.ConfigureAuraCombat()
+            local required = {
+                {"blox_auto_attack", true},
+                {"blox_aura_kill_range", AURA_KILL_MAX_RANGE},
+                {"blox_fast_attack", true},
+                {"blox_double_attack", true},
+                {"blox_fruit_m1_cooldown_reduction", 0},
+                {"blox_walk_water", true},
+            }
+            for _, setting in ipairs(required) do
+                local control = Window.PersistentControls[setting[1]]
+                if control and control:Get() ~= setting[2] then
+                    control:Set(setting[2])
+                end
+            end
+            -- Direct fallbacks cover the short window before a late control is
+            -- registered and keep old saved profiles from weakening sea combat.
+            state.AuraKill = true
+            state.AuraRange = AURA_KILL_MAX_RANGE
+            state.FastAttack = true
+            state.DoubleAttack = true
+            state.WalkOnWater = true
+            applyFruitM1CooldownReduction(0)
+            ensureBuso(true)
+        end
+
         function state.SeaEvent.Fight(candidate)
             local target = candidate and candidate.Target
             local targetPart = candidate and state.SeaEvent.TargetPart(target)
@@ -14304,6 +14367,8 @@ function Window:BuildBloxFruitsFeatures()
             end
             state.SeaEvent.LastCommandedPosition = nil
             state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+            state.SeaEvent.TargetLastSeenAt = os.clock()
+            state.SeaEvent.TargetLostAt = nil
             if body.SeatPart then
                 body.Sit = false
                 body.Jump = true
@@ -14312,20 +14377,33 @@ function Window:BuildBloxFruitsFeatures()
             local height = math.max(8, tonumber(state.SeaEvent.CombatHeight) or 24)
             if candidate.Kind == "Sea Beast" then
                 height = math.max(9, height * 0.5)
-            elseif candidate.Kind == "Hostile Boats" then
+            elseif candidate.Kind == "Enemy Boat" then
                 height = math.max(12, height * 0.65)
             end
             local position = targetPart.Position + Vector3.new(0, height, 0)
+            if state.SeaEvent.WaterGuard then
+                local safeWaterY = (tonumber(state.SeaEvent.BoatBaseY) or 19) + 5
+                position = Vector3.new(position.X, math.max(position.Y, safeWaterY), position.Z)
+            end
             root.CFrame = CFrame.lookAt(position, targetPart.Position)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            state.SeaEvent.UpdateSafety(position)
+            if state.SeaEvent.WaterGuard then
+                state.SeaEvent.UpdateSafety(position)
+            else
+                state.SeaEvent.DestroySafety()
+            end
             ensureBuso(true)
-            state.SeaEvent.SpamSkill(targetPart)
             local health, maximum = state.SeaEvent.Health(target)
+            state.SeaEvent.TargetLastHealth = health
+            local useAllSkills = candidate.Kind == "Sea Beast" or candidate.Kind == "Enemy Boat"
+            if useAllSkills then
+                state.SeaEvent.SpamSkill(targetPart)
+            end
             state.SeaEvent.Phase = string.format(
-                "Fighting %s%s",
+                "Fighting %s [%s]%s",
                 candidate.Kind,
+                useAllSkills and "All Skills" or "Aura + Double Attack",
                 health and string.format(" | %.0f / %.0f", health, maximum or health) or ""
             )
         end
@@ -14375,7 +14453,50 @@ function Window:BuildBloxFruitsFeatures()
                 state.SeaEvent.UpdateStatus()
                 return
             end
-            local candidate = state.SeaEvent.AutoKill and state.SeaEvent.FindTarget() or nil
+            local candidate = nil
+            if state.SeaEvent.AutoKill and state.SeaEvent.Target then
+                local lockedTarget = state.SeaEvent.Target
+                local lockedPart = state.SeaEvent.TargetPart(lockedTarget)
+                local lockedHealth = state.SeaEvent.Health(lockedTarget)
+                local confirmedDead = lockedHealth ~= nil and lockedHealth <= 0
+                if lockedPart and not confirmedDead then
+                    candidate = {
+                        Target = lockedTarget,
+                        Part = lockedPart,
+                        Kind = state.SeaEvent.TargetKind or state.SeaEvent.Kind(lockedTarget),
+                    }
+                    state.SeaEvent.TargetLostAt = nil
+                elseif not confirmedDead then
+                    state.SeaEvent.TargetLostAt = state.SeaEvent.TargetLostAt or os.clock()
+                    if os.clock() - state.SeaEvent.TargetLostAt < 4 then
+                        -- Streaming can hide a live sea enemy for a few frames.
+                        -- Hold the fight position instead of snapping 30k studs
+                        -- back to the boat and tripping movement security.
+                        local root = rootPart()
+                        if root then
+                            root.AssemblyLinearVelocity = Vector3.zero
+                            root.AssemblyAngularVelocity = Vector3.zero
+                            if state.SeaEvent.WaterGuard then
+                                state.SeaEvent.UpdateSafety(root.Position)
+                            end
+                        end
+                        state.SeaEvent.StopBoat(state.SeaEvent.Boat)
+                        state.SeaEvent.Phase = "Holding target lock - waiting for sea enemy stream"
+                        state.SeaEvent.UpdateStatus()
+                        return
+                    end
+                end
+                if not candidate then
+                    state.SeaEvent.EventsCompleted += 1
+                    state.SeaEvent.Target = nil
+                    state.SeaEvent.TargetKind = nil
+                    state.SeaEvent.TargetLostAt = nil
+                    state.SeaEvent.TargetLastHealth = nil
+                end
+            end
+            if state.SeaEvent.AutoKill and not candidate then
+                candidate = state.SeaEvent.FindTarget()
+            end
             if candidate then
                 state.SeaEvent.Target = candidate.Target
                 state.SeaEvent.TargetKind = candidate.Kind
@@ -14383,11 +14504,6 @@ function Window:BuildBloxFruitsFeatures()
                 state.SeaEvent.UpdateStatus()
                 return
             end
-            if state.SeaEvent.Target then
-                state.SeaEvent.EventsCompleted += 1
-            end
-            state.SeaEvent.Target = nil
-            state.SeaEvent.TargetKind = nil
             if not state.SeaEvent.AutoSail then
                 state.SeaEvent.Phase = "Auto Kill waiting for a selected sea enemy"
                 state.SeaEvent.UpdateStatus()
@@ -16206,11 +16322,23 @@ function Window:BuildBloxFruitsFeatures()
         })
         state.SeaEvent.Section:AddToggle({
             Name = "Spam Every Tool Skill",
-            Description = "Cycles every combat Tool and repeatedly fires M1 plus Z, X, C, V, and F",
+            Description = "Used only for Sea Beasts and enemy boats; sharks use Aura Kill + Double Attack",
             Flag = "blox_sea_event_all_skills",
             Default = true,
             Callback = function(enabled)
                 state.SeaEvent.SpamAllSkills = enabled == true
+            end,
+        })
+        state.SeaEvent.Section:AddToggle({
+            Name = "Sea Water Damage Guard",
+            Description = "Keeps your fight position above the water plane and maintains an invisible safety floor",
+            Flag = "blox_sea_event_water_guard",
+            Default = true,
+            Callback = function(enabled)
+                state.SeaEvent.WaterGuard = enabled == true
+                if not enabled then
+                    state.SeaEvent.DestroySafety()
+                end
             end,
         })
         state.SeaEvent.Section:AddToggle({
@@ -16220,6 +16348,21 @@ function Window:BuildBloxFruitsFeatures()
             Default = true,
             Callback = function(enabled)
                 state.SeaEvent.ResetBrokenBoat = enabled == true
+            end,
+        })
+        state.SeaEvent.Section:AddButton({
+            Name = "Buy / Replace Boat at NPC",
+            Description = "Goes to the Boat Dealer, speaks to the NPC, and buys a fresh selected boat even if the old one is bugged",
+            Callback = function()
+                local sailControl = Window.PersistentControls["blox_auto_sea_events"]
+                if sailControl and not sailControl:Get() then
+                    sailControl:Set(true)
+                else
+                    state.SeaEvent.AutoSail = true
+                    state.SeaEvent.Enabled = true
+                end
+                state.SeaEvent.RequestNewBoat()
+                Window:Notify("Sea Events", "Replacing the bugged boat at the dealer.", 3)
             end,
         })
         state.SeaEvent.Section:AddToggle({
@@ -16234,6 +16377,7 @@ function Window:BuildBloxFruitsFeatures()
                 state.SeaEvent.TargetKind = nil
                 if enabled then
                     prepareManualTravel()
+                    state.SeaEvent.ConfigureAuraCombat()
                     state.SeaEvent.Phase = "Searching for selected sea enemies"
                 else
                     state.SeaEvent.DestroySafety()
@@ -16315,7 +16459,6 @@ function Window:BuildBloxFruitsFeatures()
             Name = "Walk on Water",
             Flag = "blox_walk_water",
             Default = true,
-            Persist = false,
             Callback = function(enabled)
                 state.WalkOnWater = enabled
                 gui:SetAttribute("BloxWalkOnWater", enabled)
