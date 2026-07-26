@@ -10576,6 +10576,7 @@ function Window:BuildBloxFruitsFeatures()
         -- CombatUtil's initialized internal sender.
         local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
         local AURA_KILL_DEFAULT_RANGE = 10
+        local AURA_KILL_MAX_RANGE = 70
         local AURA_KILL_HIT_DELAY = 0.13
         local AURA_KILL_NATIVE_COOLDOWN_SCALE = 0.8
 
@@ -10611,6 +10612,13 @@ function Window:BuildBloxFruitsFeatures()
             AuraPendingError = nil,
             AuraLastRequestAt = nil,
             AuraLastHitAt = nil,
+            MobAuraTp = false,
+            MobAuraHeight = 20,
+            MobAuraSearchRange = 500,
+            MobAuraTarget = nil,
+            MobAuraTargetName = nil,
+            MobAuraDistance = nil,
+            MobAuraPreTeleportDistance = nil,
             RegisterHitClosure = nil,
             LastRegisterHitResolve = -math.huge,
             WeaponType = "Sword",
@@ -10689,6 +10697,7 @@ function Window:BuildBloxFruitsFeatures()
         local seaLabel = SeaStatusSection:AddLabel("Sea: Detecting...")
         local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
         local auraLabel = AttackSection:AddLabel("Aura Kill: Off | Range: 10 studs")
+        local mobAuraLabel = AttackSection:AddLabel("Mob Aura TP: Off | Distance: --")
         local busoLabel = AttackSection:AddLabel("Buso: Detecting...")
         local observationLabel = AttackSection:AddLabel("Observation: Reading live state...")
 
@@ -11226,10 +11235,11 @@ function Window:BuildBloxFruitsFeatures()
                 -- registerHit only queues the primary target when its fifth
                 -- argument is a table. Nil creates a fake local flash and never
                 -- sends RegisterHit to the server.
-                state.AuraStage = "queue-primary"
-                registerHit(char, target.Enemy, hitPart, weaponData, {})
-                state.AuraStage = "flush"
-                registerHit(true)
+                state.AuraStage = "queue-flush"
+                -- Queue and flush in one call with p71=true. This skips the
+                -- broken local SlashHit cosmetic while preserving the exact
+                -- virtual RegisterHit payload accepted by the server.
+                registerHit(true, target.Enemy, hitPart, weaponData, {})
                 state.AuraStage = "sent"
                 dispatched = true
             end)
@@ -11255,6 +11265,60 @@ function Window:BuildBloxFruitsFeatures()
             return true
         end
 
+        local function stepMobAuraTp()
+            if not state.MobAuraTp then
+                return false
+            end
+            local root = rootPart()
+            if not root then
+                state.MobAuraTarget = nil
+                state.MobAuraTargetName = nil
+                state.MobAuraDistance = nil
+                return false
+            end
+
+            local target = state.MobAuraTarget
+            local targetRoot = modelRoot(target)
+            if not targetRoot or not modelAlive(target)
+                or (targetRoot.Position - root.Position).Magnitude > state.MobAuraSearchRange then
+                target = nil
+            end
+            if not target then
+                local nearest, distance = nearestEnemy(nil, true)
+                state.MobAuraPreTeleportDistance = distance
+                if not nearest or not distance or distance > state.MobAuraSearchRange then
+                    state.MobAuraTarget = nil
+                    state.MobAuraTargetName = nil
+                    state.MobAuraDistance = distance
+                    return false
+                end
+                target = nearest
+                state.MobAuraTarget = target
+                targetRoot = modelRoot(target)
+            end
+            if not targetRoot then
+                return false
+            end
+
+            local head = target:FindFirstChild("Head", true)
+            local anchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
+            local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
+            local goalPosition = anchor + Vector3.new(0, height, 0)
+            local facing = Vector3.new(targetRoot.CFrame.LookVector.X, 0, targetRoot.CFrame.LookVector.Z)
+            if facing.Magnitude < 0.05 then
+                facing = Vector3.new(0, 0, -1)
+            else
+                facing = facing.Unit
+            end
+
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = CFrame.lookAt(goalPosition, goalPosition + facing)
+            state.MobAuraTargetName = normalizeEnemyName(target.Name)
+            state.MobAuraDistance = (targetRoot.Position - root.Position).Magnitude
+            return true
+        end
+
         local function flushAuraTelemetry()
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", state.AuraTargetCount)
@@ -11275,6 +11339,11 @@ function Window:BuildBloxFruitsFeatures()
             if state.AuraLastHitAt then
                 gui:SetAttribute("BloxAuraKillLastHitAt", state.AuraLastHitAt)
             end
+            gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
+            gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
+            gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            gui:SetAttribute("BloxMobAuraTarget", state.MobAuraTargetName or "")
+            gui:SetAttribute("BloxMobAuraDistance", state.MobAuraDistance or 0)
             if state.AuraPendingError then
                 local message = state.AuraPendingError
                 state.AuraPendingError = nil
@@ -12251,9 +12320,13 @@ function Window:BuildBloxFruitsFeatures()
                 state.GatherDistance = value
             end,
         })
-        AttackSection:AddToggle({
+        local auraToggle
+        local auraRangeSlider
+        local mobAuraHeightSlider
+
+        auraToggle = AttackSection:AddToggle({
             Name = "Aura Kill",
-            Description = "Rapid silent tool hits on living NPCs in workspace.Enemies within 10 studs; never moves or swings your character",
+            Description = "Rapid silent tool hits on living NPCs inside the selected range; never swings your character",
             -- Keep the legacy flag so profiles that enabled Auto Attack now
             -- enable its Aura Kill replacement instead of losing the setting.
             Flag = "blox_auto_attack",
@@ -12274,6 +12347,30 @@ function Window:BuildBloxFruitsFeatures()
                 gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
                 -- Compatibility for existing external status readers.
                 gui:SetAttribute("BloxAutoAttack", enabled)
+            end,
+        })
+        auraRangeSlider = AttackSection:AddSlider({
+            Name = "Aura Kill Range",
+            Description = "Server-tested silent-hit range in studs (70 is the safe maximum)",
+            Flag = "blox_aura_kill_range",
+            Min = 5,
+            Max = AURA_KILL_MAX_RANGE,
+            Step = 1,
+            Default = AURA_KILL_DEFAULT_RANGE,
+            Callback = function(value)
+                state.AuraRange = math.clamp(tonumber(value) or AURA_KILL_DEFAULT_RANGE, 5, AURA_KILL_MAX_RANGE)
+                if state.MobAuraTp and state.MobAuraHeight > state.AuraRange - 8 then
+                    local adjustedHeight = math.max(3, state.AuraRange - 8)
+                    if mobAuraHeightSlider then
+                        mobAuraHeightSlider:Set(adjustedHeight)
+                    else
+                        state.MobAuraHeight = adjustedHeight
+                    end
+                end
+                auraLabel.Text = state.AuraKill
+                    and string.format("Aura Kill: Armed | Range: %.0f studs", state.AuraRange)
+                    or string.format("Aura Kill: Off | Range: %.0f studs", state.AuraRange)
+                gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             end,
         })
         AttackSection:AddToggle({
@@ -12305,6 +12402,75 @@ function Window:BuildBloxFruitsFeatures()
             Default = 0,
             Callback = function(value)
                 state.AttackInterval = value
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Mob Aura TP",
+            Description = "Teleports above the nearest living workspace.Enemies NPC and keeps Aura Kill armed",
+            Flag = "blox_mob_aura_tp",
+            Default = false,
+            Callback = function(enabled)
+                state.MobAuraTp = enabled
+                state.MobAuraTarget = nil
+                state.MobAuraTargetName = nil
+                state.MobAuraDistance = nil
+                if enabled then
+                    state.AutoFarmLevel = false
+                    state.AutoBoss = false
+                    state.AutoRaid = false
+                    state.AutoChest = false
+                    cancelMove()
+                    if not state.AuraKill and auraToggle then
+                        auraToggle:Set(true)
+                    end
+                    local requiredRange = math.min(AURA_KILL_MAX_RANGE, state.MobAuraHeight + 8)
+                    if state.AuraRange < requiredRange and auraRangeSlider then
+                        auraRangeSlider:Set(requiredRange)
+                    end
+                    mobAuraLabel.Text = "Mob Aura TP: Searching for nearest NPC..."
+                    mobAuraLabel.TextColor3 = COLORS.success
+                else
+                    mobAuraLabel.Text = "Mob Aura TP: Off | Distance: --"
+                    mobAuraLabel.TextColor3 = COLORS.muted
+                    if not state.Noclip and not state.AutoFarmLevel and not state.AutoBoss
+                        and not state.AutoRaid and not state.AutoChest then
+                        restoreCollision()
+                    end
+                end
+                gui:SetAttribute("BloxMobAuraTp", enabled)
+            end,
+        })
+        AttackSection:AddSlider({
+            Name = "Mob Aura Search Distance",
+            Description = "Only teleports to the nearest living NPC inside this many studs",
+            Flag = "blox_mob_aura_search_range",
+            Min = 25,
+            Max = 2500,
+            Step = 25,
+            Default = 500,
+            Callback = function(value)
+                state.MobAuraSearchRange = math.clamp(tonumber(value) or 500, 25, 2500)
+                state.MobAuraTarget = nil
+                gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            end,
+        })
+        mobAuraHeightSlider = AttackSection:AddSlider({
+            Name = "Mob Aura Height",
+            Description = "How many studs above the NPC's head to hold your character",
+            Flag = "blox_mob_aura_height",
+            Min = 3,
+            Max = AURA_KILL_MAX_RANGE - 10,
+            Step = 1,
+            Default = 20,
+            Callback = function(value)
+                state.MobAuraHeight = math.clamp(tonumber(value) or 20, 3, AURA_KILL_MAX_RANGE - 10)
+                if state.MobAuraTp then
+                    local requiredRange = math.min(AURA_KILL_MAX_RANGE, state.MobAuraHeight + 8)
+                    if state.AuraRange < requiredRange and auraRangeSlider then
+                        auraRangeSlider:Set(requiredRange)
+                    end
+                end
+                gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
             end,
         })
         AttackSection:AddToggle({
@@ -12665,6 +12831,9 @@ function Window:BuildBloxFruitsFeatures()
             state.LastAuraScan = 0
             state.LastBuso = -math.huge
             state.AuraTargetCursor = 0
+            state.MobAuraTarget = nil
+            state.MobAuraTargetName = nil
+            state.MobAuraDistance = nil
             if state.AutoBuso then
                 task.delay(0.5, function()
                     if state.Alive and state.AutoBuso then
@@ -12678,13 +12847,17 @@ function Window:BuildBloxFruitsFeatures()
             if not state.Alive then
                 return
             end
+            if state.MobAuraTp then
+                applyNoclip()
+                stepMobAuraTp()
+            end
             local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
             if not attackBlocked and state.AuraKill then
                 auraKillOnce()
                 return
             end
             gatherStep()
-            if state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
+            if state.Noclip or state.MobAuraTp or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
                 applyNoclip()
             end
             updateEnergy()
@@ -12709,6 +12882,31 @@ function Window:BuildBloxFruitsFeatures()
             while state.Alive do
                 local ok, message = pcall(function()
                     flushAuraTelemetry()
+                    if state.MobAuraTp then
+                        if state.MobAuraTargetName and state.MobAuraDistance then
+                            mobAuraLabel.Text = string.format(
+                                "Mob Aura TP: %s | Distance: %.1f | Height: %.0f | Search: %.0f",
+                                state.MobAuraTargetName,
+                                state.MobAuraDistance,
+                                state.MobAuraHeight,
+                                state.MobAuraSearchRange
+                            )
+                            mobAuraLabel.TextColor3 = COLORS.success
+                        elseif state.MobAuraDistance then
+                            mobAuraLabel.Text = string.format(
+                                "Mob Aura TP: No NPC within %.0f | Nearest: %.1f",
+                                state.MobAuraSearchRange,
+                                state.MobAuraDistance
+                            )
+                            mobAuraLabel.TextColor3 = COLORS.muted
+                        else
+                            mobAuraLabel.Text = string.format(
+                                "Mob Aura TP: Waiting for NPC | Search: %.0f",
+                                state.MobAuraSearchRange
+                            )
+                            mobAuraLabel.TextColor3 = COLORS.muted
+                        end
+                    end
                     if state.AutoRaid then
                         stepRaid()
                     elseif state.AutoBoss then
@@ -12813,6 +13011,8 @@ function Window:BuildBloxFruitsFeatures()
             cleaned = true
             state.Alive = false
             state.AuraKill = false
+            state.MobAuraTp = false
+            state.MobAuraTarget = nil
             cancelMove()
             restoreCollision()
             state.WalkOnWater = false
@@ -12846,6 +13046,11 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraKillLastDistance", 0)
             gui:SetAttribute("BloxAuraKillLastRequestAt", 0)
             gui:SetAttribute("BloxAuraKillLastHitAt", 0)
+            gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
+            gui:SetAttribute("BloxMobAuraHeight", state.MobAuraHeight)
+            gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
+            gui:SetAttribute("BloxMobAuraTarget", "")
+            gui:SetAttribute("BloxMobAuraDistance", 0)
             gui:SetAttribute("BloxAutoAttack", false)
             gui:SetAttribute("BloxLastAttackAt", 0)
             gui:SetAttribute("BloxAttackCount", state.AuraRequests)
