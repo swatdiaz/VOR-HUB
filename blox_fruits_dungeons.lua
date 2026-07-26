@@ -1,6 +1,7 @@
 -- VOR Hub - Blox Fruits Dungeons
 -- Dedicated adapter for PlaceId 73902483975735. This place deliberately gets
--- only two visible pages: Dungeons and Player. Combat is server-credited Sword
+-- dedicated pages: Dungeons and Player, alongside VOR's shared Settings page.
+-- Combat is server-credited Sword
 -- M1 + Fruit M1; player characters and player-name clones are never targets.
 
 return function(context)
@@ -167,7 +168,7 @@ return function(context)
             .. tostring(game.JobId):gsub("[^%w%-]", "")
         local payload = table.concat({
             "repeat task.wait() until game:IsLoaded()",
-            "task.wait(1)",
+            "task.wait(0.1)",
             "getgenv().VORDungeonResumeAll = true",
             "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
         }, "\n")
@@ -1297,6 +1298,10 @@ return function(context)
         "Lifesteal",
     }
 
+    for index, default in ipairs(DEFAULT_PRIORITY) do
+        state.Priority[index] = default
+    end
+
     local function offerBuffName(offer)
         return type(offer) == "table" and tostring(offer.buffName or offer.Name or "") or tostring(offer or "")
     end
@@ -1404,7 +1409,10 @@ return function(context)
     end
 
     local function clickCardFallback()
-        if not state.AutoSelectCards or state.CardHooked or os.clock() - state.LastGuiCardClickAt < 0.5 then
+        -- A card menu may already be open before the callback hook is installed
+        -- after a reserved-server teleport. Keep clearing visible menus even
+        -- when later offers are already handled by the hook.
+        if not state.AutoSelectCards or os.clock() - state.LastGuiCardClickAt < 0.5 then
             return false
         end
         local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -1465,6 +1473,19 @@ return function(context)
                             end
                             if not firedConnection and type(firesignal) == "function" then
                                 pcall(firesignal, button.Activated)
+                            end
+                            if not firedConnection then
+                                -- Replacing OnClientInvoke can cancel an older
+                                -- yielded callback while leaving its visual card
+                                -- frame orphaned. It no longer represents a
+                                -- selectable server offer, so remove that stale
+                                -- frame instead of covering the whole run.
+                                local cardFrame = button.Parent
+                                if cardFrame and cardFrame:IsA("GuiObject") then
+                                    pcall(function()
+                                        cardFrame:Destroy()
+                                    end)
+                                end
                             end
                             return true
                         end
@@ -1947,7 +1968,7 @@ return function(context)
     TrinketSection:AddLabel("Uses the Trinket Expert's real random-purchase request.")
 
     for index, default in ipairs(DEFAULT_PRIORITY) do
-        state.Priority[index] = default
+        state.Priority[index] = state.Priority[index] or default
         PrioritySection:AddDropdown({
             Name = "Priority " .. tostring(index),
             Flag = "blox_dungeon_card_priority_" .. tostring(index),
@@ -2153,8 +2174,8 @@ return function(context)
         while state.Alive do
             bindDungeonRemotes()
             if state.AutoSelectCards then
-                installCardHook()
                 clickCardFallback()
+                installCardHook()
             end
 
             local dungeon = currentDungeonReplication()
@@ -2219,7 +2240,7 @@ return function(context)
     if gui then
         gui:SetAttribute("BloxDungeonModule", true)
         gui:SetAttribute("BloxDungeonPlaceId", 73902483975735)
-        gui:SetAttribute("BloxDungeonVisiblePages", "Dungeons,Player")
+        gui:SetAttribute("BloxDungeonVisiblePages", "Dungeons,Player,Settings")
         gui:SetAttribute("BloxDungeonAttackMethod", "Sword + Fruit M1")
         gui:SetAttribute("BloxDungeonTrinketCost", 400)
         track(gui.Destroying:Connect(function()
@@ -2240,6 +2261,7 @@ return function(context)
     ensureBuso()
     if resumeAllAutomation then
         queueDungeonResume()
+        clickCardFallback()
         installCardHook()
         setStatus("Dungeon automation resumed after teleport", true)
     else

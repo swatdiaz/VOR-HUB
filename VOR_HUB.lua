@@ -15862,12 +15862,6 @@ end
 
 -- Generic Settings page. Keep this below your feature controls so Auto Load can restore them.
 local SettingsPage = Window:AddPage("Settings")
-if IS_BLOX_FRUITS_DUNGEON and SettingsPage.NavRow then
-    -- The Dungeon experience has its own compact surface. Profiles still load
-    -- underneath, but the visible navigation intentionally stays at exactly
-    -- Dungeons + Player as requested.
-    SettingsPage.NavRow.Visible = false
-end
 local ProfilesSection = SettingsPage:AddSection("Saved Profiles", "Left")
 local AutoLoadSection = SettingsPage:AddSection("Auto Load", "Right")
 local AppearanceSection = SettingsPage:AddSection("VOR Appearance", "Right")
