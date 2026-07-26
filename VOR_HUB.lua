@@ -16109,7 +16109,7 @@ function Window:BuildBloxFruitsFeatures()
             end,
         })
 
-        state.SeaEvent.Section = SeaPage:AddSection("Sea Event Automation", "Left")
+        state.SeaEvent.Section = SeaPage:AddSection("Sea Event Automation", "Right")
         state.SeaEvent.Section:AddDropdown({
             Name = "Sea Monster Selection",
             Description = "Select several sea enemies; VOR kills each active target and returns to the boat",
