@@ -10628,6 +10628,10 @@ function Window:BuildBloxFruitsFeatures()
         local AURA_KILL_NATIVE_COOLDOWN_SCALE = 0.8
         local NATIVE_FRUIT_M1_CADENCE = 0.32
         local NATIVE_FRUIT_MAX_RANGE = 25
+        local DOUBLE_ATTACK_HIT_RANGE = 38
+        local DOUBLE_ATTACK_SWORD_TARGET_LIMIT = 12
+        local DOUBLE_ATTACK_FRUIT_TARGET_LIMIT = 3
+        local DOUBLE_ATTACK_FRUIT_CADENCE = 0.055
         local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.28
         local NATIVE_FRUIT_SETTLE_TIME = 0.24
         local MULTI_GRAB_LIMIT = 3
@@ -10700,6 +10704,7 @@ function Window:BuildBloxFruitsFeatures()
             AuraAttackMode = nil,
             AuraFruitBusy = false,
             FruitDispatchPending = false,
+            LastDoubleFruitAttack = 0,
             AuraFruitInRange = nil,
             AuraFruitLastDistance = nil,
             FruitM1ReadyAt = 0,
@@ -11736,6 +11741,24 @@ function Window:BuildBloxFruitsFeatures()
             return targets
         end
 
+        local function nearbyDoubleAttackTargets(maximum)
+            local targets = {}
+            local limit = math.max(math.floor(tonumber(maximum) or 1), 1)
+            local hitRange = math.min(
+                math.max(tonumber(state.AuraRange) or AURA_KILL_DEFAULT_RANGE, 0),
+                DOUBLE_ATTACK_HIT_RANGE
+            )
+            for _, candidate in ipairs(nearbyAuraTargets()) do
+                if candidate.Distance <= hitRange then
+                    table.insert(targets, candidate)
+                    if #targets >= limit then
+                        break
+                    end
+                end
+            end
+            return targets
+        end
+
         local function resolveRegisterHitClosure()
             if type(state.RegisterHitClosure) == "function" then
                 return state.RegisterHitClosure
@@ -11829,6 +11852,48 @@ function Window:BuildBloxFruitsFeatures()
                 return nil, tostring(profile)
             end
             return profile
+        end
+
+        local function doubleSwordAttackProfile(tool, weaponData)
+            local moveset = type(weaponData) == "table" and weaponData.Moveset or nil
+            local basics = type(moveset) == "table" and moveset.Basic or nil
+            if type(basics) ~= "table" or #basics == 0 then
+                return nil, "the Sword M1 moveset was not found"
+            end
+
+            local weaponName = weaponNameForTool(tool)
+            local comboKey = string.lower(tostring(weaponName or tool.Name))
+            local combo = ((state.AuraCombos[comboKey] or 0) % #basics) + 1
+            local duration = nil
+            if type(CombatUtil) == "table"
+                and type(CombatUtil.GetMovesetAnimCache) == "function"
+                and type(CombatUtil.GetPureWeaponName) == "function" then
+                pcall(function()
+                    local pureName = CombatUtil:GetPureWeaponName(weaponName)
+                    local cache = CombatUtil:GetMovesetAnimCache(humanoid())
+                    local animationTrack = cache and cache[pureName .. "-basic" .. combo]
+                    if animationTrack then
+                        local speedMultiplier = math.max(
+                            tonumber(animationTrack:GetAttribute("SpeedMult")) or 1,
+                            0.01
+                        )
+                        duration = tonumber(animationTrack.Length) / speedMultiplier
+                    end
+                end)
+            end
+
+            -- This is the same compatibility value used by the verified
+            -- Dungeon engine when the Sword animation cache is not loaded.
+            -- Zero gets rejected; the non-finite duration keeps the native
+            -- registration window alive without playing the swing locally.
+            if not duration or duration <= 0 then
+                duration = 0 / 0
+            end
+            return {
+                Combo = combo,
+                ComboKey = comboKey,
+                Duration = duration,
+            }
         end
 
         local function registeredAttackCadence(attackProfile)
@@ -11933,6 +11998,62 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraCombo = attackProfile.Combo
             state.AuraStage = registered > 1 and "registered-multi-hit-sent" or "registered-hit-sent"
             return true, nil, registered
+        end
+
+        local function sendDoubleSwordAttack(tool, weaponData, attackProfile)
+            local _, changed = equipTool(tool)
+            if changed then
+                task.wait(0.04)
+            end
+            if not tool or tool.Parent ~= character() then
+                return false, "the Sword could not be equipped"
+            end
+            if not weaponData then
+                return false, "Sword combat data is unavailable"
+            end
+            if not attackProfile then
+                local profileError
+                attackProfile, profileError = doubleSwordAttackProfile(tool, weaponData)
+                if not attackProfile then
+                    return false, profileError
+                end
+            end
+
+            local registerHit = resolveRegisterHitClosure()
+            if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                return false, "Double Attack combat registration is unavailable"
+            end
+            if #nearbyDoubleAttackTargets(DOUBLE_ATTACK_SWORD_TARGET_LIMIT) == 0 then
+                return false, "No enemy is inside Double Attack range"
+            end
+
+            RegisterAttackEvent:FireServer(attackProfile.Duration)
+            state.AuraStage = "double-sword-started"
+            task.wait(AURA_KILL_HIT_DELAY)
+            if not state.Alive or not state.AuraKill or not state.DoubleAttack then
+                return false, "the target left before the hit window"
+            end
+
+            -- Re-scan at the actual server hit window. The old sea loop kept a
+            -- stale two-target list from before the delay; the verified
+            -- Dungeon/Solix pattern batches every current rig in one flush.
+            local targets = nearbyDoubleAttackTargets(DOUBLE_ATTACK_SWORD_TARGET_LIMIT)
+            if #targets == 0 then
+                return false, "the target left Aura range"
+            end
+            local primary = targets[1]
+            local extraHits = {}
+            for index = 2, #targets do
+                local hit = targets[index]
+                table.insert(extraHits, {hit.Enemy, hit.HitPart})
+            end
+            registerHit(character(), primary.Enemy, primary.HitPart, weaponData, extraHits)
+            registerHit(true)
+            state.AuraCombos[attackProfile.ComboKey] = attackProfile.Combo
+            state.AuraCombo = attackProfile.Combo
+            state.AuraMultiTargetCount = #targets
+            state.AuraStage = #targets > 1 and "double-sword-multi-sent" or "double-sword-sent"
+            return true, nil, #targets
         end
 
         local function playingTrackSet()
@@ -12088,6 +12209,105 @@ function Window:BuildBloxFruitsFeatures()
             return true
         end
 
+        local function sendDoubleFruitAttack(tool)
+            local root = rootPart()
+            local targets = nearbyDoubleAttackTargets(DOUBLE_ATTACK_FRUIT_TARGET_LIMIT)
+            if not tool then
+                return false, "No Blox Fruit Tool was found"
+            end
+            if not root or #targets == 0 then
+                return false, "No enemy is inside Fruit M1 range"
+            end
+
+            local silentRemote = tool:FindFirstChild("LeftClickRemote", true)
+            silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
+            if silentRemote then
+                local comboKey = string.lower(tool.Name)
+                local combo = ((state.NativeFruitCombos[comboKey] or 0) % 5) + 1
+                local sent = 0
+                local closestDistance = math.huge
+                for _, target in ipairs(targets) do
+                    local enemyRoot = modelRoot(target.Enemy)
+                    if enemyRoot and modelAlive(target.Enemy) then
+                        local direction = (enemyRoot.Position - root.Position) * Vector3.new(1, 0, 1)
+                        if direction.Magnitude < 0.05 then
+                            direction = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+                        end
+                        if direction.Magnitude >= 0.05 then
+                            silentRemote:FireServer(direction.Unit, combo)
+                            sent += 1
+                            closestDistance = math.min(closestDistance, target.Distance)
+                        end
+                    end
+                end
+                if sent == 0 then
+                    return false, "the fruit M1 targets left Aura range"
+                end
+                state.NativeFruitCombos[comboKey] = combo
+                state.AuraFruitLastDistance = closestDistance
+                state.AuraFruitInRange = true
+                state.AuraStage = sent > 1 and "double-fruit-multi-sent" or "double-fruit-sent"
+                return true, nil, sent
+            end
+
+            -- Fruits without a direct click remote retain the native fallback.
+            -- It temporarily arms the Fruit beside the Sword, restores it, and
+            -- suppresses the local dash/animation without moving the enemy.
+            local sent, sendError = sendNativeFruitM1(tool, targets[1], true)
+            return sent, sendError, sent and 1 or 0
+        end
+
+        local function doubleFruitAttackOnce()
+            if not state.Alive
+                or not state.AuraKill
+                or not state.DoubleAttack
+                or state.InventoryBusy
+                or state.FruitDispatchPending then
+                return false
+            end
+            if not busoActive() then
+                ensureBuso(true)
+                return false
+            end
+
+            local now = os.clock()
+            local cadence = DOUBLE_ATTACK_FRUIT_CADENCE
+                + math.max(tonumber(state.AttackInterval) or 0, 0)
+            if now - (state.LastDoubleFruitAttack or 0) < cadence then
+                return false
+            end
+            if #nearbyDoubleAttackTargets(1) == 0 then
+                return false
+            end
+
+            local sword = toolForSelection("Sword")
+            local fruit = toolForSelection("M1 Fruit")
+            if not sword or not fruit then
+                return false
+            end
+            equipTool(sword)
+            state.LastDoubleFruitAttack = now
+            state.FruitDispatchPending = true
+            task.spawn(function()
+                local operationOk, sent, message, sentCount = pcall(sendDoubleFruitAttack, fruit)
+                if operationOk and sent then
+                    sentCount = math.max(tonumber(sentCount) or 1, 1)
+                    state.AuraFruitRequests += sentCount
+                    state.AuraRequests += sentCount
+                else
+                    local failure = operationOk and message or sent
+                    local failureText = tostring(failure)
+                    if not failureText:find("No enemy", 1, true)
+                        and failure ~= "fruit-cooldown"
+                        and not transientAuraMiss(failure) then
+                        state.AuraPendingError = "Fruit M1 failed: " .. failureText
+                    end
+                end
+                state.FruitDispatchPending = false
+            end)
+            return true
+        end
+
         local function auraKillOnce()
             if not state.AuraKill or state.AuraAttackPending or state.InventoryBusy then
                 return false
@@ -12114,7 +12334,13 @@ function Window:BuildBloxFruitsFeatures()
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
             local attackTargets = {target}
-            if (state.GatherEnemies or (
+            if state.DoubleAttack then
+                -- Double Attack mirrors the Dungeon engine: every eligible
+                -- nearby rig is part of the same Sword window even when Multi
+                -- Grab is off. Fruit independently covers its nearest three.
+                attackTargets = nearbyDoubleAttackTargets(DOUBLE_ATTACK_SWORD_TARGET_LIMIT)
+                target = attackTargets[1] or target
+            elseif (state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid
                 and LocalPlayer:GetAttribute("IslandRaiding") == true
@@ -12150,7 +12376,7 @@ function Window:BuildBloxFruitsFeatures()
                 if swordChanged then
                     task.wait(0.04)
                 end
-                local swordProfile, swordError = auraAttackProfile(plan.Sword, plan.SwordData)
+                local swordProfile, swordError = doubleSwordAttackProfile(plan.Sword, plan.SwordData)
                 if not swordProfile then
                     state.AuraPendingError = "Double Attack could not read the Sword: " .. tostring(swordError)
                     return false
@@ -12159,10 +12385,7 @@ function Window:BuildBloxFruitsFeatures()
                 plan.FruitData = weaponDataForTool(plan.Fruit)
                 plan.FruitRegistered = isFruitWeaponType(weaponTypeForTool(plan.Fruit, plan.FruitData))
                     and hasRegisteredBasicMoveset(plan.FruitData)
-                plan.Cadence = math.max(
-                    registeredAttackCadence(swordProfile),
-                    AURA_KILL_HIT_DELAY
-                ) + extraDelay
+                plan.Cadence = AURA_KILL_HIT_DELAY + extraDelay
                 state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Fruit.Name
                 state.AuraWeaponType = "Sword + Blox Fruit"
                 state.AuraAttackMode = "Double Attack"
@@ -12224,12 +12447,10 @@ function Window:BuildBloxFruitsFeatures()
             local fruitOutOfRange = false
             local hitOk, hitError = pcall(function()
                 if plan.Double then
-                    local swordSent, swordSendError, swordHitCount = sendRegisteredAuraHit(
+                    local swordSent, swordSendError, swordHitCount = sendDoubleSwordAttack(
                         plan.Sword,
                         plan.SwordData,
-                        target,
-                        plan.SwordProfile,
-                        attackTargets
+                        plan.SwordProfile
                     )
                     if not swordSent then
                         if transientAuraMiss(swordSendError) then
@@ -12241,44 +12462,6 @@ function Window:BuildBloxFruitsFeatures()
                     swordHitCount = math.max(tonumber(swordHitCount) or 1, 1)
                     dispatched += swordHitCount
                     state.AuraSwordRequests += swordHitCount
-
-                    -- Fruit activation can spend several frames suppressing a
-                    -- native dash. Run that layer independently so its own
-                    -- cooldown never pauses the Sword's validated 0.13-second
-                    -- silent-hit loop.
-                    if not state.FruitDispatchPending then
-                        state.FruitDispatchPending = true
-                        local fruitTool = plan.Fruit
-                        local fruitTarget = target
-                        task.spawn(function()
-                            local operationOk, fruitSent, fruitSendError = pcall(function()
-                                return sendNativeFruitM1(fruitTool, fruitTarget, true)
-                            end)
-                            if operationOk and fruitSent then
-                                state.AuraFruitRequests += 1
-                                state.AuraRequests += 1
-                                state.AuraStage = "double-fruit-sent"
-                            else
-                                local message = operationOk and fruitSendError or fruitSent
-                                if message == "fruit-out-of-range" then
-                                    state.AuraFruitInRange = false
-                                    state.AuraStage = "double-sword-only-fruit-out-of-range"
-                                elseif message == "fruit-cooldown" then
-                                    state.AuraStage = "double-sword-only-fruit-cooldown"
-                                elseif transientAuraMiss(message) then
-                                    state.AuraStage = "double-sword-only-target-left"
-                                else
-                                    state.AuraPendingError = "Fruit M1 failed: " .. tostring(message)
-                                end
-                            end
-                            state.FruitDispatchPending = false
-                        end)
-                        state.AuraStage = #attackTargets > 1
-                            and "double-sword-multi-sent-fruit-queued"
-                            or "double-sword-sent-fruit-queued"
-                    else
-                        state.AuraStage = "double-sword-sent-fruit-busy"
-                    end
                 elseif plan.NativeFruit then
                     local sent, sendError = sendNativeFruitM1(plan.Tool, target)
                     if not sent then
@@ -12524,7 +12707,10 @@ function Window:BuildBloxFruitsFeatures()
             gui:SetAttribute("BloxAuraAttackMode", state.AuraAttackMode or "")
             gui:SetAttribute("BloxDoubleAttack", state.DoubleAttack)
             gui:SetAttribute("BloxFruitM1CooldownReduction", state.FruitM1CooldownReduction)
-            gui:SetAttribute("BloxAuraFruitNativeRange", NATIVE_FRUIT_MAX_RANGE)
+            gui:SetAttribute(
+                "BloxAuraFruitNativeRange",
+                state.DoubleAttack and DOUBLE_ATTACK_HIT_RANGE or NATIVE_FRUIT_MAX_RANGE
+            )
             gui:SetAttribute("BloxAuraFruitInRange", state.AuraFruitInRange == true)
             gui:SetAttribute("BloxAuraFruitLastDistance", state.AuraFruitLastDistance or 0)
             if state.CurrentEnemyName then
@@ -14444,12 +14630,13 @@ function Window:BuildBloxFruitsFeatures()
         weaponStatusLabel = AttackSection:AddLabel("Weapon: waiting for selection")
         AttackSection:AddToggle({
             Name = "Double Attack (Sword + Fruit M1)",
-            Description = "Keeps the Sword equipped and layers a silent fruit M1 into the same Aura cycle",
+            Description = "Dungeon-style engine: silent 12-target Sword batches plus independent 3-target Fruit M1",
             Flag = "blox_double_attack",
             Default = false,
             Callback = function(enabled)
                 state.DoubleAttack = enabled
                 state.LastAttack = 0
+                state.LastDoubleFruitAttack = 0
                 table.clear(state.AuraCombos)
                 -- Write executor-owned GUI telemetry before touching live Tool
                 -- Instances. Some executors downgrade the resumed coroutine's
@@ -15193,6 +15380,7 @@ function Window:BuildBloxFruitsFeatures()
             state.FruitM1ReadyAt = 0
             state.AuraFruitBusy = false
             state.FruitDispatchPending = false
+            state.LastDoubleFruitAttack = 0
             state.InventoryBusy = false
             state.AuraFruitInRange = nil
             state.AuraFruitLastDistance = nil
@@ -15269,6 +15457,9 @@ function Window:BuildBloxFruitsFeatures()
             end
             local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
             if not attackBlocked and state.AuraKill then
+                if state.DoubleAttack then
+                    doubleFruitAttackOnce()
+                end
                 auraKillOnce()
             end
             local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
