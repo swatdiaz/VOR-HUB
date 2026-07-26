@@ -15876,6 +15876,12 @@ if SETTINGS.IsBloxFruits then
         GalaxyRigs = setmetatable({}, {__mode = "k"}),
         Accumulator = 0,
     }
+    local identityMaskState = {
+        Mode = "Original",
+        Humanoids = setmetatable({}, {__mode = "k"}),
+        Labels = setmetatable({}, {__mode = "k"}),
+        Accumulator = 0,
+    }
     local VOID_KITSUNE_COLORS = {
         Color3.fromRGB(151, 70, 255),
         Color3.fromRGB(31, 7, 54),
@@ -16066,6 +16072,65 @@ if SETTINGS.IsBloxFruits then
         gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Off")
     end
 
+    local function restoreIdentityMask()
+        for humanoid, original in pairs(identityMaskState.Humanoids) do
+            if humanoid and humanoid.Parent then
+                humanoid.DisplayName = original.DisplayName
+                humanoid.NameDisplayDistance = original.NameDisplayDistance
+            end
+        end
+        for label, originalText in pairs(identityMaskState.Labels) do
+            if label and label.Parent then
+                label.Text = originalText
+            end
+        end
+        identityMaskState.Humanoids = setmetatable({}, {__mode = "k"})
+        identityMaskState.Labels = setmetatable({}, {__mode = "k"})
+        gui:SetAttribute("BloxIdentityMask", "Original")
+    end
+
+    local function applyIdentityMask()
+        if identityMaskState.Mode == "Original" then
+            return
+        end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            if not identityMaskState.Humanoids[humanoid] then
+                identityMaskState.Humanoids[humanoid] = {
+                    DisplayName = humanoid.DisplayName,
+                    NameDisplayDistance = humanoid.NameDisplayDistance,
+                }
+            end
+            local original = identityMaskState.Humanoids[humanoid]
+            if identityMaskState.Mode == "Hide Name" then
+                humanoid.NameDisplayDistance = 0
+            else
+                humanoid.DisplayName = "VOR Hub"
+                humanoid.NameDisplayDistance = original.NameDisplayDistance
+            end
+        end
+
+        if character then
+            local username = string.lower(LocalPlayer.Name)
+            local displayName = string.lower(LocalPlayer.DisplayName)
+            for _, descendant in ipairs(character:GetDescendants()) do
+                if descendant:IsA("TextLabel") then
+                    local currentText = string.lower(tostring(descendant.Text))
+                    if identityMaskState.Labels[descendant]
+                        or currentText == username
+                        or currentText == displayName then
+                        if not identityMaskState.Labels[descendant] then
+                            identityMaskState.Labels[descendant] = descendant.Text
+                        end
+                        descendant.Text = identityMaskState.Mode == "Hide Name" and "" or "VOR Hub"
+                    end
+                end
+            end
+        end
+        gui:SetAttribute("BloxIdentityMask", identityMaskState.Mode)
+    end
+
     CosmeticsSection:AddLabel("Uses Kitsune's native three-channel VFX system plus its Galaxy mutation hooks, so the model, tails, and local abilities stay synchronized.")
     CosmeticsSection:AddToggle({
         Name = "Void Kitsune Theme",
@@ -16082,15 +16147,32 @@ if SETTINGS.IsBloxFruits then
             end
         end,
     })
+    CosmeticsSection:AddToggle({
+        Name = "VOR Hub Name Mask",
+        Description = "Replace your overhead display name with VOR Hub on this client",
+        Flag = "blox_vor_name_mask",
+        Default = false,
+        Callback = function(enabled)
+            restoreIdentityMask()
+            identityMaskState.Mode = enabled and "VOR Hub" or "Original"
+            applyIdentityMask()
+        end,
+    })
 
     track(RunService.Heartbeat:Connect(function(deltaTime)
-        if not voidKitsuneState.Enabled then
-            return
+        if voidKitsuneState.Enabled then
+            voidKitsuneState.Accumulator = voidKitsuneState.Accumulator + deltaTime
+            if voidKitsuneState.Accumulator >= 0.35 then
+                voidKitsuneState.Accumulator = 0
+                applyVoidKitsuneColors()
+            end
         end
-        voidKitsuneState.Accumulator = voidKitsuneState.Accumulator + deltaTime
-        if voidKitsuneState.Accumulator >= 0.35 then
-            voidKitsuneState.Accumulator = 0
-            applyVoidKitsuneColors()
+        if identityMaskState.Mode ~= "Original" then
+            identityMaskState.Accumulator = identityMaskState.Accumulator + deltaTime
+            if identityMaskState.Accumulator >= 0.35 then
+                identityMaskState.Accumulator = 0
+                applyIdentityMask()
+            end
         end
     end))
 end
