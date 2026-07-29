@@ -271,6 +271,7 @@ return function(context)
             PositionJitterCorner = 0,
             PositionTarget = nil,
             PositionBasis = nil,
+            PositionAnchorWorld = nil,
             PositionLockVertical = false,
             PositionAnchorY = nil,
             PositionJitter = Vector3.zero,
@@ -415,13 +416,23 @@ return function(context)
 
         local function refreshBusoStatus()
             local active = busoActive()
+            local char = character()
+            local enabledAttribute = char and char:GetAttribute("BusoEnabled")
+            state.BusoOwned = char ~= nil and (
+                enabledAttribute ~= nil
+                or char:FindFirstChild("HasBuso") ~= nil
+            )
             gui:SetAttribute("BloxBusoActive", active)
+            gui:SetAttribute("BloxBusoOwned", state.BusoOwned == true)
             if not state.AutoBuso then
                 busoLabel.Text = active and "Buso: Active | Auto: Off" or "Buso: Off | Auto: Off"
                 busoLabel.TextColor3 = active and COLORS.success or COLORS.muted
             elseif active then
                 busoLabel.Text = "Buso: Active | Auto: On"
                 busoLabel.TextColor3 = COLORS.success
+            elseif state.BusoOwned == false then
+                busoLabel.Text = "Buso: Not owned | Starter attacks enabled"
+                busoLabel.TextColor3 = COLORS.warning
             else
                 busoLabel.Text = "Buso: Activating..."
                 busoLabel.TextColor3 = COLORS.muted
@@ -462,6 +473,13 @@ return function(context)
         local function ensureBuso(force)
             if refreshBusoStatus() then
                 return true
+            end
+            -- Fresh accounts do not own Aura yet. Pressing J cannot activate an
+            -- ability that is not owned, and normal starter NPCs do not require
+            -- it. Keep Auto Buso armed for when ownership appears, but never let
+            -- the missing ability hard-block Melee/Sword damage registration.
+            if state.BusoOwned == false then
+                return false
             end
             if not state.AutoBuso and not force and not state.AuraKill then
                 return false
@@ -920,6 +938,7 @@ return function(context)
                     state.PositionBasis = enemyRoot.CFrame - enemyRoot.Position
                     state.PositionAnchorY = nil
                 end
+                state.PositionAnchorWorld = enemyRoot.Position
                 state.PositionJitter = Vector3.zero
                 state.PositionJitterCorner = 0
                 state.LastPositionJitterAt = 0
@@ -972,6 +991,18 @@ return function(context)
                 or (state.RaidMultiGrab and state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true)
             )
             local livePosition = useGatherAnchor and gatheredFrom.Position or enemyRoot.Position
+            if not squareMovement and not orbitMovement then
+                local stableAnchor = state.PositionAnchorWorld or livePosition
+                local reacquireDistance = math.max(
+                    12,
+                    math.min(50, (tonumber(state.AuraRange) or 70) * 0.65)
+                )
+                if (livePosition - stableAnchor).Magnitude > reacquireDistance then
+                    stableAnchor = livePosition
+                    state.PositionAnchorWorld = stableAnchor
+                end
+                livePosition = stableAnchor
+            end
             local enemyAnchor = lockVertical and Vector3.new(
                 livePosition.X,
                 state.PositionAnchorY or livePosition.Y,
@@ -1801,7 +1832,9 @@ return function(context)
             end
             if not busoActive() then
                 ensureBuso(true)
-                return false
+                if state.BusoOwned ~= false then
+                    return false
+                end
             end
 
             local now = os.clock()
@@ -1847,9 +1880,12 @@ return function(context)
                 return false
             end
             if not busoActive() then
-                state.AuraStage = "waiting-for-buso"
                 ensureBuso(true)
-                return false
+                if state.BusoOwned ~= false then
+                    state.AuraStage = "waiting-for-buso"
+                    return false
+                end
+                state.AuraStage = "starter-no-buso"
             end
             local now = os.clock()
             if now - state.LastAuraScan < 0.04 then
@@ -2153,6 +2189,7 @@ return function(context)
             local liveAnchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
+            local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
             if singleFallback then
                 state.MobAuraAnchorTarget = target
                 state.MobAuraStableAnchor = liveAnchor
@@ -2164,13 +2201,22 @@ return function(context)
                 if not state.GatherEnemies or not state.MobAuraStableAnchor then
                     state.MobAuraStableAnchor = liveAnchor
                 end
-            elseif not state.GatherEnemies or not state.MobAuraStableAnchor then
+            elseif (not state.GatherEnemies and not fixedPosition) or not state.MobAuraStableAnchor then
                 state.MobAuraStableAnchor = liveAnchor
+            end
+            if fixedPosition and state.MobAuraStableAnchor then
+                local reacquireDistance = math.max(
+                    12,
+                    math.min(50, (tonumber(state.AuraRange) or 70) * 0.65)
+                )
+                if (liveAnchor - state.MobAuraStableAnchor).Magnitude > reacquireDistance then
+                    state.MobAuraStableAnchor = liveAnchor
+                end
             end
             -- Once Multi Grab moves the target underneath the player, keep
             -- using its original ground anchor. Following the moved NPC would
             -- add MobAuraHeight again every frame and launch the player upward.
-            local anchor = state.GatherEnemies and not singleFallback
+            local anchor = ((state.GatherEnemies and not singleFallback) or fixedPosition)
                 and state.MobAuraStableAnchor or liveAnchor
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
