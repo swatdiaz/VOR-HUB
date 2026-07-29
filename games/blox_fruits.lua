@@ -282,6 +282,8 @@ return function(context)
             AntiRagdollHumanoid = nil,
             FarmAnimateScript = nil,
             FarmAnimateWasDisabled = nil,
+            FarmAnimator = nil,
+            FarmAnimationConnection = nil,
             SafeMode = false,
             SafeHealthPercent = 30,
             CurrentEnemyName = nil,
@@ -1011,7 +1013,24 @@ return function(context)
                 livePosition.Z
             ) or livePosition
             local position = enemyAnchor + worldOffset
-            return CFrame.lookAt(position, enemyAnchor)
+            -- Never pitch the whole avatar down at an NPC underneath it. With
+            -- a zero X/Z offset, lookAt(position, enemyAnchor) produced a
+            -- vertical LookVector (Y = -1); Roblox then tried to right the rig
+            -- while the farm loop forced it downward again, causing the rapid
+            -- two-pose seizure. Preserve an upright yaw-only facing instead.
+            local flatLook = Vector3.new(
+                enemyAnchor.X - position.X,
+                0,
+                enemyAnchor.Z - position.Z
+            )
+            if flatLook.Magnitude < 0.05 then
+                local basisLook = state.PositionBasis.LookVector
+                flatLook = Vector3.new(basisLook.X, 0, basisLook.Z)
+            end
+            if flatLook.Magnitude < 0.05 then
+                flatLook = Vector3.new(0, 0, -1)
+            end
+            return CFrame.lookAt(position, position + flatLook.Unit)
         end
 
         local function moveToFarmPosition(targetCFrame)
@@ -5004,6 +5023,11 @@ return function(context)
             local char = character()
             local animate = char and char:FindFirstChild("Animate")
             if not enabled or not animate or not animate:IsA("LocalScript") then
+                if state.FarmAnimationConnection then
+                    pcall(function()
+                        state.FarmAnimationConnection:Disconnect()
+                    end)
+                end
                 local previous = state.FarmAnimateScript
                 if previous and previous.Parent and state.FarmAnimateWasDisabled ~= nil then
                     pcall(function()
@@ -5012,6 +5036,8 @@ return function(context)
                 end
                 state.FarmAnimateScript = nil
                 state.FarmAnimateWasDisabled = nil
+                state.FarmAnimator = nil
+                state.FarmAnimationConnection = nil
                 gui:SetAttribute("BloxFarmCalmPose", false)
                 return
             end
@@ -5030,6 +5056,29 @@ return function(context)
                 body:Move(Vector3.zero, false)
             end
             if animator then
+                if state.FarmAnimator ~= animator then
+                    if state.FarmAnimationConnection then
+                        pcall(function()
+                            state.FarmAnimationConnection:Disconnect()
+                        end)
+                    end
+                    state.FarmAnimator = animator
+                    state.FarmAnimationConnection = animator.AnimationPlayed:Connect(function(animationTrack)
+                        if gui:GetAttribute("BloxFarmCalmPose") ~= true then
+                            return
+                        end
+                        local trackName = string.lower(tostring(animationTrack.Name))
+                        local isIdle = animationTrack.Priority == Enum.AnimationPriority.Idle
+                            or trackName == "idle"
+                            or trackName == "animation1"
+                            or trackName == "animation2"
+                        if not isIdle then
+                            pcall(function()
+                                animationTrack:Stop(0)
+                            end)
+                        end
+                    end)
+                end
                 local idleAnimationIds = {}
                 local idleFolder = animate:FindFirstChild("idle")
                 if idleFolder then
@@ -5050,7 +5099,7 @@ return function(context)
                         or trackName == "animation2"
                     if not isIdle then
                         pcall(function()
-                            animationTrack:Stop(0.05)
+                            animationTrack:Stop(0)
                         end)
                     end
                 end
@@ -6170,6 +6219,8 @@ return function(context)
             state.AntiRagdollHumanoid = nil
             state.FarmAnimateScript = nil
             state.FarmAnimateWasDisabled = nil
+            state.FarmAnimator = nil
+            state.FarmAnimationConnection = nil
             if state.AutoBuso then
                 task.delay(0.5, function()
                     if state.Alive and state.AutoBuso then
