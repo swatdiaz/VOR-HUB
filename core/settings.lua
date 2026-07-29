@@ -145,7 +145,7 @@ return function(runtime)
         accent = Color3.fromRGB(126, 55, 255),
         accentBright = Color3.fromRGB(188, 133, 255),
         accentDark = Color3.fromRGB(70, 27, 132),
-        logoBackground = Color3.fromRGB(48, 18, 92),
+        logoBackground = Color3.fromRGB(88, 36, 160),
         success = Color3.fromRGB(74, 225, 144),
         warning = Color3.fromRGB(245, 186, 73),
         error = Color3.fromRGB(255, 93, 126),

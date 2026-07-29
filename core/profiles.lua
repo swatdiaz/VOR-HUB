@@ -293,7 +293,7 @@ return function(context)
         })
         appearance:AddToggle({
             Name = "Animated Background Shine",
-            Description = "Rotates the glossy reflection across the VOR logo and selected artwork",
+            Description = "Rotates a glossy reflection across the selected UI artwork",
             Flag = "vor_background_motion",
             Default = SETTINGS.BackgroundMotionEnabled,
             Callback = function(value)

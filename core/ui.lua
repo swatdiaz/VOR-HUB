@@ -464,29 +464,6 @@ return function(context)
         ZIndex = 35,
     }, crest)
     corner(brandLogo, 12)
-    local brandShine = create("Frame", {
-        Name = "BrandLogoShine",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromScale(1.55, 1.55),
-        BackgroundColor3 = COLORS.white,
-        BackgroundTransparency = 0,
-        BorderSizePixel = 0,
-        ZIndex = 36,
-    }, crest)
-    local brandShineGradient = create("UIGradient", {
-        Color = ColorSequence.new(COLORS.white),
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.47, 1),
-            NumberSequenceKeypoint.new(0.488, 0.78),
-            NumberSequenceKeypoint.new(0.50, 0.22),
-            NumberSequenceKeypoint.new(0.512, 0.78),
-            NumberSequenceKeypoint.new(0.53, 1),
-            NumberSequenceKeypoint.new(1, 1),
-        }),
-        Rotation = 0,
-    }, brandShine)
     local crestGlow = create("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, COLORS.accentDark),
@@ -646,8 +623,6 @@ return function(context)
         PanelBackground = panelBackground,
         BackgroundSweep = backgroundSweep,
         BackgroundSweepGradient = backgroundSweepGradient,
-        BrandShine = brandShine,
-        BrandShineGradient = brandShineGradient,
         Rail = rail,
         Content = content,
         PagesHost = pagesHost,
@@ -2357,21 +2332,9 @@ return function(context)
             NumberSequenceKeypoint.new(0.65, 1),
             NumberSequenceKeypoint.new(1, 1),
         })
-        local logoShoulder = math.clamp(1 - strength, 0.58, 0.94)
-        local logoCenter = math.clamp(1 - (strength * 3.5), 0.08, 0.78)
-        brandShineGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.47, 1),
-            NumberSequenceKeypoint.new(0.488, logoShoulder),
-            NumberSequenceKeypoint.new(0.50, logoCenter),
-            NumberSequenceKeypoint.new(0.512, logoShoulder),
-            NumberSequenceKeypoint.new(0.53, 1),
-            NumberSequenceKeypoint.new(1, 1),
-        })
         backgroundSweep.Visible = self.BackgroundMotionEnabled
             and not SETTINGS.ReducedMotion
             and SETTINGS.ThemeIntensity ~= "Performance"
-        brandShine.Visible = self.BackgroundMotionEnabled and not SETTINGS.ReducedMotion
         gui:SetAttribute("VORBackgroundMotion", self.BackgroundMotionEnabled)
         gui:SetAttribute("VORBackgroundMotionSpeed", self.BackgroundMotionSpeed)
         gui:SetAttribute("VORBackgroundMotionStrength", strength)
@@ -2562,7 +2525,6 @@ return function(context)
         if Window.BackgroundMotionEnabled and SETTINGS.ThemeIntensity ~= "Performance" then
             local shineRotation = ((os.clock() - pulseStarted) * Window.BackgroundMotionSpeed) % 360
             backgroundSweepGradient.Rotation = shineRotation
-            brandShineGradient.Rotation = shineRotation
         end
     end))
 
