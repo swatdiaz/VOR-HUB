@@ -1,8 +1,46 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "39c86342a8911c0c9d774ae157237b7478b4122a"
+local COMMIT = "7a77b39963804c50340ffa5f3b8e811da33a4281"
 local REPOSITORY = "swatdiaz/VOR-HUB"
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local function tracebackError(message)
+    if type(debug) == "table" and type(debug.traceback) == "function" then
+        return debug.traceback(message, 2)
+    end
+    return tostring(message)
+end
+
+local function httpGet(url)
+    local ok, body = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    if ok and type(body) == "string" and #body > 0 then
+        return body
+    end
+    ok, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok and type(body) == "string" and #body > 0 then
+        return body
+    end
+
+    local requestFunction = type(request) == "function" and request
+        or type(http_request) == "function" and http_request
+        or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+    if requestFunction then
+        local response = requestFunction({Url = url, Method = "GET"})
+        local responseBody = type(response) == "table" and (response.Body or response.body) or nil
+        if type(responseBody) == "string" and #responseBody > 0 then
+            return responseBody
+        end
+    end
+    error("HTTP download failed: " .. tostring(body))
+end
 
 local function sourceUrl(path)
     return "https://raw.githubusercontent.com/" .. REPOSITORY .. "/" .. COMMIT .. "/" .. path
@@ -10,11 +48,11 @@ end
 
 local function loadModule(path)
     local ok, result = xpcall(function()
-        local source = game:HttpGet(sourceUrl(path))
+        local source = httpGet(sourceUrl(path))
         local chunk, compileError = loadstring(source)
         assert(chunk, "Compile failed for " .. path .. ": " .. tostring(compileError))
         return chunk()
-    end, debug.traceback)
+    end, tracebackError)
     return ok, result
 end
 
@@ -22,13 +60,18 @@ local function runBuilder(path, builder, context)
     return xpcall(function()
         assert(type(builder) == "function", path .. " must return one builder function")
         return builder(context)
-    end, debug.traceback)
+    end, tracebackError)
 end
 
 local function emergencyError(path, message)
     warn("[VOR Hub] " .. tostring(path) .. " failed:\n" .. tostring(message))
     local player = game:GetService("Players").LocalPlayer
     local parent = player and player:FindFirstChildOfClass("PlayerGui")
+    if not parent and player then
+        pcall(function()
+            parent = player:WaitForChild("PlayerGui", 10)
+        end)
+    end
     if not parent then
         return
     end
@@ -187,7 +230,7 @@ local pendingAutoLoad
 if profilesReady and context.Window.BuildGlobalSettingsPage then
     local built, result = xpcall(function()
         return context.Window:BuildGlobalSettingsPage()
-    end, debug.traceback)
+    end, tracebackError)
     if built then
         pendingAutoLoad = result
     else
@@ -198,7 +241,7 @@ end
 if gameInfo and context.Window.BuildHomeDashboard then
     local built, result = xpcall(function()
         return context.Window:BuildHomeDashboard()
-    end, debug.traceback)
+    end, tracebackError)
     if not built then
         context.Window:ShowBuildError("core/ui.lua:BuildHomeDashboard", result)
     end
