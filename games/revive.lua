@@ -12,37 +12,61 @@ return function(context)
     local TweenService = game:GetService("TweenService")
     local LocalPlayer = Players.LocalPlayer
 
-local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-local ToolsPage = Window:AddPage("Tools")
+local OvernightSection
+local OvernightUpgradeSection
+local LiveSection
+local CombatSection
+local CursedKingSection
+local SpecialPrioritySection
+local FarmSection
+local TweenSection
+local UpgradeSection
+local WeaponInfoSection
+local ChallengeSection
+local RebirthSection
+local SoulRingSection
+local RewardSection
+local VisualSection
+local VisualInfoSection
+local NotificationSection
+local OutfitSection
+local VoidArmorSection
+local ToolsInfoSection
 
-local OvernightPage = addHomeCategory("Overnight", 1, CATEGORY_DECALS.Overnight)
-local CombatPage = addHomeCategory("Combat", 2, CATEGORY_DECALS.Combat)
-local WeaponsPage = addHomeCategory("Weapons", 3, CATEGORY_DECALS.Weapons)
-local ProgressPage = addHomeCategory("Progress", 4, CATEGORY_DECALS.Progress)
-local VisualsPage = addHomeCategory("Visuals", 5, CATEGORY_DECALS.Visuals)
+-- Page objects are only needed while the Revive layout is assembled. Keeping
+-- them inside this scope releases their registers before feature construction.
+do
+    local _, addHomeCategory, selectHomeCategory = createCategoryHomePage()
+    local ToolsPage = Window:AddPage("Tools")
+    local OvernightPage = addHomeCategory("Overnight", 1, CATEGORY_DECALS.Overnight)
+    local CombatPage = addHomeCategory("Combat", 2, CATEGORY_DECALS.Combat)
+    local WeaponsPage = addHomeCategory("Weapons", 3, CATEGORY_DECALS.Weapons)
+    local ProgressPage = addHomeCategory("Progress", 4, CATEGORY_DECALS.Progress)
+    local VisualsPage = addHomeCategory("Visuals", 5, CATEGORY_DECALS.Visuals)
 
-local OvernightSection = OvernightPage:AddSection("AFK Essentials", "Left")
-local OvernightUpgradeSection = OvernightPage:AddSection("Overnight Upgrades", "Right")
-local LiveSection = OvernightPage:AddSection("Live Status", "Right")
-local CombatSection = CombatPage:AddSection("Combat Automation", "Left")
-local CursedKingSection = CombatPage:AddSection("Special Bosses", "Left")
-local SpecialPrioritySection = CombatPage:AddSection("Special Boss Priority", "Right")
-local FarmSection = CombatPage:AddSection("Boss Progression Farm", "Right")
-local TweenSection = CombatPage:AddSection("Enemy Tween", "Right")
-local UpgradeSection = WeaponsPage:AddSection("Sword Automation", "Left")
-local WeaponInfoSection = WeaponsPage:AddSection("Owned Weapons", "Right")
-local ChallengeSection = ProgressPage:AddSection("Challenges", "Left")
-local RebirthSection = ProgressPage:AddSection("Auto Rebirth", "Left")
-local SoulRingSection = ProgressPage:AddSection("Soul Ring", "Right")
-local RewardSection = ProgressPage:AddSection("Reward Automation", "Right")
-local VisualSection = VisualsPage:AddSection("Character Visuals", "Left")
-local VisualInfoSection = VisualsPage:AddSection("Visual Status", "Right")
-local NotificationSection = VisualsPage:AddSection("Hub Notifications", "Right")
-local OutfitSection = ToolsPage:AddSection("Local Outfit Preview", "Left")
-local VoidArmorSection = ToolsPage:AddSection("VOR Void Armor", "Right")
-local ToolsInfoSection = ToolsPage:AddSection("Tools Status", "Right")
+    OvernightSection = OvernightPage:AddSection("AFK Essentials", "Left")
+    OvernightUpgradeSection = OvernightPage:AddSection("Overnight Upgrades", "Right")
+    LiveSection = OvernightPage:AddSection("Live Status", "Right")
+    CombatSection = CombatPage:AddSection("Combat Automation", "Left")
+    CursedKingSection = CombatPage:AddSection("Special Bosses", "Left")
+    SpecialPrioritySection = CombatPage:AddSection("Special Boss Priority", "Right")
+    FarmSection = CombatPage:AddSection("Boss Progression Farm", "Right")
+    TweenSection = CombatPage:AddSection("Enemy Tween", "Right")
+    UpgradeSection = WeaponsPage:AddSection("Sword Automation", "Left")
+    WeaponInfoSection = WeaponsPage:AddSection("Owned Weapons", "Right")
+    ChallengeSection = ProgressPage:AddSection("Challenges", "Left")
+    RebirthSection = ProgressPage:AddSection("Auto Rebirth", "Left")
+    SoulRingSection = ProgressPage:AddSection("Soul Ring", "Right")
+    RewardSection = ProgressPage:AddSection("Reward Automation", "Right")
+    VisualSection = VisualsPage:AddSection("Character Visuals", "Left")
+    VisualInfoSection = VisualsPage:AddSection("Visual Status", "Right")
+    NotificationSection = VisualsPage:AddSection("Hub Notifications", "Right")
+    OutfitSection = ToolsPage:AddSection("Local Outfit Preview", "Left")
+    VoidArmorSection = ToolsPage:AddSection("VOR Void Armor", "Right")
+    ToolsInfoSection = ToolsPage:AddSection("Tools Status", "Right")
 
-selectHomeCategory("Overnight")
+    selectHomeCategory("Overnight")
+end
 
 local statusLabel = LiveSection:AddLabel("Status: Loading Revive remotes...")
 local remoteLabel = LiveSection:AddLabel("Remotes: Loading...")
@@ -3394,7 +3418,7 @@ task.spawn(function()
     end
 end)
 
-local function waitForBossConfirmation(level, startingSerial, duration)
+priority.waitForBossConfirmation = function(level, startingSerial, duration)
     local deadline = os.clock() + duration
     repeat
         if (confirmedAttackSerial[level] or 0) > startingSerial then
@@ -3417,7 +3441,7 @@ local function bootstrapMultiHitSession()
 
     for _ = 1, 3 do
         fireRemote("attack", bootstrapLevel)
-        if waitForBossConfirmation(bootstrapLevel, startingSerial, 0.12) then
+        if priority.waitForBossConfirmation(bootstrapLevel, startingSerial, 0.12) then
             multiHitNeedsBootstrap = false
             multiHitStatusLabel.Text = "Multi Hit: Remote session primed"
             multiHitStatusLabel.TextColor3 = COLORS.success
@@ -3453,7 +3477,7 @@ local function bootstrapMultiHitSession()
         task.wait(0.10)
         for _ = 1, 5 do
             fireRemote("attack", bootstrapLevel)
-            if waitForBossConfirmation(bootstrapLevel, startingSerial, 0.12) then
+            if priority.waitForBossConfirmation(bootstrapLevel, startingSerial, 0.12) then
                 confirmed = true
                 break
             end
