@@ -348,7 +348,7 @@ return function(context)
         BackgroundColor3 = COLORS.surfaceRaised,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        Text = "✦",
+        Text = "",
         TextColor3 = COLORS.accentBright,
         TextSize = 28,
         Font = Enum.Font.GothamBold,
@@ -356,6 +356,18 @@ return function(context)
     }, rail)
     corner(crest, 15)
     stroke(crest, COLORS.accent, 1, 0.22)
+    local brandLogo = create("ImageLabel", {
+        Name = "BrandLogo",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.new(1, -8, 1, -8),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Image = SETTINGS.BrandLogoImage,
+        ScaleType = Enum.ScaleType.Fit,
+        ZIndex = 35,
+    }, crest)
+    corner(brandLogo, 12)
     local crestGlow = create("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, COLORS.accentDark),
@@ -432,15 +444,27 @@ return function(context)
         BackgroundColor3 = COLORS.shell,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        Text = "✦",
+        Text = "",
         TextColor3 = COLORS.accentBright,
         TextSize = 29,
         Font = Enum.Font.GothamBold,
         Visible = false,
         ZIndex = 90,
     }, overlay)
-    corner(minimized, 17)
+    local minimizedCorner = corner(minimized, 999)
     stroke(minimized, COLORS.accentBright, 1.2, 0.15)
+    local minimizedCat = create("ImageLabel", {
+        Name = "CatCrest",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.new(1, -8, 1, -8),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Image = SETTINGS.MinimizedCrestImage,
+        ScaleType = Enum.ScaleType.Crop,
+        ZIndex = 91,
+    }, minimized)
+    corner(minimizedCat, 999)
 
     local drawer = create("Frame", {
         Name = "CommandDrawer",
@@ -851,10 +875,14 @@ return function(context)
             minimized.Size = UDim2.fromOffset(176, 44)
             minimized.Text = "VOR HUB  |  OPEN"
             minimized.TextSize = 12
+            minimizedCorner.CornerRadius = UDim.new(0, 12)
+            minimizedCat.Visible = false
         else
             minimized.Size = UDim2.fromOffset(58, 58)
-            minimized.Text = "✦"
+            minimized.Text = ""
             minimized.TextSize = 29
+            minimizedCorner.CornerRadius = UDim.new(0, 999)
+            minimizedCat.Visible = true
         end
         return SETTINGS.MinimizedStyleDefault
     end

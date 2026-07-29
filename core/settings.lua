@@ -104,6 +104,8 @@ return function(runtime)
         UIScale = 1,
         TextScale = 1,
         DefaultPanelBackground = "VOR Signature (557862299)",
+        MinimizedCrestImage = "rbxthumb://type=Asset&id=6274377121&w=420&h=420",
+        BrandLogoImage = "rbxthumb://type=Asset&id=7871813453&w=420&h=420",
         ActiveGame = activeGame,
         SupportedGames = supportedGames,
         IsBloxFruits = activeGame ~= nil
