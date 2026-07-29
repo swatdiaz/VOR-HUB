@@ -418,7 +418,7 @@ return function(context)
             local key, displayName, section = definition[1], definition[2], definition[3]
             paletteControls[key] = section:AddColorPicker({
                 Name = displayName,
-                Description = "Click the swatch for presets or type any #RRGGBB hex color",
+                Description = "Click the swatch for the full picker or type any #RRGGBB hex color",
                 Flag = "vor_color_" .. key,
                 Default = COLORS[key],
                 Callback = function(value)

@@ -300,11 +300,37 @@ return function(context)
             Name = "VORIntro",
             Active = true,
             Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(13, 6, 24),
             BackgroundTransparency = 0,
             GroupTransparency = 0,
             ZIndex = 800,
         }, Gui)
+        create("ImageLabel", {
+            Name = "IntroArtwork",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Image = SETTINGS.PanelBackgrounds[SETTINGS.DefaultPanelBackground],
+            ImageTransparency = 0.06,
+            ScaleType = Enum.ScaleType.Crop,
+            ZIndex = 800,
+        }, intro)
+        local colorVeil = create("Frame", {
+            Name = "IntroColorVeil",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = COLORS.accentDark,
+            BackgroundTransparency = 0.46,
+            BorderSizePixel = 0,
+            ZIndex = 801,
+        }, intro)
+        create("UIGradient", {
+            Rotation = 90,
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.14),
+                NumberSequenceKeypoint.new(0.5, 0.54),
+                NumberSequenceKeypoint.new(1, 0.18),
+            }),
+        }, colorVeil)
 
         local chime = nil
         if SETTINGS.IntroSoundEnabled and tostring(SETTINGS.IntroSoundId or "") ~= "" then
@@ -326,27 +352,24 @@ return function(context)
         end
 
         local random = Random.new(math.floor(os.clock() * 1000) % 100000)
-        local catCount = math.clamp(math.floor(tonumber(SETTINGS.IntroParticleCount) or 12), 8, 18)
+        local catCount = math.clamp(math.floor(tonumber(SETTINGS.IntroParticleCount) or 8), 4, 12)
         for index = 1, catCount do
-            local size = random:NextInteger(52, 82)
-            local startX = index % 2 == 0 and random:NextNumber(0.04, 0.20) or random:NextNumber(0.80, 0.96)
+            local size = random:NextInteger(78, 116)
+            local startX = index % 2 == 0 and random:NextNumber(0.03, 0.16) or random:NextNumber(0.84, 0.97)
             local startY = random:NextNumber(-0.35, 0.25)
             local cat = create("ImageLabel", {
                 Name = "WetCatParticle" .. tostring(index),
                 AnchorPoint = Vector2.new(0.5, 0.5),
                 Position = UDim2.fromScale(startX, startY),
                 Size = UDim2.fromOffset(size, size),
-                BackgroundColor3 = COLORS.accentDark,
-                BackgroundTransparency = 0.28,
+                BackgroundTransparency = 1,
                 BorderSizePixel = 0,
                 Image = SETTINGS.MinimizedCrestImage,
-                ImageTransparency = random:NextNumber(0.02, 0.18),
+                ImageTransparency = random:NextNumber(0.08, 0.22),
                 Rotation = random:NextInteger(-24, 24),
-                ScaleType = Enum.ScaleType.Crop,
+                ScaleType = Enum.ScaleType.Fit,
                 ZIndex = 801,
             }, intro)
-            corner(cat, 999)
-            stroke(cat, COLORS.accentBright, 0.42, 1)
             if not SETTINGS.ReducedMotion then
                 TweenService:Create(cat, TweenInfo.new(
                     duration + random:NextNumber(0.8, 2.2),
@@ -366,32 +389,32 @@ return function(context)
             Name = "IntroCenterPlate",
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.fromScale(0.5, 0.52),
-            Size = UDim2.fromOffset(720, 590),
-            BackgroundColor3 = Color3.fromRGB(5, 3, 9),
-            BackgroundTransparency = 0.18,
+            Size = UDim2.fromOffset(900, 640),
+            BackgroundColor3 = COLORS.surface,
+            BackgroundTransparency = 0.22,
             BorderSizePixel = 0,
             ZIndex = 802,
         }, intro)
-        corner(centerPlate, 26)
-        stroke(centerPlate, COLORS.accentDark, 0.34, 1.5)
+        corner(centerPlate, 30)
+        stroke(centerPlate, COLORS.borderBright, 0.12, 2)
         local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
         create("UIScale", {
-            Scale = math.clamp(math.min((viewport.X - 24) / 720, (viewport.Y - 24) / 590), 0.48, 1),
+            Scale = math.clamp(math.min((viewport.X - 28) / 900, (viewport.Y - 28) / 640), 0.42, 1),
         }, centerPlate)
         create("UIGradient", {
             Rotation = 90,
             Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 4, 14)),
-                ColorSequenceKeypoint.new(0.55, Color3.fromRGB(3, 2, 6)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
+                ColorSequenceKeypoint.new(0, COLORS.surfaceRaised),
+                ColorSequenceKeypoint.new(0.55, COLORS.surface),
+                ColorSequenceKeypoint.new(1, COLORS.accentDark),
             }),
         }, centerPlate)
 
         local logoGlow = create("ImageLabel", {
             Name = "LogoGlow",
             AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.fromScale(0.5, 0.22),
-            Size = UDim2.fromOffset(360, 360),
+            Position = UDim2.fromScale(0.5, 0.20),
+            Size = UDim2.fromOffset(420, 420),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Image = "rbxasset://textures/particles/sparkles_main.dds",
@@ -402,8 +425,8 @@ return function(context)
         local logo = create("ImageLabel", {
             Name = "VORBrandLogo",
             AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.fromScale(0.5, 0.22),
-            Size = UDim2.fromOffset(188, 188),
+            Position = UDim2.fromScale(0.5, 0.20),
+            Size = UDim2.fromOffset(218, 218),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Image = SETTINGS.BrandLogoImage,
@@ -411,26 +434,26 @@ return function(context)
             ScaleType = Enum.ScaleType.Fit,
             ZIndex = 804,
         }, centerPlate)
-        local eyebrow = label(centerPlate, "AUTHORIZED ACCESS  //  VOR NETWORK", UDim2.new(1, -60, 0, 28), UDim2.fromOffset(30, 215), COLORS.dim, 12, Enum.Font.Code)
-        local title = label(centerPlate, "WELCOME TO VOR HUB", UDim2.new(1, -50, 0, 76), UDim2.fromOffset(25, 244), COLORS.text, 52, Enum.Font.GothamBold)
-        local identity = label(centerPlate, tostring(Utilities.LocalPlayer and Utilities.LocalPlayer.DisplayName or "Player"), UDim2.new(1, -50, 0, 54), UDim2.fromOffset(25, 318), COLORS.accentBright, 36, Enum.Font.GothamBold)
+        local eyebrow = label(centerPlate, "AUTHORIZED ACCESS  //  VOR NETWORK", UDim2.new(1, -70, 0, 30), UDim2.fromOffset(35, 232), COLORS.muted, 14, Enum.Font.Code)
+        local title = label(centerPlate, "WELCOME TO VOR HUB", UDim2.new(1, -60, 0, 88), UDim2.fromOffset(30, 268), COLORS.text, 62, Enum.Font.GothamBold)
+        local identity = label(centerPlate, tostring(Utilities.LocalPlayer and Utilities.LocalPlayer.DisplayName or "Player"), UDim2.new(1, -60, 0, 62), UDim2.fromOffset(30, 354), COLORS.accentBright, 42, Enum.Font.GothamBold)
         local gameName = SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported Game"
         local divider = create("Frame", {
             AnchorPoint = Vector2.new(0.5, 0),
-            Position = UDim2.new(0.5, 0, 0, 382),
-            Size = UDim2.fromOffset(420, 2),
+            Position = UDim2.new(0.5, 0, 0, 430),
+            Size = UDim2.fromOffset(520, 3),
             BackgroundColor3 = COLORS.accent,
             BackgroundTransparency = 0.16,
             BorderSizePixel = 0,
             ZIndex = 804,
         }, centerPlate)
         corner(divider, 2)
-        local sub = label(centerPlate, "MODULE READY  •  " .. gameName, UDim2.new(1, -50, 0, 32), UDim2.fromOffset(25, 402), COLORS.muted, 16, Enum.Font.GothamSemibold)
-        local discord = label(centerPlate, SETTINGS.Discord, UDim2.new(1, -50, 0, 30), UDim2.fromOffset(25, 442), COLORS.accentBright, 15, Enum.Font.GothamBold)
+        local sub = label(centerPlate, "MODULE READY  •  " .. gameName, UDim2.new(1, -60, 0, 36), UDim2.fromOffset(30, 454), COLORS.text, 18, Enum.Font.GothamSemibold)
+        local discord = label(centerPlate, SETTINGS.Discord, UDim2.new(1, -60, 0, 34), UDim2.fromOffset(30, 500), COLORS.accentBright, 17, Enum.Font.GothamBold)
         local statusPlate = create("Frame", {
             AnchorPoint = Vector2.new(0.5, 0),
-            Position = UDim2.new(0.5, 0, 0, 494),
-            Size = UDim2.fromOffset(390, 42),
+            Position = UDim2.new(0.5, 0, 0, 554),
+            Size = UDim2.fromOffset(470, 48),
             BackgroundColor3 = Color3.fromRGB(9, 28, 21),
             BackgroundTransparency = 0.10,
             BorderSizePixel = 0,
@@ -438,7 +461,7 @@ return function(context)
         }, centerPlate)
         corner(statusPlate, 21)
         stroke(statusPlate, COLORS.success, 0.42, 1)
-        local status = label(statusPlate, "●  GAME DETECTED  •  INJECTED SUCCESSFULLY", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.success, 12, Enum.Font.Code)
+        local status = label(statusPlate, "●  GAME DETECTED  •  INJECTED SUCCESSFULLY", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.success, 14, Enum.Font.Code)
         eyebrow.TextTransparency = 1
         title.TextTransparency = 1
         identity.TextTransparency = 1
@@ -448,8 +471,8 @@ return function(context)
 
         if chime then pcall(function() chime:Play() end) end
         if music then pcall(function() music:Play() end) end
-        tween(logoGlow, 0.65, {ImageTransparency = 0.64, Size = UDim2.fromOffset(410, 410)})
-        tween(logo, 0.55, {ImageTransparency = 0, Size = UDim2.fromOffset(215, 215)})
+        tween(logoGlow, 0.65, {ImageTransparency = 0.68, Size = UDim2.fromOffset(470, 470)})
+        tween(logo, 0.55, {ImageTransparency = 0, Size = UDim2.fromOffset(248, 248)})
         tween(eyebrow, 0.42, {TextTransparency = 0})
         tween(title, 0.50, {TextTransparency = 0})
         task.delay(0.12, function() if identity.Parent then tween(identity, 0.45, {TextTransparency = 0}) end end)

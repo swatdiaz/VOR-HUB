@@ -13,11 +13,58 @@ return function(context)
     local RAIL_COLLAPSED_WIDTH = 74
     local RAIL_EXPANDED_WIDTH = 214
     local RAIL_EXPANSION = RAIL_EXPANDED_WIDTH - RAIL_COLLAPSED_WIDTH
+    local colorBindings = {}
+    local gradientBindings = {}
+    local bindableColorProperties = {
+        BackgroundColor3 = true,
+        TextColor3 = true,
+        ImageColor3 = true,
+        PlaceholderColor3 = true,
+        ScrollBarImageColor3 = true,
+    }
+
+    local function paletteKeyFor(color)
+        if typeof(color) ~= "Color3" then
+            return nil
+        end
+        for key, paletteColor in pairs(COLORS) do
+            if color == paletteColor then
+                return key
+            end
+        end
+        return nil
+    end
+
+    local function rememberColorBinding(object, property, value, className)
+        local isBoundProperty = bindableColorProperties[property]
+            or (className == "UIStroke" and property == "Color")
+        if not isBoundProperty then
+            return
+        end
+        local key = paletteKeyFor(value)
+        if not key then
+            return
+        end
+        colorBindings[key] = colorBindings[key] or {}
+        table.insert(colorBindings[key], {Object = object, Property = property})
+    end
 
     local function create(className, properties, parent)
         local object = Instance.new(className)
         for property, value in pairs(properties or {}) do
             object[property] = value
+            rememberColorBinding(object, property, value, className)
+        end
+        if className == "UIGradient" and properties and typeof(properties.Color) == "ColorSequence" then
+            local binding = {Object = object, Points = {}}
+            for _, point in ipairs(properties.Color.Keypoints) do
+                table.insert(binding.Points, {
+                    Time = point.Time,
+                    Key = paletteKeyFor(point.Value),
+                    Value = point.Value,
+                })
+            end
+            table.insert(gradientBindings, binding)
         end
         object.Parent = parent
         return object
@@ -750,6 +797,263 @@ return function(context)
                 toast:Destroy()
             end
         end)
+    end
+
+    function Window:OpenColorPicker(control)
+        if not control or type(control.Get) ~= "function" or type(control.Set) ~= "function" then
+            return
+        end
+        if self.ColorPickerPopup and self.ColorPickerPopup.Parent then
+            self.ColorPickerPopup:Destroy()
+        end
+
+        local current = control:Get()
+        if typeof(current) ~= "Color3" then
+            current = COLORS.accent
+        end
+        local hue, saturation, brightness = current:ToHSV()
+        local selected = current
+        local dragging = nil
+
+        local modal = create("TextButton", {
+            Name = "ColorPickerPopup",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = COLORS.black,
+            BackgroundTransparency = 0.34,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "",
+            ZIndex = 1200,
+        }, overlay)
+        self.ColorPickerPopup = modal
+        local panel = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(360, 390),
+            BackgroundColor3 = COLORS.surface,
+            BorderSizePixel = 0,
+            ZIndex = 1201,
+        }, modal)
+        corner(panel, 16)
+        stroke(panel, COLORS.borderBright, 0.10, 1.4)
+
+        local pickerTitle = label(panel, "COLOR STUDIO  /  " .. tostring(control.Name or "COLOR"), UDim2.new(1, -64, 0, 42), UDim2.fromOffset(18, 8), COLORS.text, 12, Enum.Font.GothamBold)
+        pickerTitle.ZIndex = 1203
+        local close = create("TextButton", {
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, -12, 0, 10),
+            Size = UDim2.fromOffset(32, 32),
+            BackgroundColor3 = COLORS.control,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "×",
+            TextColor3 = COLORS.muted,
+            TextSize = 18,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 1204,
+        }, panel)
+        corner(close, 9)
+
+        local saturationValue = create("Frame", {
+            Name = "SaturationValue",
+            Position = UDim2.fromOffset(18, 58),
+            Size = UDim2.fromOffset(324, 184),
+            BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 1202,
+        }, panel)
+        corner(saturationValue, 10)
+        stroke(saturationValue, COLORS.border, 0.25, 1)
+        local saturationGradient = create("UIGradient", {
+            Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromHSV(hue, 1, 1)),
+        }, saturationValue)
+        local valueShade = create("Frame", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BorderSizePixel = 0,
+            ZIndex = 1203,
+        }, saturationValue)
+        corner(valueShade, 10)
+        create("UIGradient", {
+            Rotation = 90,
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(1, 0),
+            }),
+        }, valueShade)
+        local svInput = create("TextButton", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "",
+            ZIndex = 1205,
+        }, saturationValue)
+        local svCursor = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Size = UDim2.fromOffset(16, 16),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 1206,
+        }, saturationValue)
+        corner(svCursor, 999)
+        stroke(svCursor, COLORS.white, 0, 2)
+
+        local hueBar = create("TextButton", {
+            Position = UDim2.fromOffset(18, 256),
+            Size = UDim2.fromOffset(324, 18),
+            BackgroundColor3 = COLORS.white,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "",
+            ZIndex = 1203,
+        }, panel)
+        corner(hueBar, 9)
+        create("UIGradient", {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0.00, Color3.fromHSV(0.00, 1, 1)),
+                ColorSequenceKeypoint.new(0.17, Color3.fromHSV(0.17, 1, 1)),
+                ColorSequenceKeypoint.new(0.33, Color3.fromHSV(0.33, 1, 1)),
+                ColorSequenceKeypoint.new(0.50, Color3.fromHSV(0.50, 1, 1)),
+                ColorSequenceKeypoint.new(0.67, Color3.fromHSV(0.67, 1, 1)),
+                ColorSequenceKeypoint.new(0.83, Color3.fromHSV(0.83, 1, 1)),
+                ColorSequenceKeypoint.new(1.00, Color3.fromHSV(1.00, 1, 1)),
+            }),
+        }, hueBar)
+        local hueCursor = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(hue, 0.5),
+            Size = UDim2.fromOffset(6, 26),
+            BackgroundColor3 = COLORS.white,
+            BorderSizePixel = 0,
+            ZIndex = 1206,
+        }, hueBar)
+        corner(hueCursor, 3)
+        stroke(hueCursor, COLORS.black, 0.15, 1)
+
+        local preview = create("Frame", {
+            Position = UDim2.fromOffset(18, 292),
+            Size = UDim2.fromOffset(48, 38),
+            BackgroundColor3 = selected,
+            BorderSizePixel = 0,
+            ZIndex = 1203,
+        }, panel)
+        corner(preview, 9)
+        stroke(preview, COLORS.borderBright, 0.2, 1)
+        local hexInput = create("TextBox", {
+            Position = UDim2.fromOffset(76, 292),
+            Size = UDim2.fromOffset(126, 38),
+            BackgroundColor3 = COLORS.control,
+            BorderSizePixel = 0,
+            ClearTextOnFocus = false,
+            TextColor3 = COLORS.text,
+            TextSize = 12,
+            Font = Enum.Font.Code,
+            Text = "",
+            PlaceholderText = "#RRGGBB",
+            ZIndex = 1203,
+        }, panel)
+        corner(hexInput, 9)
+        stroke(hexInput, COLORS.border, 0.35, 1)
+
+        local cancel = create("TextButton", {
+            Position = UDim2.fromOffset(212, 292),
+            Size = UDim2.fromOffset(60, 38),
+            BackgroundColor3 = COLORS.control,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "CANCEL",
+            TextColor3 = COLORS.muted,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 1203,
+        }, panel)
+        corner(cancel, 9)
+        local apply = create("TextButton", {
+            Position = UDim2.fromOffset(280, 292),
+            Size = UDim2.fromOffset(62, 38),
+            BackgroundColor3 = COLORS.accent,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "APPLY",
+            TextColor3 = COLORS.white,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 1203,
+        }, panel)
+        corner(apply, 9)
+        local hint = label(panel, "Drag inside the color field and hue bar, or enter a hex value.", UDim2.new(1, -36, 0, 30), UDim2.fromOffset(18, 344), COLORS.dim, 10, Enum.Font.Gotham)
+        hint.ZIndex = 1203
+
+        local function toHex(color)
+            return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
+        end
+        local function fromHex(value)
+            local hex = tostring(value or ""):gsub("#", ""):gsub("%s", "")
+            if #hex ~= 6 or not hex:match("^[%x]+$") then return nil end
+            return Color3.fromRGB(tonumber(hex:sub(1, 2), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(5, 6), 16))
+        end
+        local function refresh()
+            selected = Color3.fromHSV(hue, saturation, brightness)
+            saturationValue.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+            saturationGradient.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromHSV(hue, 1, 1))
+            svCursor.Position = UDim2.fromScale(saturation, 1 - brightness)
+            hueCursor.Position = UDim2.fromScale(hue, 0.5)
+            preview.BackgroundColor3 = selected
+            hexInput.Text = toHex(selected)
+        end
+        local function setSV(position)
+            saturation = math.clamp((position.X - saturationValue.AbsolutePosition.X) / saturationValue.AbsoluteSize.X, 0, 1)
+            brightness = 1 - math.clamp((position.Y - saturationValue.AbsolutePosition.Y) / saturationValue.AbsoluteSize.Y, 0, 1)
+            refresh()
+        end
+        local function setHue(position)
+            hue = math.clamp((position.X - hueBar.AbsolutePosition.X) / hueBar.AbsoluteSize.X, 0, 1)
+            refresh()
+        end
+        local function closePopup()
+            if modal.Parent then modal:Destroy() end
+            if Window.ColorPickerPopup == modal then Window.ColorPickerPopup = nil end
+        end
+
+        refresh()
+        Utilities.Track(svInput.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = "sv"
+                setSV(input.Position)
+            end
+        end))
+        Utilities.Track(hueBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = "hue"
+                setHue(input.Position)
+            end
+        end))
+        Utilities.Track(Services.UserInputService.InputChanged:Connect(function(input)
+            if not dragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if dragging == "sv" then setSV(input.Position) else setHue(input.Position) end
+        end))
+        Utilities.Track(Services.UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = nil
+            end
+        end))
+        Utilities.Track(hexInput.FocusLost:Connect(function()
+            local parsed = fromHex(hexInput.Text)
+            if parsed then
+                hue, saturation, brightness = parsed:ToHSV()
+                refresh()
+            else
+                hexInput.Text = toHex(selected)
+            end
+        end))
+        Utilities.Track(close.Activated:Connect(closePopup))
+        Utilities.Track(cancel.Activated:Connect(closePopup))
+        Utilities.Track(apply.Activated:Connect(function()
+            control:Set(selected)
+            closePopup()
+        end))
     end
 
     function Window:SetRailExpanded(expanded)
@@ -1489,15 +1793,7 @@ return function(context)
 
     function SectionMethods:AddColorPicker(options)
         options = options or {}
-        local palette = {
-            COLORS.accent,
-            COLORS.accentBright,
-            COLORS.success,
-            COLORS.warning,
-            COLORS.error,
-            Color3.fromRGB(255, 255, 255),
-        }
-        local current = options.Default or palette[1]
+        local current = options.Default or COLORS.accent
         local row = makeRow(self, options.Description and 54 or 44, options.Name or "Color", options.Description)
         local function colorToHex(color)
             return string.format(
@@ -1547,7 +1843,7 @@ return function(context)
         }, row)
         corner(hexInput, 7)
         stroke(hexInput, COLORS.border, 1, 0.45)
-        local control = registerControl(self, {Value = current, Index = 1}, options, row)
+        local control = registerControl(self, {Value = current}, options, row)
         function control:Set(value, silent)
             if typeof(value) == "Color3" then
                 self.Value = value
@@ -1563,8 +1859,7 @@ return function(context)
             return self.Value
         end
         Utilities.Track(swatch.Activated:Connect(function()
-            control.Index = (control.Index % #palette) + 1
-            control:Set(palette[control.Index])
+            Window:OpenColorPicker(control)
         end))
         Utilities.Track(hexInput.FocusLost:Connect(function()
             local parsed = colorFromHex(hexInput.Text)
@@ -1973,36 +2268,29 @@ return function(context)
         if typeof(nextColor) ~= "Color3" or typeof(COLORS[key]) ~= "Color3" then
             return false
         end
-        local previous = COLORS[key]
-        if previous == nextColor then
+        if COLORS[key] == nextColor then
             return true
         end
-        local function swap(valueToCheck)
-            return valueToCheck == previous and nextColor or valueToCheck
-        end
-        for _, object in ipairs(gui:GetDescendants()) do
-            if object:IsA("GuiObject") then
-                object.BackgroundColor3 = swap(object.BackgroundColor3)
-            end
-            if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
-                object.TextColor3 = swap(object.TextColor3)
-            end
-            if (object:IsA("ImageLabel") or object:IsA("ImageButton"))
-                and object.Name ~= "BrandLogo"
-                and object.Name ~= "CatCrest"
-                and object.Name ~= "PanelBackground" then
-                object.ImageColor3 = swap(object.ImageColor3)
-            elseif object:IsA("UIStroke") then
-                object.Color = swap(object.Color)
-            elseif object:IsA("UIGradient") then
-                local points = {}
-                for _, point in ipairs(object.Color.Keypoints) do
-                    table.insert(points, ColorSequenceKeypoint.new(point.Time, swap(point.Value)))
-                end
-                object.Color = ColorSequence.new(points)
-            end
-        end
         COLORS[key] = nextColor
+        for _, binding in ipairs(colorBindings[key] or {}) do
+            if binding.Object and binding.Object.Parent then
+                pcall(function()
+                    binding.Object[binding.Property] = nextColor
+                end)
+            end
+        end
+        for _, binding in ipairs(gradientBindings) do
+            if binding.Object and binding.Object.Parent then
+                local points = {}
+                for _, point in ipairs(binding.Points) do
+                    table.insert(points, ColorSequenceKeypoint.new(
+                        point.Time,
+                        point.Key and COLORS[point.Key] or point.Value
+                    ))
+                end
+                binding.Object.Color = ColorSequence.new(points)
+            end
+        end
         if key == "accentBright" then
             panelBackground.ImageColor3 = nextColor
         end
