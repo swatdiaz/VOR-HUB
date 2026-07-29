@@ -873,7 +873,7 @@ return function(context)
             ZIndex = 1201,
         }, modal)
         corner(panel, 16)
-        stroke(panel, COLORS.borderBright, 0.10, 1.4)
+        stroke(panel, COLORS.borderBright, 1.4, 0.10)
 
         local pickerTitle = label(panel, "COLOR STUDIO  /  " .. tostring(control.Name or "COLOR"), UDim2.new(1, -64, 0, 42), UDim2.fromOffset(18, 8), COLORS.text, 12, Enum.Font.GothamBold)
         pickerTitle.ZIndex = 1203
@@ -901,7 +901,7 @@ return function(context)
             ZIndex = 1202,
         }, panel)
         corner(saturationValue, 10)
-        stroke(saturationValue, COLORS.border, 0.25, 1)
+        stroke(saturationValue, COLORS.border, 1, 0.25)
         local saturationGradient = create("UIGradient", {
             Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromHSV(hue, 1, 1)),
         }, saturationValue)
@@ -938,6 +938,7 @@ return function(context)
         stroke(svCursor, COLORS.white, 0, 2)
 
         local hueBar = create("TextButton", {
+            Name = "HueBar",
             Position = UDim2.fromOffset(18, 256),
             Size = UDim2.fromOffset(324, 18),
             BackgroundColor3 = COLORS.white,
@@ -967,7 +968,7 @@ return function(context)
             ZIndex = 1206,
         }, hueBar)
         corner(hueCursor, 3)
-        stroke(hueCursor, COLORS.black, 0.15, 1)
+        stroke(hueCursor, COLORS.black, 1, 0.15)
 
         local preview = create("Frame", {
             Position = UDim2.fromOffset(18, 292),
@@ -977,8 +978,9 @@ return function(context)
             ZIndex = 1203,
         }, panel)
         corner(preview, 9)
-        stroke(preview, COLORS.borderBright, 0.2, 1)
+        stroke(preview, COLORS.borderBright, 1, 0.2)
         local hexInput = create("TextBox", {
+            Name = "HexColor",
             Position = UDim2.fromOffset(76, 292),
             Size = UDim2.fromOffset(126, 38),
             BackgroundColor3 = COLORS.control,
@@ -992,7 +994,7 @@ return function(context)
             ZIndex = 1203,
         }, panel)
         corner(hexInput, 9)
-        stroke(hexInput, COLORS.border, 0.35, 1)
+        stroke(hexInput, COLORS.border, 1, 0.35)
 
         local cancel = create("TextButton", {
             Position = UDim2.fromOffset(212, 292),
