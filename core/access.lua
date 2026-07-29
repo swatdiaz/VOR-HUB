@@ -136,13 +136,12 @@ return function(context)
         Gui:SetAttribute("AccessGateState", "Locked")
         Gui:SetAttribute("DiscordInviteURL", SETTINGS.DiscordInviteURL)
 
-        local gate = create("CanvasGroup", {
+        local gate = create("Frame", {
             Name = "VORAccessGate",
             Active = true,
             Size = UDim2.fromScale(1, 1),
             BackgroundColor3 = Color3.fromRGB(5, 2, 10),
             BackgroundTransparency = 0.44,
-            GroupTransparency = 1,
             ZIndex = 900,
         }, Gui)
         create("UIGradient", {
@@ -268,7 +267,7 @@ return function(context)
             Gui:SetAttribute("AccessGateState", "Granted")
             status.Text = "Access granted. Entering the void..."
             status.TextColor3 = COLORS.success
-            tween(gate, 0.28, {GroupTransparency = 1})
+            tween(gate, 0.28, {BackgroundTransparency = 1})
             tween(cardScale, 0.28, {Scale = accessScale * 1.05})
             task.delay(0.3, function()
                 if gate.Parent then
@@ -296,7 +295,6 @@ return function(context)
             end
         end))
 
-        tween(gate, 0.28, {GroupTransparency = 0})
         tween(cardScale, 0.36, {Scale = accessScale})
         task.delay(0.34, function()
             if keyBox.Parent then
