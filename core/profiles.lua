@@ -291,6 +291,39 @@ return function(context)
                 self:SetPanelBackground(value)
             end,
         })
+        appearance:AddToggle({
+            Name = "Animated Background Shine",
+            Description = "Rotates the reflected light from the VOR logo across the selected artwork",
+            Flag = "vor_background_motion",
+            Default = SETTINGS.BackgroundMotionEnabled,
+            Callback = function(value)
+                self:SetBackgroundMotion(value)
+            end,
+        })
+        appearance:AddSlider({
+            Name = "Background Shine Speed",
+            Description = "Controls how quickly the reflected band circles the background",
+            Flag = "vor_background_motion_speed",
+            Min = 8,
+            Max = 100,
+            Default = SETTINGS.BackgroundMotionSpeed,
+            Step = 1,
+            Callback = function(value)
+                self:SetBackgroundMotionSpeed(value)
+            end,
+        })
+        appearance:AddSlider({
+            Name = "Background Shine Strength",
+            Description = "Controls how bright the moving reflection appears over the picture",
+            Flag = "vor_background_motion_strength",
+            Min = 0.06,
+            Max = 0.42,
+            Default = SETTINGS.BackgroundMotionStrength,
+            Step = 0.01,
+            Callback = function(value)
+                self:SetBackgroundMotionStrength(value)
+            end,
+        })
         appearance:AddDropdown({
             Name = "VOR Accent Color",
             Description = "Recolors active controls, borders, highlights, and navigation",

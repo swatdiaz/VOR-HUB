@@ -221,6 +221,39 @@ return function(context)
         ZIndex = 2,
     }, main)
 
+    -- The reference icon does not rotate the logo itself. A narrow reflected
+    -- highlight circles across it. Reuse that treatment over the selected
+    -- artwork so the background feels alive without making the text seasick.
+    local backgroundSweep = create("Frame", {
+        Name = "PanelBackgroundSweep",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromScale(1.42, 1.42),
+        BackgroundColor3 = COLORS.white,
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+    }, main)
+    local backgroundSweepGradient = create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, COLORS.accentDark),
+            ColorSequenceKeypoint.new(0.46, COLORS.accentBright),
+            ColorSequenceKeypoint.new(0.50, COLORS.white),
+            ColorSequenceKeypoint.new(0.54, COLORS.accentBright),
+            ColorSequenceKeypoint.new(1, COLORS.accentDark),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.35, 1),
+            NumberSequenceKeypoint.new(0.47, 0.92),
+            NumberSequenceKeypoint.new(0.50, 0.78),
+            NumberSequenceKeypoint.new(0.53, 0.92),
+            NumberSequenceKeypoint.new(0.65, 1),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Rotation = 0,
+    }, backgroundSweep)
+
     local scaleObject = create("UIScale", {Scale = SETTINGS.UIScale or 1}, main)
 
     local content = create("Frame", {
@@ -572,6 +605,8 @@ return function(context)
         Gui = gui,
         Main = main,
         PanelBackground = panelBackground,
+        BackgroundSweep = backgroundSweep,
+        BackgroundSweepGradient = backgroundSweepGradient,
         Rail = rail,
         Content = content,
         PagesHost = pagesHost,
@@ -594,6 +629,9 @@ return function(context)
         Destroyed = false,
         HubTransparency = 0.24,
         ThemeImageTransparency = 0.68,
+        BackgroundMotionEnabled = SETTINGS.BackgroundMotionEnabled ~= false,
+        BackgroundMotionSpeed = tonumber(SETTINGS.BackgroundMotionSpeed) or 65,
+        BackgroundMotionStrength = tonumber(SETTINGS.BackgroundMotionStrength) or 0.22,
         TransparencyBases = setmetatable({}, {__mode = "k"}),
     }
 
@@ -2263,6 +2301,45 @@ return function(context)
         gui:SetAttribute("VORPanelBackground", value)
     end
 
+    function Window:RefreshBackgroundMotion()
+        local strength = math.clamp(tonumber(self.BackgroundMotionStrength) or 0.22, 0.06, 0.42)
+        local shoulder = math.clamp(1 - (strength * 0.38), 0.80, 0.98)
+        local center = math.clamp(1 - strength, 0.58, 0.94)
+        backgroundSweepGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.35, 1),
+            NumberSequenceKeypoint.new(0.47, shoulder),
+            NumberSequenceKeypoint.new(0.50, center),
+            NumberSequenceKeypoint.new(0.53, shoulder),
+            NumberSequenceKeypoint.new(0.65, 1),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        backgroundSweep.Visible = self.BackgroundMotionEnabled
+            and not SETTINGS.ReducedMotion
+            and SETTINGS.ThemeIntensity ~= "Performance"
+        gui:SetAttribute("VORBackgroundMotion", self.BackgroundMotionEnabled)
+        gui:SetAttribute("VORBackgroundMotionSpeed", self.BackgroundMotionSpeed)
+        gui:SetAttribute("VORBackgroundMotionStrength", strength)
+    end
+
+    function Window:SetBackgroundMotion(value)
+        self.BackgroundMotionEnabled = value == true
+        SETTINGS.BackgroundMotionEnabled = self.BackgroundMotionEnabled
+        self:RefreshBackgroundMotion()
+    end
+
+    function Window:SetBackgroundMotionSpeed(value)
+        self.BackgroundMotionSpeed = math.clamp(tonumber(value) or 65, 8, 100)
+        SETTINGS.BackgroundMotionSpeed = self.BackgroundMotionSpeed
+        self:RefreshBackgroundMotion()
+    end
+
+    function Window:SetBackgroundMotionStrength(value)
+        self.BackgroundMotionStrength = math.clamp(tonumber(value) or 0.22, 0.06, 0.42)
+        SETTINGS.BackgroundMotionStrength = self.BackgroundMotionStrength
+        self:RefreshBackgroundMotion()
+    end
+
     function Window:SetPaletteColor(key, nextColor)
         key = tostring(key or "")
         if typeof(nextColor) ~= "Color3" or typeof(COLORS[key]) ~= "Color3" then
@@ -2370,11 +2447,13 @@ return function(context)
             mainStroke.Transparency = 0.38
         end
         self:SetHubTransparency(self.HubTransparency)
+        self:RefreshBackgroundMotion()
         gui:SetAttribute("VORThemeIntensity", value)
     end
 
     function Window:SetReducedMotion(value)
         SETTINGS.ReducedMotion = value == true
+        self:RefreshBackgroundMotion()
         gui:SetAttribute("VORReducedMotion", SETTINGS.ReducedMotion)
     end
 
@@ -2425,8 +2504,12 @@ return function(context)
             and COLORS.warning:Lerp(COLORS.white, alpha * 0.25)
             or COLORS.accent:Lerp(COLORS.accentBright, alpha * 0.55)
         minimized.Rotation = (phase * 9) % 360
+        if Window.BackgroundMotionEnabled and SETTINGS.ThemeIntensity ~= "Performance" then
+            backgroundSweepGradient.Rotation = ((os.clock() - pulseStarted) * Window.BackgroundMotionSpeed) % 360
+        end
     end))
 
+    Window:RefreshBackgroundMotion()
     Window:UpdateScale()
     Window:SetModuleIdentity(SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported", SETTINGS.Version, true)
     Window:SetContextStatus("Ready  •  Waiting for module")
