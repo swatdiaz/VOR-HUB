@@ -5020,14 +5020,39 @@ return function(context)
                 state.FarmAnimateScript = animate
                 state.FarmAnimateWasDisabled = animate.Disabled
             end
-            animate.Disabled = true
+            -- Solix-style calm travel: keep Roblox's animator alive so the rig
+            -- retains its natural idle pose, but remove movement/attack tracks
+            -- that flicker when CFrame tweening reports a fake Running state.
+            animate.Disabled = false
             local body = humanoid()
             local animator = body and body:FindFirstChildOfClass("Animator")
+            if body then
+                body:Move(Vector3.zero, false)
+            end
             if animator then
+                local idleAnimationIds = {}
+                local idleFolder = animate:FindFirstChild("idle")
+                if idleFolder then
+                    for _, descendant in ipairs(idleFolder:GetDescendants()) do
+                        if descendant:IsA("Animation") and descendant.AnimationId ~= "" then
+                            idleAnimationIds[descendant.AnimationId] = true
+                        end
+                    end
+                end
                 for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
-                    pcall(function()
-                        animationTrack:Stop(0)
-                    end)
+                    local trackName = string.lower(tostring(animationTrack.Name))
+                    local animation = animationTrack.Animation
+                    local animationId = animation and animation.AnimationId or ""
+                    local isIdle = idleAnimationIds[animationId] == true
+                        or animationTrack.Priority == Enum.AnimationPriority.Idle
+                        or trackName == "idle"
+                        or trackName == "animation1"
+                        or trackName == "animation2"
+                    if not isIdle then
+                        pcall(function()
+                            animationTrack:Stop(0.05)
+                        end)
+                    end
                 end
             end
             gui:SetAttribute("BloxFarmCalmPose", true)
