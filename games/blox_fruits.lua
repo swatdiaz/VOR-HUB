@@ -85,7 +85,7 @@ return function(context)
             HitRange = 38,
             SwordTargetLimit = 12,
             FruitTargetLimit = 3,
-            FruitCadence = 0.055,
+            FruitCadence = 0.075,
         }
         local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.28
         local NATIVE_FRUIT_SETTLE_TIME = 0.24
@@ -1704,26 +1704,26 @@ return function(context)
             silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
 
             if silentRemote then
-                -- Kitsune-style fruits expose the damage request directly. Fire
-                -- it from the Backpack so the Sword stays visibly equipped and
-                -- neither the player nor the NPC needs any CFrame manipulation.
+                -- Solix-compatible native Fruit M1: fire the Backpack remote
+                -- with the full 3D direction and combo 1. Flattening Y made
+                -- attacks from above miss, cycling 1-5 introduced the long
+                -- fifth-hit cooldown, and a third argument changed the native
+                -- request shape. The equipped Sword never leaves Character.
                 local comboKey = string.lower(tool.Name)
-                local combo = ((state.NativeFruitCombos[comboKey] or 0) % 5) + 1
-                local flatDirection = (enemyRoot.Position - root.Position) * Vector3.new(1, 0, 1)
-                if flatDirection.Magnitude < 0.05 then
-                    flatDirection = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+                local direction = enemyRoot.Position - root.Position
+                if direction.Magnitude < 0.05 then
+                    direction = root.CFrame.LookVector
                 end
-                flatDirection = flatDirection.Unit
                 local fired, fireError = pcall(function()
-                    silentRemote:FireServer(flatDirection, combo, false)
+                    silentRemote:FireServer(direction.Unit, 1)
                 end)
                 if not fired then
                     return false, fireError
                 end
-                state.NativeFruitCombos[comboKey] = combo
-                local nativeCooldown = (combo < 5 and 0.3 or 1)
+                state.NativeFruitCombos[comboKey] = 1
+                local nativeCooldown = 0.3
                     - math.max(tonumber(state.FruitM1CooldownReduction) or 0, 0)
-                state.FruitM1ReadyAt = os.clock() + math.max(0.02, nativeCooldown)
+                state.FruitM1ReadyAt = os.clock() + math.max(0.075, nativeCooldown)
                 state.AuraStage = "silent-fruit-m1-sent"
                 return true
             end
@@ -1809,18 +1809,17 @@ return function(context)
             silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
             if silentRemote then
                 local comboKey = string.lower(tool.Name)
-                local combo = ((state.NativeFruitCombos[comboKey] or 0) % 5) + 1
                 local sent = 0
                 local closestDistance = math.huge
                 for _, target in ipairs(targets) do
                     local enemyRoot = modelRoot(target.Enemy)
                     if enemyRoot and modelAlive(target.Enemy) then
-                        local direction = (enemyRoot.Position - root.Position) * Vector3.new(1, 0, 1)
+                        local direction = enemyRoot.Position - root.Position
                         if direction.Magnitude < 0.05 then
-                            direction = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+                            direction = root.CFrame.LookVector
                         end
                         if direction.Magnitude >= 0.05 then
-                            silentRemote:FireServer(direction.Unit, combo)
+                            silentRemote:FireServer(direction.Unit, 1)
                             sent += 1
                             closestDistance = math.min(closestDistance, target.Distance)
                         end
@@ -1829,7 +1828,7 @@ return function(context)
                 if sent == 0 then
                     return false, "the fruit M1 targets left Aura range"
                 end
-                state.NativeFruitCombos[comboKey] = combo
+                state.NativeFruitCombos[comboKey] = 1
                 state.AuraFruitLastDistance = closestDistance
                 state.AuraFruitInRange = true
                 state.AuraStage = sent > 1 and "double-fruit-multi-sent" or "double-fruit-sent"
