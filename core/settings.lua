@@ -96,7 +96,7 @@ return function(runtime)
         IntroMusicEnabled = true,
         IntroMusicSoundId = "rbxassetid://9045935780",
         IntroMusicVolume = 0.52,
-        IntroParticleCount = 18,
+        IntroParticleCount = 12,
         InterfaceSoundsEnabled = true,
         ToggleClickSoundId = "rbxasset://sounds/volume_slider.ogg",
         ToggleClickVolume = 0.24,
