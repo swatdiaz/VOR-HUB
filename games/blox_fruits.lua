@@ -2583,7 +2583,19 @@ return function(context)
                 return
             end
 
-            local enemy, distance = nearestEnemy(quest.EnemyName, false)
+            -- Keep one living target until it dies. Re-running nearestEnemy on
+            -- every farm tick made equally-close NPCs trade places as the
+            -- winner, so the character visibly ping-ponged while attacking.
+            local enemy = state.ActiveFarmTarget
+            local enemyRoot = modelRoot(enemy)
+            if not modelAlive(enemy) or not enemyMatches(enemy, quest.EnemyName) or not enemyRoot then
+                enemy = nil
+            end
+            local activeRoot = rootPart()
+            local distance = enemy and activeRoot and (enemyRoot.Position - activeRoot.Position).Magnitude or nil
+            if not enemy then
+                enemy, distance = nearestEnemy(quest.EnemyName, false)
+            end
             if enemy then
                 state.ActiveFarmTarget = enemy
                 state.ActiveFarmVerticalLock = false
@@ -2663,7 +2675,16 @@ return function(context)
                 return
             end
             state.CurrentEnemyName = state.SelectedBoss
-            local enemy, distance = nearestEnemy(state.SelectedBoss, false)
+            local enemy = state.ActiveFarmTarget
+            local enemyRoot = modelRoot(enemy)
+            if not modelAlive(enemy) or not enemyMatches(enemy, state.SelectedBoss) or not enemyRoot then
+                enemy = nil
+            end
+            local activeRoot = rootPart()
+            local distance = enemy and activeRoot and (enemyRoot.Position - activeRoot.Position).Magnitude or nil
+            if not enemy then
+                enemy, distance = nearestEnemy(state.SelectedBoss, false)
+            end
             if enemy then
                 state.ActiveFarmTarget = enemy
                 state.ActiveFarmVerticalLock = true
@@ -2987,7 +3008,17 @@ return function(context)
                 )
                 return
             end
-            local enemy, distance = RaidRuntime.NearestEnemy(island)
+            local enemy = state.ActiveFarmTarget
+            local enemyRoot = modelRoot(enemy)
+            if not modelAlive(enemy) or not enemyRoot
+                or (enemyRoot.Position - island.Part.Position).Magnitude > 2500 then
+                enemy = nil
+            end
+            local activeRoot = rootPart()
+            local distance = enemy and activeRoot and (enemyRoot.Position - activeRoot.Position).Magnitude or nil
+            if not enemy then
+                enemy, distance = RaidRuntime.NearestEnemy(island)
+            end
             if enemy then
                 state.ActiveFarmTarget = enemy
                 state.ActiveFarmVerticalLock = true
