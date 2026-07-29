@@ -6628,7 +6628,7 @@ return function(context)
             Color3.fromRGB(31, 7, 54),
             Color3.fromRGB(205, 77, 255),
         }
-        
+
         local function collectKitsuneTools()
             local tools = {}
             local seen = setmetatable({}, {__mode = "k"})
@@ -6649,7 +6649,7 @@ return function(context)
             scanTools(LocalPlayer.Character)
             return tools
         end
-        
+
         local function collectKitsuneShiftedFolders(kitsuneTools)
             local found = {}
             local seen = setmetatable({}, {__mode = "k"})
@@ -6660,14 +6660,14 @@ return function(context)
                     table.insert(found, shifted)
                 end
             end
-        
+
             addColorFolder(LocalPlayer:FindFirstChild("KitsuneFruitVFXColor"))
             for _, tool in ipairs(kitsuneTools) do
                 addColorFolder(tool:FindFirstChild("VFXColor"))
             end
             return found
         end
-        
+
         local function enableGalaxyTool(tool)
             local marker = tool:FindFirstChild("IsGalaxy")
             if marker and not marker:IsA("BoolValue") then
@@ -6686,14 +6686,14 @@ return function(context)
                 marker.Value = true
             end
         end
-        
+
         local function applyGalaxyTransformation(tool)
             local transformedObject = tool:FindFirstChild("TransformedRigObject")
             local rig = transformedObject and transformedObject:IsA("ObjectValue") and transformedObject.Value or nil
             if not rig or not rig.Parent or voidKitsuneState.GalaxyRigs[rig] then
                 return
             end
-        
+
             local visualNames = {"Body", "Accessory", "Mouth", "Eyes", "Neon"}
             local record = {
                 Parts = {},
@@ -6715,7 +6715,7 @@ return function(context)
                     }
                 end
             end
-        
+
             local compatible = false
             for _, name in ipairs(visualNames) do
                 local part = rig:FindFirstChild(name)
@@ -6723,7 +6723,7 @@ return function(context)
                     compatible = true
                 end
             end
-        
+
             if compatible then
                 record.GalaxyApplied = pcall(function()
                     local SkinUtil = require(ReplicatedStorage.Modules.SkinUtil)
@@ -6732,7 +6732,7 @@ return function(context)
                     })
                 end)
             end
-        
+
             for part in pairs(record.Parts) do
                 if part and part.Parent then
                     local isArmor = string.find(string.lower(part.Name), "armor", 1, true) ~= nil
@@ -6751,12 +6751,12 @@ return function(context)
                     end
                 end
             end
-        
+
             local glow = Instance.new("Folder")
             glow.Name = "VORVoidGalaxyGlow"
             glow.Parent = rig
             record.Glow = glow
-        
+
             local highlight = Instance.new("Highlight")
             highlight.Name = "VORVoidOutline"
             highlight.Adornee = rig
@@ -6766,7 +6766,7 @@ return function(context)
             highlight.OutlineTransparency = 0.05
             highlight.DepthMode = Enum.HighlightDepthMode.Occluded
             highlight.Parent = glow
-        
+
             local root = rig:FindFirstChild("RootPart", true) or rig:FindFirstChildWhichIsA("BasePart", true)
             if root and root:IsA("BasePart") then
                 local anchor = Instance.new("Part")
@@ -6784,7 +6784,7 @@ return function(context)
                 weld.Part0 = root
                 weld.Part1 = anchor
                 weld.Parent = anchor
-        
+
                 local attachment = Instance.new("Attachment")
                 attachment.Name = "VORVoidEmitter"
                 attachment.Parent = anchor
@@ -6805,7 +6805,7 @@ return function(context)
                     emitter.Enabled = true
                     emitter.Parent = attachment
                 end
-        
+
                 local light = Instance.new("PointLight")
                 light.Name = "VORVoidLight"
                 light.Color = VOID_KITSUNE_COLORS[1]
@@ -6814,14 +6814,14 @@ return function(context)
                 light.Shadows = false
                 light.Parent = anchor
             end
-        
+
             voidKitsuneState.GalaxyRigs[rig] = record
             gui:SetAttribute(
                 "BloxVoidKitsuneGalaxyRigStatus",
                 record.GalaxyApplied and "Galaxy model + void glow active" or "Void glow active on standard Kitsune rig"
             )
         end
-        
+
         local function applyVoidKitsuneColors()
             local kitsuneTools = collectKitsuneTools()
             for _, shifted in ipairs(collectKitsuneShiftedFolders(kitsuneTools)) do
@@ -6845,7 +6845,7 @@ return function(context)
             end
             gui:SetAttribute("BloxVoidKitsuneTheme", true)
         end
-        
+
         local function restoreKitsuneColors()
             for shifted, originals in pairs(voidKitsuneState.Originals) do
                 if shifted and shifted.Parent then
@@ -6890,7 +6890,7 @@ return function(context)
             gui:SetAttribute("BloxVoidKitsuneTheme", false)
             gui:SetAttribute("BloxVoidKitsuneGalaxyRigStatus", "Off")
         end
-        
+
         local function restoreIdentityMask()
             for humanoid, original in pairs(identityMaskState.Humanoids) do
                 if humanoid and humanoid.Parent then
@@ -6907,7 +6907,7 @@ return function(context)
             identityMaskState.Labels = setmetatable({}, {__mode = "k"})
             gui:SetAttribute("BloxIdentityMask", "Original")
         end
-        
+
         local function restoreKitsuneFloat()
             for motor, originalTransform in pairs(kitsuneFloatState.Motors) do
                 if motor and motor.Parent then
@@ -6918,7 +6918,7 @@ return function(context)
             gui:SetAttribute("BloxVoidKitsuneFloat", false)
             gui:SetAttribute("BloxVoidKitsuneFloatStatus", "Off")
         end
-        
+
         local function animateKitsuneFloat()
             if not kitsuneFloatState.Enabled then
                 return
@@ -6939,7 +6939,7 @@ return function(context)
                     end
                 end
             end
-        
+
             local elapsed = os.clock() - kitsuneFloatState.StartedAt
             local height = 0.85 + math.sin(elapsed * 2.15) * 0.24
             local pitch = math.rad(math.sin(elapsed * 1.45) * 1.8)
@@ -6956,7 +6956,7 @@ return function(context)
                 foundMotor and "Floating transformed rig" or "Waiting for Kitsune transformation"
             )
         end
-        
+
         local function setVoidVisualProperty(object, property, value)
             local original = voidDarkBladeState.Originals[object]
             if not original then
@@ -6976,7 +6976,7 @@ return function(context)
                 object[property] = value
             end)
         end
-        
+
         local function recolorVoidVisual(object)
             local sequence = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, VOID_KITSUNE_COLORS[1]),
@@ -7020,7 +7020,7 @@ return function(context)
                 setVoidVisualProperty(object, "SparkleColor", VOID_KITSUNE_COLORS[3])
             end
         end
-        
+
         local function recolorMidnightBladeEffects()
             local fx = ReplicatedStorage:FindFirstChild("FX")
             for _, root in ipairs({
@@ -7035,7 +7035,7 @@ return function(context)
                 end
             end
         end
-        
+
         local function midnightBladeVisualModels()
             local found = {}
             local character = LocalPlayer.Character
@@ -7050,7 +7050,7 @@ return function(context)
             end
             return found
         end
-        
+
         local function applyVoidDarkBladeModel(weaponModel)
             if voidDarkBladeState.WeaponModels[weaponModel] then
                 return
@@ -7068,7 +7068,7 @@ return function(context)
             if not right or not handle or not template then
                 return
             end
-        
+
             local oldTest = right:FindFirstChild("VORVoidDarkBlade")
             if oldTest then
                 oldTest:Destroy()
@@ -7083,7 +7083,7 @@ return function(context)
                     child.Transparency = 1
                 end
             end
-        
+
             local clone = template:Clone()
             clone.Name = "VORVoidDarkBladeV3"
             clone:SetAttribute("VORCosmetic", true)
@@ -7135,7 +7135,7 @@ return function(context)
             highlight.OutlineTransparency = 0.05
             highlight.DepthMode = Enum.HighlightDepthMode.Occluded
             highlight.Parent = clone
-        
+
             local auraModel = right:FindFirstChild("AuraModel")
             if auraModel then
                 for _, descendant in ipairs(auraModel:GetDescendants()) do
@@ -7145,7 +7145,7 @@ return function(context)
             voidDarkBladeState.WeaponModels[weaponModel] = record
             gui:SetAttribute("BloxVoidDarkBladeStatus", "Dark Blade V3 model + Midnight abilities active")
         end
-        
+
         local function applyVoidDarkBlade()
             if not voidDarkBladeState.Enabled then
                 return
@@ -7155,7 +7155,7 @@ return function(context)
             end
             gui:SetAttribute("BloxVoidDarkBlade", true)
         end
-        
+
         local function restoreVoidDarkBlade()
             for weaponModel, record in pairs(voidDarkBladeState.WeaponModels) do
                 if record.Clone and record.Clone.Parent then
@@ -7183,7 +7183,7 @@ return function(context)
             gui:SetAttribute("BloxVoidDarkBlade", false)
             gui:SetAttribute("BloxVoidDarkBladeStatus", "Off")
         end
-        
+
         local function applyIdentityMask()
             if identityMaskState.Mode == "Original" then
                 return
@@ -7205,7 +7205,7 @@ return function(context)
                     humanoid.NameDisplayDistance = original.NameDisplayDistance
                 end
             end
-        
+
             if character then
                 local username = string.lower(LocalPlayer.Name)
                 local displayName = string.lower(LocalPlayer.DisplayName)
@@ -7225,7 +7225,7 @@ return function(context)
             end
             gui:SetAttribute("BloxIdentityMask", identityMaskState.Mode)
         end
-        
+
         CosmeticsSection:AddLabel("Uses Kitsune's native three-channel VFX system plus its Galaxy mutation hooks, so the model, tails, and local abilities stay synchronized.")
         CosmeticsSection:AddToggle({
             Name = "Void Kitsune Theme",
@@ -7281,11 +7281,11 @@ return function(context)
                 end
             end,
         })
-        
+
         track(RunService.RenderStepped:Connect(function()
             animateKitsuneFloat()
         end))
-        
+
         track(RunService.Heartbeat:Connect(function(deltaTime)
             if voidKitsuneState.Enabled then
                 voidKitsuneState.Accumulator = voidKitsuneState.Accumulator + deltaTime

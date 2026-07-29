@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "__VOR_MODULE_COMMIT__"
+local COMMIT = "374df70b2d251ec1cad547eaad3df16a9c773534"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function sourceUrl(path)
@@ -55,7 +55,7 @@ local function emergencyError(path, message)
     label.Parent = gui
 end
 
-assert(COMMIT ~= "__VOR_MODULE_COMMIT__", "VOR Hub loader has not been pinned to an audited module commit")
+assert(COMMIT:match("^[0-9a-f]+$") and #COMMIT == 40, "VOR Hub loader has no valid audited module commit")
 
 local runtime = {
     Commit = COMMIT,
