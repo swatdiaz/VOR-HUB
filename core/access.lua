@@ -8,6 +8,13 @@ return function(context)
     local COLORS = SETTINGS.COLORS
     local TweenService = Utilities.Services.TweenService
     local HttpService = Utilities.Services.HttpService
+    local function optionalFont(name, fallback)
+        local ok, value = pcall(function()
+            return Enum.Font[name]
+        end)
+        return ok and value or fallback
+    end
+    local readableFont = optionalFont("Nunito", Enum.Font.GothamMedium)
 
     local function create(className, properties, parent)
         local object = Instance.new(className)
@@ -43,6 +50,12 @@ return function(context)
     end
 
     local function label(parent, text, size, position, color, textSize, font)
+        if font == Enum.Font.Gotham
+            or font == Enum.Font.GothamMedium
+            or font == Enum.Font.GothamSemibold
+            or font == Enum.Font.GothamBold then
+            font = readableFont
+        end
         return create("TextLabel", {
             BackgroundTransparency = 1,
             Text = tostring(text or ""),
@@ -127,8 +140,8 @@ return function(context)
             Name = "VORAccessGate",
             Active = true,
             Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = Color3.fromRGB(3, 1, 7),
-            BackgroundTransparency = 0.06,
+            BackgroundColor3 = Color3.fromRGB(5, 2, 10),
+            BackgroundTransparency = 0.44,
             GroupTransparency = 1,
             ZIndex = 900,
         }, Gui)
@@ -145,20 +158,22 @@ return function(context)
             Name = "AccessCard",
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.fromOffset(530, 360),
-            BackgroundColor3 = COLORS.surface,
-            BackgroundTransparency = 0.04,
+            Size = UDim2.fromOffset(650, 450),
+            BackgroundColor3 = COLORS.surface:Lerp(COLORS.text, 0.08),
+            BackgroundTransparency = 0,
             BorderSizePixel = 0,
             ZIndex = 901,
         }, gate)
-        corner(card, 18)
-        local cardStroke = stroke(card, COLORS.accent, 0.08, 1.5)
-        local cardScale = create("UIScale", {Scale = 0.9}, card)
+        corner(card, 20)
+        local cardStroke = stroke(card, COLORS.accentBright, 0, 2)
+        local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+        local accessScale = math.clamp(math.min((viewportSize.X - 24) / 650, (viewportSize.Y - 24) / 450), 0.68, 1)
+        local cardScale = create("UIScale", {Scale = accessScale * 0.94}, card)
 
         local crest = create("ImageLabel", {
             Name = "AccessBrandLogo",
-            Size = UDim2.fromOffset(68, 68),
-            Position = UDim2.new(0.5, -34, 0, 20),
+            Size = UDim2.fromOffset(78, 78),
+            Position = UDim2.new(0.5, -39, 0, 20),
             BackgroundColor3 = COLORS.surfaceRaised,
             BackgroundTransparency = 0.05,
             BorderSizePixel = 0,
@@ -166,66 +181,69 @@ return function(context)
             ScaleType = Enum.ScaleType.Fit,
             ZIndex = 904,
         }, card)
-        corner(crest, 17)
-        stroke(crest, COLORS.accentBright, 0.2, 1)
+        corner(crest, 19)
+        stroke(crest, COLORS.accentBright, 0, 1.5)
 
-        local title = label(card, "VOR HUB ACCESS", UDim2.new(1, -48, 0, 34), UDim2.fromOffset(24, 96), COLORS.text, 25, Enum.Font.GothamBold)
+        local title = label(card, "VOR HUB ACCESS", UDim2.new(1, -48, 0, 38), UDim2.fromOffset(24, 107), COLORS.text, 30, Enum.Font.GothamBold)
         title.TextXAlignment = Enum.TextXAlignment.Center
-        local description = label(card, "Join Discord for the current key, supported games, updates, and support.", UDim2.new(1, -70, 0, 38), UDim2.fromOffset(35, 128), COLORS.muted, 11, Enum.Font.GothamMedium)
+        local description = label(card, "Join Discord for the current key, supported games, updates, and support.", UDim2.new(1, -80, 0, 42), UDim2.fromOffset(40, 148), COLORS.muted, 14, Enum.Font.GothamMedium)
         description.TextWrapped = true
+        local steps = label(card, "1  COPY DISCORD     •     2  PASTE KEY     •     3  UNLOCK", UDim2.new(1, -80, 0, 24), UDim2.fromOffset(40, 187), COLORS.accentBright, 12, Enum.Font.GothamBold)
+        steps.TextXAlignment = Enum.TextXAlignment.Center
 
         local keyBox = create("TextBox", {
             Name = "DiscordKeyInput",
-            Position = UDim2.fromOffset(40, 178),
-            Size = UDim2.new(1, -80, 0, 46),
-            BackgroundColor3 = COLORS.control,
+            Position = UDim2.fromOffset(42, 220),
+            Size = UDim2.new(1, -84, 0, 56),
+            BackgroundColor3 = COLORS.control:Lerp(COLORS.text, 0.06),
             BorderSizePixel = 0,
             ClearTextOnFocus = false,
-            Font = Enum.Font.GothamSemibold,
+            Font = readableFont,
             PlaceholderText = "Enter the key from Discord",
-            PlaceholderColor3 = COLORS.dim,
+            PlaceholderColor3 = COLORS.muted,
             Text = "",
             TextColor3 = COLORS.text,
-            TextSize = 13,
+            TextSize = 17,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 904,
         }, card)
-        corner(keyBox, 10)
-        stroke(keyBox, COLORS.borderBright, 0.28, 1)
-        create("UIPadding", {PaddingLeft = UDim.new(0, 13), PaddingRight = UDim.new(0, 13)}, keyBox)
+        corner(keyBox, 11)
+        stroke(keyBox, COLORS.accentBright, 0.15, 1.5)
+        create("UIPadding", {PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16)}, keyBox)
 
-        local status = label(card, "The key itself is never saved—only its one-way hash.", UDim2.new(1, -80, 0, 24), UDim2.fromOffset(40, 229), COLORS.dim, 10, Enum.Font.GothamMedium)
+        local status = label(card, "Your key is never saved; only its one-way hash is remembered.", UDim2.new(1, -84, 0, 28), UDim2.fromOffset(42, 282), COLORS.muted, 12, Enum.Font.GothamMedium)
 
         local unlock = create("TextButton", {
-            Position = UDim2.fromOffset(40, 266),
-            Size = UDim2.new(0.57, -6, 0, 50),
+            Position = UDim2.fromOffset(42, 322),
+            Size = UDim2.new(0.60, -50, 0, 58),
             BackgroundColor3 = COLORS.accent,
             BorderSizePixel = 0,
             AutoButtonColor = false,
             Text = "UNLOCK VOR HUB",
             TextColor3 = COLORS.white,
-            TextSize = 12,
-            Font = Enum.Font.GothamBold,
+            TextSize = 15,
+            Font = readableFont,
             ZIndex = 904,
         }, card)
         corner(unlock, 10)
 
         local discord = create("TextButton", {
-            Position = UDim2.new(0.57, 42, 0, 266),
-            Size = UDim2.new(0.43, -82, 0, 50),
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, -42, 0, 322),
+            Size = UDim2.new(0.40, -2, 0, 58),
             BackgroundColor3 = COLORS.surfaceRaised,
             BorderSizePixel = 0,
             AutoButtonColor = false,
             Text = "COPY DISCORD",
             TextColor3 = COLORS.text,
-            TextSize = 12,
-            Font = Enum.Font.GothamBold,
+            TextSize = 15,
+            Font = readableFont,
             ZIndex = 904,
         }, card)
         corner(discord, 10)
         stroke(discord, COLORS.borderBright, 0.25, 1)
 
-        local footer = label(card, SETTINGS.Discord .. "  •  Right Ctrl toggles the hub", UDim2.new(1, -50, 0, 22), UDim2.fromOffset(25, 328), COLORS.dim, 9, Enum.Font.GothamMedium)
+        local footer = label(card, SETTINGS.Discord .. "  •  Right Ctrl toggles the hub", UDim2.new(1, -60, 0, 26), UDim2.fromOffset(30, 405), COLORS.muted, 11, Enum.Font.GothamMedium)
         footer.TextXAlignment = Enum.TextXAlignment.Center
 
         local unlocking = false
@@ -251,7 +269,7 @@ return function(context)
             status.Text = "Access granted. Entering the void..."
             status.TextColor3 = COLORS.success
             tween(gate, 0.28, {GroupTransparency = 1})
-            tween(cardScale, 0.28, {Scale = 1.08})
+            tween(cardScale, 0.28, {Scale = accessScale * 1.05})
             task.delay(0.3, function()
                 if gate.Parent then
                     gate:Destroy()
@@ -279,7 +297,7 @@ return function(context)
         end))
 
         tween(gate, 0.28, {GroupTransparency = 0})
-        tween(cardScale, 0.36, {Scale = 1})
+        tween(cardScale, 0.36, {Scale = accessScale})
         task.delay(0.34, function()
             if keyBox.Parent then
                 keyBox:CaptureFocus()

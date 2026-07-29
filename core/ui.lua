@@ -302,7 +302,7 @@ return function(context)
         UDim2.new(0, 220, 0, 22),
         UDim2.fromOffset(20, 10),
         COLORS.muted,
-        12,
+        13,
         Enum.Font.GothamMedium
     )
     identity.Name = "ModuleIdentity"
@@ -313,7 +313,7 @@ return function(context)
         UDim2.new(0, 220, 0, 24),
         UDim2.fromOffset(20, 31),
         COLORS.text,
-        15,
+        16,
         Enum.Font.GothamBold
     )
     title.Name = "ProductTitle"
@@ -330,7 +330,7 @@ return function(context)
         PlaceholderColor3 = COLORS.dim,
         Text = "",
         TextColor3 = COLORS.text,
-        TextSize = 12,
+        TextSize = 13,
         Font = Enum.Font.GothamMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 8,
@@ -473,8 +473,8 @@ return function(context)
         Rotation = 25,
     }, crest)
 
-    local brandTitle = label(rail, "VOR HUB", UDim2.fromOffset(112, 24), UDim2.fromOffset(82, 18), COLORS.text, 16, Enum.Font.GothamBold)
-    local brandSub = label(rail, "VOID OPERATIONS", UDim2.fromOffset(115, 18), UDim2.fromOffset(82, 40), COLORS.dim, 9, Enum.Font.GothamBold)
+    local brandTitle = label(rail, "VOR HUB", UDim2.fromOffset(112, 24), UDim2.fromOffset(82, 17), COLORS.text, 18, Enum.Font.GothamBold)
+    local brandSub = label(rail, "VOID OPERATIONS", UDim2.fromOffset(115, 18), UDim2.fromOffset(82, 41), COLORS.dim, 10, Enum.Font.GothamBold)
 
     local navScroll = create("ScrollingFrame", {
         Name = "Navigation",
@@ -513,8 +513,8 @@ return function(context)
     }, profile)
     corner(avatar, 13)
     stroke(avatar, COLORS.accent, 1, 0.3)
-    local profileName = label(profile, LocalPlayer and LocalPlayer.DisplayName or "Player", UDim2.fromOffset(118, 21), UDim2.fromOffset(60, 7), COLORS.text, 11, Enum.Font.GothamBold)
-    local profileState = label(profile, "DEFAULT  •  SAVED", UDim2.fromOffset(124, 18), UDim2.fromOffset(60, 29), COLORS.accentBright, 9, Enum.Font.GothamBold)
+    local profileName = label(profile, LocalPlayer and LocalPlayer.DisplayName or "Player", UDim2.fromOffset(118, 22), UDim2.fromOffset(60, 6), COLORS.text, 13, Enum.Font.GothamBold)
+    local profileState = label(profile, "DEFAULT  •  SAVED", UDim2.fromOffset(124, 18), UDim2.fromOffset(60, 30), COLORS.accentBright, 10, Enum.Font.GothamBold)
 
     task.spawn(function()
         if not LocalPlayer then
@@ -1394,7 +1394,9 @@ return function(context)
     local PageMethods = {}
     PageMethods.__index = PageMethods
 
-    local function makeRow(section, height, name, description)
+    local function makeRow(section, height, name, description, rightInset)
+        rightInset = tonumber(rightInset) or 24
+        local textWidthOffset = -(12 + rightInset)
         local row = create("Frame", {
             Name = Utilities.MakeFlag(name),
             Size = UDim2.new(1, 0, 0, height),
@@ -1407,12 +1409,13 @@ return function(context)
         corner(row, 8)
         stroke(row, COLORS.border, 1, 0.58)
         if name then
-            label(row, name, UDim2.new(1, -100, 0, 23), UDim2.fromOffset(12, description and 5 or math.floor((height - 23) / 2)), COLORS.text, 12, Enum.Font.GothamSemibold)
+            label(row, name, UDim2.new(1, textWidthOffset, 0, 23), UDim2.fromOffset(12, description and 5 or math.floor((height - 23) / 2)), COLORS.text, 13, Enum.Font.GothamSemibold)
         end
         if description and description ~= "" then
-            local descriptionLabel = label(row, description, UDim2.new(1, -24, 0, height - 29), UDim2.fromOffset(12, 27), COLORS.dim, 10, Enum.Font.Gotham)
+            local descriptionLabel = label(row, description, UDim2.new(1, textWidthOffset, 0, height - 29), UDim2.fromOffset(12, 27), COLORS.dim, 11, Enum.Font.Gotham)
             descriptionLabel.TextWrapped = true
             descriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
+            descriptionLabel.TextTruncate = Enum.TextTruncate.AtEnd
         end
         bindHover(row, function()
             tween(row, 0.12, {BackgroundColor3 = COLORS.controlHover})
@@ -1444,7 +1447,7 @@ return function(context)
     function SectionMethods:AddLabel(text)
         local row = makeRow(self, 38, nil, nil)
         row.BackgroundTransparency = 0.42
-        local value = label(row, tostring(text or ""), UDim2.new(1, -20, 1, 0), UDim2.fromOffset(10, 0), COLORS.muted, 11, Enum.Font.Gotham)
+        local value = label(row, tostring(text or ""), UDim2.new(1, -20, 1, 0), UDim2.fromOffset(10, 0), COLORS.muted, 12, Enum.Font.Gotham)
         value.TextWrapped = true
         local control = {Row = row, ValueLabel = value, Persist = false}
         function control:Set(newText)
@@ -1482,7 +1485,7 @@ return function(context)
 
     function SectionMethods:AddButton(options)
         options = type(options) == "table" and options or {Name = tostring(options or "Button")}
-        local row = makeRow(self, options.Description and 52 or 42, options.Name or "Button", options.Description)
+        local row = makeRow(self, options.Description and 52 or 42, options.Name or "Button", options.Description, 44)
         local arrow = label(row, "›", UDim2.fromOffset(28, 42), UDim2.new(1, -36, 0, 0), COLORS.accentBright, 21, Enum.Font.GothamBold)
         arrow.TextXAlignment = Enum.TextXAlignment.Center
         local button = create("TextButton", {
@@ -1510,7 +1513,7 @@ return function(context)
 
     function SectionMethods:AddToggle(options)
         options = options or {}
-        local row = makeRow(self, options.Description and 54 or 44, options.Name or "Toggle", options.Description)
+        local row = makeRow(self, options.Description and 54 or 44, options.Name or "Toggle", options.Description, 70)
         local track = create("Frame", {
             Name = "Track",
             AnchorPoint = Vector2.new(1, 0.5),
@@ -1581,8 +1584,8 @@ return function(context)
         if not increment then
             increment = round and (10 ^ -round) or 1
         end
-        local row = makeRow(self, options.Description and 72 or 62, options.Name or "Slider", options.Description)
-        local valueLabel = label(row, "", UDim2.fromOffset(76, 22), UDim2.new(1, -88, 0, 7), COLORS.accentBright, 11, Enum.Font.GothamBold)
+        local row = makeRow(self, options.Description and 72 or 62, options.Name or "Slider", options.Description, 100)
+        local valueLabel = label(row, "", UDim2.fromOffset(76, 22), UDim2.new(1, -88, 0, 7), COLORS.accentBright, 12, Enum.Font.GothamBold)
         valueLabel.TextXAlignment = Enum.TextXAlignment.Right
         local bar = create("Frame", {
             Position = UDim2.new(0, 12, 1, -17),
@@ -1669,7 +1672,7 @@ return function(context)
 
     function SectionMethods:AddInput(options)
         options = options or {}
-        local row = makeRow(self, options.Description and 58 or 48, options.Name or "Input", options.Description)
+        local row = makeRow(self, options.Description and 58 or 48, options.Name or "Input", options.Description, 172)
         local box = create("TextBox", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -10, 0.5, 0),
@@ -1681,7 +1684,7 @@ return function(context)
             PlaceholderColor3 = COLORS.dim,
             Text = tostring(options.Default or ""),
             TextColor3 = COLORS.text,
-            TextSize = 10,
+            TextSize = 11,
             Font = Enum.Font.GothamMedium,
             ZIndex = 11,
         }, row)
@@ -1715,7 +1718,7 @@ return function(context)
         if default == nil then
             default = multi and {} or values[1]
         end
-        local row = makeRow(self, options.Description and 58 or 48, options.Name or "Dropdown", options.Description)
+        local row = makeRow(self, options.Description and 58 or 48, options.Name or "Dropdown", options.Description, 187)
         row.ClipsDescendants = true
         local display = create("TextButton", {
             AnchorPoint = Vector2.new(1, 0),
@@ -1729,7 +1732,7 @@ return function(context)
         }, row)
         corner(display, 7)
         stroke(display, COLORS.border, 1, 0.45)
-        local displayText = label(display, "", UDim2.new(1, -28, 1, 0), UDim2.fromOffset(9, 0), COLORS.muted, 10, Enum.Font.GothamMedium)
+        local displayText = label(display, "", UDim2.new(1, -28, 1, 0), UDim2.fromOffset(9, 0), COLORS.muted, 11, Enum.Font.GothamMedium)
         local arrow = label(display, "⌄", UDim2.fromOffset(22, 30), UDim2.new(1, -24, 0, 0), COLORS.accentBright, 13, Enum.Font.GothamBold)
         arrow.TextXAlignment = Enum.TextXAlignment.Center
         local optionHolder = create("Frame", {
@@ -1778,7 +1781,7 @@ return function(context)
                     AutoButtonColor = false,
                     Text = tostring(value),
                     TextColor3 = COLORS.muted,
-                    TextSize = 10,
+                    TextSize = 11,
                     Font = Enum.Font.GothamMedium,
                     LayoutOrder = index,
                     ZIndex = 15,
@@ -1850,7 +1853,7 @@ return function(context)
     function SectionMethods:AddColorPicker(options)
         options = options or {}
         local current = options.Default or COLORS.accent
-        local row = makeRow(self, options.Description and 54 or 44, options.Name or "Color", options.Description)
+        local row = makeRow(self, options.Description and 54 or 44, options.Name or "Color", options.Description, 142)
         local function colorToHex(color)
             return string.format(
                 "#%02X%02X%02X",
@@ -1943,7 +1946,7 @@ return function(context)
         }, column)
         corner(sectionFrame, 11)
         stroke(sectionFrame, COLORS.border, 1, 0.45)
-        local sectionHeader = label(sectionFrame, tostring(titleText or "Section"), UDim2.new(1, -28, 0, 42), UDim2.fromOffset(14, 0), COLORS.accentBright, 12, Enum.Font.GothamBold)
+        local sectionHeader = label(sectionFrame, tostring(titleText or "Section"), UDim2.new(1, -28, 0, 42), UDim2.fromOffset(14, 0), COLORS.accentBright, 14, Enum.Font.GothamBold)
         local line = create("Frame", {
             Position = UDim2.fromOffset(12, 41),
             Size = UDim2.new(1, -24, 0, 1),
@@ -1990,7 +1993,7 @@ return function(context)
             Visible = false,
             ZIndex = 4,
         }, pagesHost)
-        local pageTitle = label(pageFrame, name, UDim2.new(1, -24, 0, 48), UDim2.fromOffset(18, 2), COLORS.text, 20, Enum.Font.GothamBold)
+        local pageTitle = label(pageFrame, name, UDim2.new(1, -24, 0, 48), UDim2.fromOffset(18, 2), COLORS.text, 23, Enum.Font.GothamBold)
         local leftColumn = create("ScrollingFrame", {
             Name = "LeftColumn",
             Position = UDim2.fromOffset(14, 52),
@@ -2065,7 +2068,7 @@ return function(context)
         local iconText = iconMap[name] or tostring(options.Icon or string.sub(name, 1, 1)):upper()
         local icon = label(iconBadge, iconText, UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.dim, 15, Enum.Font.Gotham)
         icon.TextXAlignment = Enum.TextXAlignment.Center
-        local navLabel = label(navButton, name, UDim2.fromOffset(124, 45), UDim2.fromOffset(62, 0), COLORS.muted, 11, Enum.Font.GothamSemibold)
+        local navLabel = label(navButton, name, UDim2.fromOffset(124, 45), UDim2.fromOffset(62, 0), COLORS.muted, 13, Enum.Font.GothamSemibold)
         navLabel.TextTransparency = 1
         page.NavButton = navButton
         page.NavBeam = beam
