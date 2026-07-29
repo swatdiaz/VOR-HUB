@@ -89,7 +89,14 @@ return function(runtime)
         RememberKey = true,
         ToggleKey = Enum.KeyCode.RightControl,
         IntroEnabled = true,
-        IntroDuration = 3.25,
+        IntroDuration = 5,
+        IntroSoundEnabled = true,
+        IntroSoundId = "rbxassetid://1085317309",
+        IntroSoundVolume = 0.32,
+        IntroMusicEnabled = true,
+        IntroMusicSoundId = "rbxassetid://9045935780",
+        IntroMusicVolume = 0.52,
+        IntroParticleCount = 18,
         InterfaceSoundsEnabled = true,
         ToggleClickSoundId = "rbxasset://sounds/volume_slider.ogg",
         ToggleClickVolume = 0.24,
@@ -142,6 +149,10 @@ return function(runtime)
         black = Color3.fromRGB(0, 0, 0),
         toggleOff = Color3.fromRGB(54, 45, 67),
     }
+    settings.DefaultColors = {}
+    for key, color in pairs(settings.COLORS) do
+        settings.DefaultColors[key] = color
+    end
 
     settings.PanelBackgrounds = {
         ["VOR Signature (557862299)"] = "rbxthumb://type=Asset&id=557862299&w=768&h=432",

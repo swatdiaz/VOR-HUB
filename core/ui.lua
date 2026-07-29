@@ -695,11 +695,11 @@ return function(context)
         end
     end
 
-    function Window:Notify(titleText, message, duration)
+    function Window:Notify(titleText, message, duration, color)
         local entry = {
             Title = tostring(titleText or "VOR Hub"),
             Message = tostring(message or ""),
-            Color = COLORS.accent,
+            Color = typeof(color) == "Color3" and color or COLORS.accent,
             At = os.clock(),
         }
         table.insert(self.Notifications, entry)
@@ -718,18 +718,20 @@ return function(context)
             Size = UDim2.fromOffset(320, 62),
             BackgroundColor3 = COLORS.surfaceRaised,
             BorderSizePixel = 0,
-            ZIndex = 120,
+            ZIndex = 1100,
         }, overlay)
         corner(toast, 10)
-        stroke(toast, COLORS.borderBright, 1, 0.2)
+        stroke(toast, entry.Color, 1, 0.2)
         create("Frame", {
             Size = UDim2.fromOffset(5, 62),
-            BackgroundColor3 = COLORS.accent,
+            BackgroundColor3 = entry.Color,
             BorderSizePixel = 0,
-            ZIndex = 121,
+            ZIndex = 1101,
         }, toast)
-        label(toast, entry.Title, UDim2.new(1, -28, 0, 22), UDim2.fromOffset(17, 7), COLORS.text, 11, Enum.Font.GothamBold)
+        local toastTitle = label(toast, entry.Title, UDim2.new(1, -28, 0, 22), UDim2.fromOffset(17, 7), COLORS.text, 11, Enum.Font.GothamBold)
+        toastTitle.ZIndex = 1102
         local toastMessage = label(toast, entry.Message, UDim2.new(1, -28, 0, 27), UDim2.fromOffset(17, 28), COLORS.muted, 10, Enum.Font.GothamMedium)
+        toastMessage.ZIndex = 1102
         toastMessage.TextWrapped = true
         toastMessage.TextYAlignment = Enum.TextYAlignment.Top
         tween(toast, 0.23, {Position = UDim2.new(1, -18, toast.Position.Y.Scale, toast.Position.Y.Offset)})
@@ -806,7 +808,85 @@ return function(context)
         end
     end))
 
+    local minimizedDragging = false
+    local minimizedDragged = false
+    local minimizedDragInput = nil
+    local minimizedDragStart = nil
+    local minimizedCenterStart = nil
+
+    function Window:GetMinimizedPosition()
+        local size = overlay.AbsoluteSize
+        if size.X <= 0 or size.Y <= 0 then
+            return "0.0800,0.5000"
+        end
+        local center = minimized.AbsolutePosition + minimized.AbsoluteSize * 0.5
+        return string.format("%.4f,%.4f", center.X / size.X, center.Y / size.Y)
+    end
+
+    function Window:SetMinimizedPosition(value)
+        local x, y = tostring(value or ""):match("^%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)%s*$")
+        x = math.clamp(tonumber(x) or 0.08, 0.02, 0.98)
+        y = math.clamp(tonumber(y) or 0.50, 0.02, 0.98)
+        minimized.Position = UDim2.fromScale(x, y)
+        gui:SetAttribute("VORMinimizedPosition", string.format("%.4f,%.4f", x, y))
+        return gui:GetAttribute("VORMinimizedPosition")
+    end
+
+    Utilities.Track(minimized.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        minimizedDragging = true
+        minimizedDragged = false
+        minimizedDragInput = input
+        minimizedDragStart = Vector2.new(input.Position.X, input.Position.Y)
+        minimizedCenterStart = minimized.AbsolutePosition + minimized.AbsoluteSize * 0.5
+    end))
+    Utilities.Track(Services.UserInputService.InputChanged:Connect(function(input)
+        if not minimizedDragging or not minimizedDragStart or not minimizedCenterStart then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input ~= minimizedDragInput then
+            return
+        end
+        local inputPosition = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = inputPosition - minimizedDragStart
+        if delta.Magnitude > 4 then
+            minimizedDragged = true
+        end
+        local overlaySize = overlay.AbsoluteSize
+        local half = minimized.AbsoluteSize * 0.5
+        local center = minimizedCenterStart + delta
+        center = Vector2.new(
+            math.clamp(center.X, half.X, math.max(half.X, overlaySize.X - half.X)),
+            math.clamp(center.Y, half.Y, math.max(half.Y, overlaySize.Y - half.Y))
+        )
+        minimized.Position = UDim2.fromScale(center.X / overlaySize.X, center.Y / overlaySize.Y)
+    end))
+    Utilities.Track(Services.UserInputService.InputEnded:Connect(function(input)
+        if not minimizedDragging then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        minimizedDragging = false
+        minimizedDragInput = nil
+        if minimizedDragged then
+            gui:SetAttribute("VORMinimizedPosition", Window:GetMinimizedPosition())
+            Window:MarkDirty()
+            task.delay(0.12, function()
+                minimizedDragged = false
+            end)
+        end
+    end))
+
     Utilities.Track(minimized.Activated:Connect(function()
+        if minimizedDragged then
+            return
+        end
         Window:SetMinimized(false)
     end))
     Utilities.Track(minimizeButton.Activated:Connect(function()
@@ -1418,7 +1498,26 @@ return function(context)
             Color3.fromRGB(255, 255, 255),
         }
         local current = options.Default or palette[1]
-        local row = makeRow(self, 44, options.Name or "Color", options.Description)
+        local row = makeRow(self, options.Description and 54 or 44, options.Name or "Color", options.Description)
+        local function colorToHex(color)
+            return string.format(
+                "#%02X%02X%02X",
+                math.floor(color.R * 255 + 0.5),
+                math.floor(color.G * 255 + 0.5),
+                math.floor(color.B * 255 + 0.5)
+            )
+        end
+        local function colorFromHex(value)
+            local hex = tostring(value or ""):gsub("#", ""):gsub("%s", "")
+            if #hex ~= 6 or not hex:match("^[%x]+$") then
+                return nil
+            end
+            return Color3.fromRGB(
+                tonumber(hex:sub(1, 2), 16),
+                tonumber(hex:sub(3, 4), 16),
+                tonumber(hex:sub(5, 6), 16)
+            )
+        end
         local swatch = create("TextButton", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -12, 0.5, 0),
@@ -1430,11 +1529,30 @@ return function(context)
         }, row)
         corner(swatch, 7)
         stroke(swatch, COLORS.white, 1, 0.65)
+        local hexInput = create("TextBox", {
+            Name = "HexColor",
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -50, 0.5, 0),
+            Size = UDim2.fromOffset(78, 24),
+            BackgroundColor3 = COLORS.surfaceRaised,
+            BorderSizePixel = 0,
+            ClearTextOnFocus = false,
+            Text = colorToHex(current),
+            TextColor3 = COLORS.text,
+            PlaceholderText = "#RRGGBB",
+            PlaceholderColor3 = COLORS.dim,
+            TextSize = 10,
+            Font = Enum.Font.Code,
+            ZIndex = 11,
+        }, row)
+        corner(hexInput, 7)
+        stroke(hexInput, COLORS.border, 1, 0.45)
         local control = registerControl(self, {Value = current, Index = 1}, options, row)
         function control:Set(value, silent)
             if typeof(value) == "Color3" then
                 self.Value = value
                 swatch.BackgroundColor3 = value
+                hexInput.Text = colorToHex(value)
                 if not silent then
                     Window:MarkDirty()
                     safeCallback(self.Name, options.Callback, value)
@@ -1447,6 +1565,15 @@ return function(context)
         Utilities.Track(swatch.Activated:Connect(function()
             control.Index = (control.Index % #palette) + 1
             control:Set(palette[control.Index])
+        end))
+        Utilities.Track(hexInput.FocusLost:Connect(function()
+            local parsed = colorFromHex(hexInput.Text)
+            if parsed then
+                control:Set(parsed)
+            else
+                hexInput.Text = colorToHex(control.Value)
+                Window:Notify("Color Studio", "Use a six-digit hex color such as #7E37FF", 3)
+            end
         end))
         return control
     end
@@ -1841,30 +1968,17 @@ return function(context)
         gui:SetAttribute("VORPanelBackground", value)
     end
 
-    function Window:SetAccentPreset(value)
-        value = tostring(value or "VOR Violet")
-        local nextAccent = SETTINGS.AccentPresets[value]
-        if typeof(nextAccent) ~= "Color3" then
+    function Window:SetPaletteColor(key, nextColor)
+        key = tostring(key or "")
+        if typeof(nextColor) ~= "Color3" or typeof(COLORS[key]) ~= "Color3" then
             return false
         end
-        local oldAccent = COLORS.accent
-        local oldDark = COLORS.accentDark
-        local oldBright = COLORS.accentBright
-        local oldBorder = COLORS.borderBright
-        local nextDark = nextAccent:Lerp(COLORS.black, 0.52)
-        local nextBright = nextAccent:Lerp(COLORS.white, 0.30)
-        local nextBorder = nextAccent:Lerp(COLORS.surface, 0.62)
+        local previous = COLORS[key]
+        if previous == nextColor then
+            return true
+        end
         local function swap(valueToCheck)
-            if valueToCheck == oldAccent then
-                return nextAccent
-            elseif valueToCheck == oldDark then
-                return nextDark
-            elseif valueToCheck == oldBright then
-                return nextBright
-            elseif valueToCheck == oldBorder then
-                return nextBorder
-            end
-            return valueToCheck
+            return valueToCheck == previous and nextColor or valueToCheck
         end
         for _, object in ipairs(gui:GetDescendants()) do
             if object:IsA("GuiObject") then
@@ -1873,7 +1987,10 @@ return function(context)
             if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
                 object.TextColor3 = swap(object.TextColor3)
             end
-            if object:IsA("ImageLabel") or object:IsA("ImageButton") then
+            if (object:IsA("ImageLabel") or object:IsA("ImageButton"))
+                and object.Name ~= "BrandLogo"
+                and object.Name ~= "CatCrest"
+                and object.Name ~= "PanelBackground" then
                 object.ImageColor3 = swap(object.ImageColor3)
             elseif object:IsA("UIStroke") then
                 object.Color = swap(object.Color)
@@ -1885,11 +2002,41 @@ return function(context)
                 object.Color = ColorSequence.new(points)
             end
         end
-        COLORS.accent = nextAccent
-        COLORS.accentDark = nextDark
-        COLORS.accentBright = nextBright
-        COLORS.borderBright = nextBorder
-        panelBackground.ImageColor3 = nextBright
+        COLORS[key] = nextColor
+        if key == "accentBright" then
+            panelBackground.ImageColor3 = nextColor
+        end
+        gui:SetAttribute(
+            "VORColor" .. key:sub(1, 1):upper() .. key:sub(2),
+            string.format(
+                "#%02X%02X%02X",
+                math.floor(nextColor.R * 255 + 0.5),
+                math.floor(nextColor.G * 255 + 0.5),
+                math.floor(nextColor.B * 255 + 0.5)
+            )
+        )
+        return true
+    end
+
+    function Window:SetAccentPreset(value)
+        value = tostring(value or "VOR Violet")
+        local nextAccent = SETTINGS.AccentPresets[value]
+        if typeof(nextAccent) ~= "Color3" then
+            return false
+        end
+        local palette = {
+            accent = nextAccent,
+            accentDark = nextAccent:Lerp(COLORS.black, 0.52),
+            accentBright = nextAccent:Lerp(COLORS.white, 0.30),
+            borderBright = nextAccent:Lerp(COLORS.surface, 0.62),
+        }
+        for key, color in pairs(palette) do
+            self:SetPaletteColor(key, color)
+            local control = self.PersistentControls["vor_color_" .. key]
+            if control and type(control.Set) == "function" then
+                control:Set(color, true)
+            end
+        end
         gui:SetAttribute("VORAccentPreset", value)
         return true
     end

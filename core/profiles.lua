@@ -295,6 +295,7 @@ return function(context)
             Name = "VOR Accent Color",
             Description = "Recolors active controls, borders, highlights, and navigation",
             Flag = "frozen_accent_preset",
+            Persist = false,
             Options = {"VOR Violet", "Royal Purple", "Neon Amethyst", "Abyss Purple", "Void Magenta", "Silver Violet", "Blacklight", "Imperial Plum"},
             Default = "VOR Violet",
             Callback = function(value)
@@ -321,6 +322,26 @@ return function(context)
             Default = SETTINGS.MinimizedStyleDefault,
             Callback = function(value)
                 self:SetMinimizeStyle(value)
+            end,
+        })
+        self.PersistentControls["hub_minimized_position"] = {
+            Name = "Minimized Position",
+            Flag = "hub_minimized_position",
+            Persist = true,
+            Get = function()
+                return self:GetMinimizedPosition()
+            end,
+            Set = function(_, value)
+                self:SetMinimizedPosition(value)
+            end,
+        }
+        appearance:AddButton({
+            Name = "Reset Minimized Position",
+            Description = "The cat crest and compact bar can both be dragged anywhere",
+            Persist = false,
+            Callback = function()
+                self:SetMinimizedPosition("0.0800,0.5000")
+                self:MarkDirty()
             end,
         })
         appearance:AddDropdown({
@@ -364,6 +385,55 @@ return function(context)
             Step = 0.05,
             Callback = function(value)
                 self:SetUIScale(value)
+            end,
+        })
+
+        local paletteLeft = page:AddSection("Color Studio - Surfaces", "Left")
+        local paletteRight = page:AddSection("Color Studio - Text & States", "Right")
+        local paletteControls = {}
+        local paletteDefinitions = {
+            {"shell", "Shell", paletteLeft},
+            {"rail", "Navigation Rail", paletteLeft},
+            {"surface", "Panel Surface", paletteLeft},
+            {"surfaceRaised", "Raised Surface", paletteLeft},
+            {"surfaceHover", "Hover Surface", paletteLeft},
+            {"control", "Control", paletteLeft},
+            {"controlHover", "Control Hover", paletteLeft},
+            {"border", "Border", paletteLeft},
+            {"borderBright", "Bright Border", paletteLeft},
+            {"toggleOff", "Toggle Off", paletteLeft},
+            {"text", "Primary Text", paletteRight},
+            {"muted", "Muted Text", paletteRight},
+            {"dim", "Dim Text", paletteRight},
+            {"accent", "Accent", paletteRight},
+            {"accentBright", "Bright Accent", paletteRight},
+            {"accentDark", "Dark Accent", paletteRight},
+            {"success", "Success", paletteRight},
+            {"warning", "Warning", paletteRight},
+            {"error", "Danger / Error", paletteRight},
+            {"white", "Pure Light", paletteRight},
+            {"black", "Pure Dark", paletteRight},
+        }
+        for _, definition in ipairs(paletteDefinitions) do
+            local key, displayName, section = definition[1], definition[2], definition[3]
+            paletteControls[key] = section:AddColorPicker({
+                Name = displayName,
+                Description = "Click the swatch for presets or type any #RRGGBB hex color",
+                Flag = "vor_color_" .. key,
+                Default = COLORS[key],
+                Callback = function(value)
+                    self:SetPaletteColor(key, value)
+                end,
+            })
+        end
+        paletteRight:AddButton({
+            Name = "Reset Complete VOR Palette",
+            Description = "Restores every UI color while keeping your other settings",
+            Persist = false,
+            Callback = function()
+                for key, control in pairs(paletteControls) do
+                    control:Set(SETTINGS.DefaultColors[key])
+                end
             end,
         })
 
