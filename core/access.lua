@@ -157,43 +157,102 @@ return function(context)
             Name = "AccessCard",
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.fromOffset(650, 450),
-            BackgroundColor3 = COLORS.surface:Lerp(COLORS.text, 0.08),
+            Size = UDim2.fromOffset(720, 460),
+            BackgroundColor3 = COLORS.shell:Lerp(COLORS.text, 0.055),
             BackgroundTransparency = 0,
             BorderSizePixel = 0,
             ZIndex = 901,
         }, gate)
-        corner(card, 20)
-        local cardStroke = stroke(card, COLORS.accentBright, 0, 2)
+        corner(card, 16)
+        local cardStroke = stroke(card, COLORS.borderBright, 0.08, 1.5)
         local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
-        local accessScale = math.clamp(math.min((viewportSize.X - 24) / 650, (viewportSize.Y - 24) / 450), 0.68, 1)
+        local accessScale = math.clamp(math.min((viewportSize.X - 24) / 720, (viewportSize.Y - 24) / 460), 0.62, 1)
         local cardScale = create("UIScale", {Scale = accessScale * 0.94}, card)
+
+        local topbar = create("Frame", {
+            Name = "AccessTopbar",
+            Size = UDim2.new(1, 0, 0, 82),
+            BackgroundColor3 = COLORS.surfaceRaised,
+            BackgroundTransparency = 0.03,
+            BorderSizePixel = 0,
+            ZIndex = 902,
+        }, card)
+        corner(topbar, 16)
+        create("Frame", {
+            Name = "TopbarSquareOff",
+            Position = UDim2.new(0, 0, 1, -16),
+            Size = UDim2.new(1, 0, 0, 16),
+            BackgroundColor3 = COLORS.surfaceRaised,
+            BackgroundTransparency = 0.03,
+            BorderSizePixel = 0,
+            ZIndex = 902,
+        }, topbar)
+        create("Frame", {
+            Name = "AccentBeam",
+            Position = UDim2.new(0, 18, 1, -2),
+            Size = UDim2.new(1, -36, 0, 2),
+            BackgroundColor3 = COLORS.accent,
+            BorderSizePixel = 0,
+            ZIndex = 903,
+        }, topbar)
 
         local crest = create("ImageLabel", {
             Name = "AccessBrandLogo",
-            Size = UDim2.fromOffset(78, 78),
-            Position = UDim2.new(0.5, -39, 0, 20),
-            BackgroundColor3 = COLORS.surfaceRaised,
-            BackgroundTransparency = 0.05,
+            Size = UDim2.fromOffset(54, 54),
+            Position = UDim2.fromOffset(16, 13),
+            BackgroundColor3 = COLORS.logoBackground or COLORS.accentDark,
+            BackgroundTransparency = 0,
             BorderSizePixel = 0,
             Image = SETTINGS.BrandLogoImage,
             ScaleType = Enum.ScaleType.Fit,
             ZIndex = 904,
-        }, card)
-        corner(crest, 19)
-        stroke(crest, COLORS.accentBright, 0, 1.5)
+        }, topbar)
+        corner(crest, 13)
+        stroke(crest, COLORS.accentBright, 0.05, 1.2)
 
-        local title = label(card, "VOR HUB ACCESS", UDim2.new(1, -48, 0, 38), UDim2.fromOffset(24, 107), COLORS.text, 30, Enum.Font.GothamBold)
-        title.TextXAlignment = Enum.TextXAlignment.Center
-        local description = label(card, "Join Discord for the current key, supported games, updates, and support.", UDim2.new(1, -80, 0, 42), UDim2.fromOffset(40, 148), COLORS.muted, 14, Enum.Font.GothamMedium)
+        local brand = label(topbar, "VOR HUB", UDim2.fromOffset(220, 28), UDim2.fromOffset(84, 13), COLORS.text, 20, Enum.Font.GothamBold)
+        brand.TextXAlignment = Enum.TextXAlignment.Left
+        local brandContext = label(topbar, "SECURE ACCESS  /  VERIFIED LOADER", UDim2.fromOffset(300, 20), UDim2.fromOffset(84, 41), COLORS.accentBright, 11, Enum.Font.GothamBold)
+        brandContext.TextXAlignment = Enum.TextXAlignment.Left
+        local statusBadge = create("Frame", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -18, 0.5, 0),
+            Size = UDim2.fromOffset(142, 36),
+            BackgroundColor3 = Color3.fromRGB(13, 34, 27),
+            BorderSizePixel = 0,
+            ZIndex = 903,
+        }, topbar)
+        corner(statusBadge, 9)
+        stroke(statusBadge, COLORS.success, 0.52, 1)
+        local statusBadgeText = label(statusBadge, "●  KEY REQUIRED", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.success, 11, Enum.Font.GothamBold)
+        statusBadgeText.TextXAlignment = Enum.TextXAlignment.Center
+
+        local title = label(card, "Access Portal", UDim2.new(1, -64, 0, 34), UDim2.fromOffset(32, 96), COLORS.text, 25, Enum.Font.GothamBold)
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        local description = label(card, "Grab the current key from Discord, paste it below, and VOR handles the rest.", UDim2.new(1, -64, 0, 28), UDim2.fromOffset(32, 127), COLORS.muted, 13, Enum.Font.GothamMedium)
+        description.TextXAlignment = Enum.TextXAlignment.Left
         description.TextWrapped = true
-        local steps = label(card, "1  COPY DISCORD     •     2  PASTE KEY     •     3  UNLOCK", UDim2.new(1, -80, 0, 24), UDim2.fromOffset(40, 187), COLORS.accentBright, 12, Enum.Font.GothamBold)
-        steps.TextXAlignment = Enum.TextXAlignment.Center
+
+        local keyPanel = create("Frame", {
+            Name = "KeyPanel",
+            Position = UDim2.fromOffset(32, 164),
+            Size = UDim2.new(1, -64, 0, 124),
+            BackgroundColor3 = COLORS.surface,
+            BackgroundTransparency = 0.02,
+            BorderSizePixel = 0,
+            ZIndex = 902,
+        }, card)
+        corner(keyPanel, 11)
+        stroke(keyPanel, COLORS.border, 0.2, 1)
+        local keyTitle = label(keyPanel, "Discord Access Key", UDim2.new(1, -32, 0, 25), UDim2.fromOffset(16, 10), COLORS.text, 14, Enum.Font.GothamBold)
+        keyTitle.TextXAlignment = Enum.TextXAlignment.Left
+        local keyHint = label(keyPanel, "Your key is never stored in plain text.", UDim2.new(1, -32, 0, 19), UDim2.fromOffset(16, 33), COLORS.dim, 11, Enum.Font.GothamMedium)
+        keyHint.TextXAlignment = Enum.TextXAlignment.Left
 
         local keyBox = create("TextBox", {
             Name = "DiscordKeyInput",
-            Position = UDim2.fromOffset(42, 220),
-            Size = UDim2.new(1, -84, 0, 56),
+            Position = UDim2.fromOffset(16, 62),
+            Size = UDim2.new(1, -32, 0, 48),
             BackgroundColor3 = COLORS.control:Lerp(COLORS.text, 0.06),
             BorderSizePixel = 0,
             ClearTextOnFocus = false,
@@ -205,16 +264,17 @@ return function(context)
             TextSize = 17,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 904,
-        }, card)
+        }, keyPanel)
         corner(keyBox, 11)
         stroke(keyBox, COLORS.accentBright, 0.15, 1.5)
         create("UIPadding", {PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16)}, keyBox)
 
-        local status = label(card, "Your key is never saved; only its one-way hash is remembered.", UDim2.new(1, -84, 0, 28), UDim2.fromOffset(42, 282), COLORS.muted, 12, Enum.Font.GothamMedium)
+        local status = label(card, "Ready for a key  •  Copy the invite if you need access", UDim2.new(1, -64, 0, 25), UDim2.fromOffset(32, 296), COLORS.muted, 12, Enum.Font.GothamMedium)
+        status.TextXAlignment = Enum.TextXAlignment.Left
 
         local unlock = create("TextButton", {
-            Position = UDim2.fromOffset(42, 322),
-            Size = UDim2.new(0.60, -50, 0, 58),
+            Position = UDim2.fromOffset(32, 327),
+            Size = UDim2.new(0.62, -52, 0, 56),
             BackgroundColor3 = COLORS.accent,
             BorderSizePixel = 0,
             AutoButtonColor = false,
@@ -228,8 +288,8 @@ return function(context)
 
         local discord = create("TextButton", {
             AnchorPoint = Vector2.new(1, 0),
-            Position = UDim2.new(1, -42, 0, 322),
-            Size = UDim2.new(0.40, -2, 0, 58),
+            Position = UDim2.new(1, -32, 0, 327),
+            Size = UDim2.new(0.38, -44, 0, 56),
             BackgroundColor3 = COLORS.surfaceRaised,
             BorderSizePixel = 0,
             AutoButtonColor = false,
@@ -242,7 +302,16 @@ return function(context)
         corner(discord, 10)
         stroke(discord, COLORS.borderBright, 0.25, 1)
 
-        local footer = label(card, SETTINGS.Discord .. "  •  Right Ctrl toggles the hub", UDim2.new(1, -60, 0, 26), UDim2.fromOffset(30, 405), COLORS.muted, 11, Enum.Font.GothamMedium)
+        local footerPanel = create("Frame", {
+            Position = UDim2.fromOffset(32, 397),
+            Size = UDim2.new(1, -64, 0, 42),
+            BackgroundColor3 = COLORS.surfaceRaised,
+            BackgroundTransparency = 0.28,
+            BorderSizePixel = 0,
+            ZIndex = 902,
+        }, card)
+        corner(footerPanel, 9)
+        local footer = label(footerPanel, SETTINGS.Discord .. "  •  Right Ctrl toggles the hub  •  Key support is inside Discord", UDim2.new(1, -24, 1, 0), UDim2.fromOffset(12, 0), COLORS.muted, 11, Enum.Font.GothamMedium)
         footer.TextXAlignment = Enum.TextXAlignment.Center
 
         local unlocking = false
