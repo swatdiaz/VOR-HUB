@@ -425,6 +425,7 @@ return function(context)
         local paletteRight = page:AddSection("Color Studio - Text & States", "Right")
         local paletteControls = {}
         local paletteDefinitions = {
+            {"logoBackground", "Logo Background", paletteLeft},
             {"shell", "Shell", paletteLeft},
             {"rail", "Navigation Rail", paletteLeft},
             {"surface", "Panel Surface", paletteLeft},

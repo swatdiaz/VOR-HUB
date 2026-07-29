@@ -13,6 +13,18 @@ return function(context)
     local RAIL_COLLAPSED_WIDTH = 74
     local RAIL_EXPANDED_WIDTH = 214
     local RAIL_EXPANSION = RAIL_EXPANDED_WIDTH - RAIL_COLLAPSED_WIDTH
+    local function optionalFont(name, fallback)
+        local ok, value = pcall(function()
+            return Enum.Font[name]
+        end)
+        return ok and value or fallback
+    end
+    local fontMap = {
+        [Enum.Font.Gotham] = optionalFont("BuilderSans", Enum.Font.Gotham),
+        [Enum.Font.GothamMedium] = optionalFont("BuilderSansMedium", Enum.Font.GothamMedium),
+        [Enum.Font.GothamSemibold] = optionalFont("BuilderSansBold", Enum.Font.GothamSemibold),
+        [Enum.Font.GothamBold] = optionalFont("BuilderSansBold", Enum.Font.GothamBold),
+    }
     local colorBindings = {}
     local gradientBindings = {}
     local bindableColorProperties = {
@@ -52,6 +64,9 @@ return function(context)
     local function create(className, properties, parent)
         local object = Instance.new(className)
         for property, value in pairs(properties or {}) do
+            if property == "Font" then
+                value = fontMap[value] or value
+            end
             object[property] = value
             rememberColorBinding(object, property, value, className)
         end
@@ -311,7 +326,7 @@ return function(context)
         BackgroundColor3 = COLORS.control,
         BorderSizePixel = 0,
         ClearTextOnFocus = false,
-        PlaceholderText = "Search commands…",
+        PlaceholderText = "Search commands...",
         PlaceholderColor3 = COLORS.dim,
         Text = "",
         TextColor3 = COLORS.text,
@@ -323,7 +338,7 @@ return function(context)
     corner(searchBox, 9)
     stroke(searchBox, COLORS.border, 1, 0.35)
     padding(searchBox, 34, 12, 0, 0)
-    label(searchBox, "⌕", UDim2.fromOffset(22, 36), UDim2.fromOffset(-25, 0), COLORS.accentBright, 17, Enum.Font.GothamBold)
+    label(searchBox, utf8.char(0x1F50D), UDim2.fromOffset(22, 36), UDim2.fromOffset(-25, 0), COLORS.accentBright, 15, Enum.Font.GothamBold)
 
     local function iconButton(name, text, xOffset, width)
         local button = create("TextButton", {
@@ -425,7 +440,7 @@ return function(context)
         Name = "VORCrest",
         Position = UDim2.fromOffset(11, 12),
         Size = UDim2.fromOffset(52, 52),
-        BackgroundColor3 = COLORS.surfaceRaised,
+        BackgroundColor3 = COLORS.logoBackground,
         BorderSizePixel = 0,
         AutoButtonColor = false,
         ClipsDescendants = true,
@@ -460,18 +475,14 @@ return function(context)
         ZIndex = 36,
     }, crest)
     local brandShineGradient = create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, COLORS.accentBright),
-            ColorSequenceKeypoint.new(0.5, COLORS.white),
-            ColorSequenceKeypoint.new(1, COLORS.accentBright),
-        }),
+        Color = ColorSequence.new(COLORS.white),
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.34, 1),
-            NumberSequenceKeypoint.new(0.46, 0.86),
-            NumberSequenceKeypoint.new(0.50, 0.64),
-            NumberSequenceKeypoint.new(0.54, 0.86),
-            NumberSequenceKeypoint.new(0.66, 1),
+            NumberSequenceKeypoint.new(0.47, 1),
+            NumberSequenceKeypoint.new(0.488, 0.78),
+            NumberSequenceKeypoint.new(0.50, 0.22),
+            NumberSequenceKeypoint.new(0.512, 0.78),
+            NumberSequenceKeypoint.new(0.53, 1),
             NumberSequenceKeypoint.new(1, 1),
         }),
         Rotation = 0,
@@ -2346,15 +2357,15 @@ return function(context)
             NumberSequenceKeypoint.new(0.65, 1),
             NumberSequenceKeypoint.new(1, 1),
         })
-        local logoShoulder = math.clamp(1 - (strength * 0.64), 0.70, 0.96)
-        local logoCenter = math.clamp(1 - (strength * 1.65), 0.28, 0.88)
+        local logoShoulder = math.clamp(1 - strength, 0.58, 0.94)
+        local logoCenter = math.clamp(1 - (strength * 3.5), 0.08, 0.78)
         brandShineGradient.Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.34, 1),
-            NumberSequenceKeypoint.new(0.46, logoShoulder),
+            NumberSequenceKeypoint.new(0.47, 1),
+            NumberSequenceKeypoint.new(0.488, logoShoulder),
             NumberSequenceKeypoint.new(0.50, logoCenter),
-            NumberSequenceKeypoint.new(0.54, logoShoulder),
-            NumberSequenceKeypoint.new(0.66, 1),
+            NumberSequenceKeypoint.new(0.512, logoShoulder),
+            NumberSequenceKeypoint.new(0.53, 1),
             NumberSequenceKeypoint.new(1, 1),
         })
         backgroundSweep.Visible = self.BackgroundMotionEnabled
