@@ -4,6 +4,13 @@
 return function(runtime)
     runtime = runtime or {}
 
+    local function tracebackError(message)
+        if type(debug) == "table" and type(debug.traceback) == "function" then
+            return debug.traceback(message, 2)
+        end
+        return tostring(message)
+    end
+
     local services = {
         Players = game:GetService("Players"),
         HttpService = game:GetService("HttpService"),
@@ -32,6 +39,7 @@ return function(runtime)
         NotificationListeners = {},
         Paused = false,
         StartedAt = os.clock(),
+        Traceback = tracebackError,
     }
 
     function utilities.Track(connection)
@@ -76,7 +84,7 @@ return function(runtime)
             task.spawn(function()
                 local ok, err = xpcall(function()
                     callback(utilities.Paused, reason)
-                end, debug.traceback)
+                end, tracebackError)
                 if not ok then
                     warn("[VOR Hub] pause callback failed: " .. tostring(err))
                 end
@@ -122,7 +130,7 @@ return function(runtime)
         local arguments = table.pack(...)
         local ok, result = xpcall(function()
             return callback(table.unpack(arguments, 1, arguments.n))
-        end, debug.traceback)
+        end, tracebackError)
         if not ok then
             warn(string.format("[VOR Hub] %s failed: %s", tostring(label), tostring(result)))
         end
@@ -189,6 +197,11 @@ return function(runtime)
     function utilities.GetGuiParent()
         local player = utilities.LocalPlayer
         local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+        if not playerGui and player then
+            pcall(function()
+                playerGui = player:WaitForChild("PlayerGui", 10)
+            end)
+        end
         if playerGui then
             return playerGui
         end

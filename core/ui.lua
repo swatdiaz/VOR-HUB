@@ -147,7 +147,7 @@ return function(context)
         local arguments = table.pack(...)
         local ok, err = xpcall(function()
             callback(table.unpack(arguments, 1, arguments.n))
-        end, debug.traceback)
+        end, Utilities.Traceback or tostring)
         if not ok then
             warn(string.format("[VOR Hub] %s callback failed: %s", tostring(name), tostring(err)))
         end

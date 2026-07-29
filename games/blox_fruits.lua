@@ -5,6 +5,7 @@ return function(context)
     local COLORS = context.Colors or context.COLORS
     local track = assert(context.Track, "Blox Fruits module requires Track")
     local gui = assert(context.Gui, "Blox Fruits module requires Gui")
+    local tracebackError = context.Utilities and context.Utilities.Traceback or tostring
     local built, buildError = xpcall(function()
         local Players = game:GetService("Players")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -4167,7 +4168,7 @@ return function(context)
                         body:EquipTool(sword)
                     end
                 end
-            end, debug.traceback)
+            end, tracebackError)
             state.InventoryBusy = false
             if not operationOk then
                 state.StoreStatus = "Storage failed: " .. tostring(operationError)
@@ -7343,7 +7344,7 @@ return function(context)
             end
             return "Quest: Waiting for live quest data"
         end)(selectedLevelQuest())
-    end, debug.traceback)
+    end, tracebackError)
     if not built then
         error(buildError, 0)
     end
