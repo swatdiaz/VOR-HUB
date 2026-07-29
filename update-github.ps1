@@ -22,6 +22,11 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
 }
 
+function Read-Utf8 {
+    param([string]$Path)
+    return [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+}
+
 $validator = Join-Path $repo "scripts\validate-refactor.ps1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $validator
 if ($LASTEXITCODE -ne 0) {
@@ -46,7 +51,7 @@ if ($LASTEXITCODE -eq 1) {
 $moduleCommit = (& $git -C $repo rev-parse HEAD).Trim()
 
 $loaderPath = Join-Path $repo "loader.lua"
-$loader = Get-Content -LiteralPath $loaderPath -Raw
+$loader = Read-Utf8 -Path $loaderPath
 $loader = [regex]::Replace(
     $loader,
     'local COMMIT = "(?:__VOR_MODULE_COMMIT__|[0-9a-f]{40})"',
@@ -78,7 +83,7 @@ return chunk()
 Write-Utf8NoBom -Path (Join-Path $repo "VOR_HUB.lua") -Text $bootstrap
 
 $readmePath = Join-Path $repo "README.md"
-$readme = Get-Content -LiteralPath $readmePath -Raw
+$readme = Read-Utf8 -Path $readmePath
 $readme = [regex]::Replace(
     $readme,
     'https://raw\.githubusercontent\.com/swatdiaz/VOR-HUB/[0-9a-f]{40}/loader\.lua',

@@ -20,10 +20,10 @@ return function(context)
         return ok and value or fallback
     end
     local fontMap = {
-        [Enum.Font.Gotham] = optionalFont("Arimo", Enum.Font.Gotham),
-        [Enum.Font.GothamMedium] = optionalFont("Arimo", Enum.Font.GothamMedium),
-        [Enum.Font.GothamSemibold] = optionalFont("ArimoBold", Enum.Font.GothamSemibold),
-        [Enum.Font.GothamBold] = optionalFont("ArimoBold", Enum.Font.GothamBold),
+        [Enum.Font.Gotham] = optionalFont("Nunito", Enum.Font.Gotham),
+        [Enum.Font.GothamMedium] = optionalFont("Nunito", Enum.Font.GothamMedium),
+        [Enum.Font.GothamSemibold] = optionalFont("Nunito", Enum.Font.GothamSemibold),
+        [Enum.Font.GothamBold] = optionalFont("Nunito", Enum.Font.GothamBold),
     }
     local colorBindings = {}
     local gradientBindings = {}
