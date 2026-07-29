@@ -2209,6 +2209,134 @@ return function(context)
         return home, addCategory, selectCategory
     end
 
+    function Window:BuildAvatarPreview(section)
+        if not section or not LocalPlayer then
+            return nil
+        end
+        local row = makeRow(section, 286, nil, nil)
+        row.Name = "CharacterPreview"
+        row.ClipsDescendants = true
+
+        local viewport = create("ViewportFrame", {
+            Name = "AvatarViewport",
+            Position = UDim2.fromOffset(8, 8),
+            Size = UDim2.new(1, -16, 1, -38),
+            BackgroundColor3 = COLORS.control,
+            BackgroundTransparency = 0.16,
+            BorderSizePixel = 0,
+            Ambient = COLORS.accentBright:Lerp(COLORS.white, 0.30),
+            LightColor = COLORS.white,
+            LightDirection = Vector3.new(-1, -0.7, -1),
+            ZIndex = 10,
+        }, row)
+        corner(viewport, 10)
+        stroke(viewport, COLORS.borderBright, 1, 0.38)
+
+        local world = create("WorldModel", {Name = "AvatarWorld"}, viewport)
+        local camera = create("Camera", {
+            Name = "AvatarCamera",
+            FieldOfView = 30,
+        }, viewport)
+        viewport.CurrentCamera = camera
+
+        local hint = label(
+            row,
+            utf8.char(0x2194) .. "  Hold left click and drag to rotate",
+            UDim2.new(1, -16, 0, 24),
+            UDim2.new(0, 8, 1, -28),
+            COLORS.muted,
+            10,
+            Enum.Font.GothamSemibold
+        )
+        hint.TextXAlignment = Enum.TextXAlignment.Center
+        hint.ZIndex = 11
+
+        local avatarModel = nil
+        local yaw = 180
+        local dragging = false
+        local previousX = 0
+
+        local function rotateAvatar()
+            if avatarModel and avatarModel.Parent then
+                avatarModel:PivotTo(CFrame.Angles(0, math.rad(yaw), 0))
+            end
+        end
+
+        local function refreshAvatar(character)
+            character = character or LocalPlayer.Character
+            if not character or not character.Parent then
+                return
+            end
+            if avatarModel then
+                avatarModel:Destroy()
+                avatarModel = nil
+            end
+            local originalArchivable = character.Archivable
+            character.Archivable = true
+            local ok, clone = pcall(function()
+                return character:Clone()
+            end)
+            character.Archivable = originalArchivable
+            if not ok or not clone then
+                return
+            end
+            clone.Name = "AvatarModel"
+            for _, object in ipairs(clone:GetDescendants()) do
+                if object:IsA("LuaSourceContainer") then
+                    object:Destroy()
+                elseif object:IsA("BasePart") then
+                    object.Anchored = true
+                    object.CanCollide = false
+                    object.CanTouch = false
+                    object.CanQuery = false
+                end
+            end
+            clone.Parent = world
+            avatarModel = clone
+            yaw = 180
+            rotateAvatar()
+            local _, size = clone:GetBoundingBox()
+            local distance = math.max(size.X, size.Y, size.Z) * 1.85
+            camera.CFrame = CFrame.lookAt(
+                Vector3.new(0, 0.12, math.max(7, distance)),
+                Vector3.new(0, 0.12, 0)
+            )
+        end
+
+        Utilities.Track(viewport.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                previousX = input.Position.X
+            end
+        end))
+        Utilities.Track(Services.UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch) then
+                local nextX = input.Position.X
+                yaw = (yaw - (nextX - previousX) * 0.72) % 360
+                previousX = nextX
+                rotateAvatar()
+            end
+        end))
+        Utilities.Track(Services.UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end))
+        Utilities.Track(LocalPlayer.CharacterAdded:Connect(function(character)
+            task.delay(1, function()
+                if row.Parent then
+                    refreshAvatar(character)
+                end
+            end)
+        end))
+
+        task.defer(refreshAvatar)
+        return viewport
+    end
+
     function Window:BuildHomeDashboard()
         local home = self.Pages.Home or self:AddPage("Home")
         if home.DashboardBuilt then
@@ -2216,6 +2344,9 @@ return function(context)
             return home
         end
         home.DashboardBuilt = true
+
+        local avatar = home:AddSection("Character Preview", "Left")
+        self:BuildAvatarPreview(avatar)
 
         local overview = home:AddSection("VOR Command Center", "Left")
         overview:AddLabel("Welcome back, " .. tostring(LocalPlayer and LocalPlayer.DisplayName or "Player"))
