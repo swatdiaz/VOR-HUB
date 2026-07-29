@@ -51,7 +51,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\validate-refa
 
 Expected checks:
 
-- Luau compile: 11/11 modular files
+- Luau compile: 15/15 repository Lua files
 - Game builder contract: 5/5
 - Persistent flag parity: 151/151
 - Shared Farm Position controls: 9/9, with no duplicate control flags

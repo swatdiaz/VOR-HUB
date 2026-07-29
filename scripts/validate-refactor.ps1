@@ -18,12 +18,18 @@ $required = @(
     "games/blox_fruits.lua",
     "games/blox_fruits_dungeons.lua"
 )
+$compileFiles = $required + @(
+    "VOR_HUB.lua",
+    "codex_revive_hub.lua",
+    "anime_expeditions.lua",
+    "blox_fruits_dungeons.lua"
+)
 
 if (-not (Test-Path -LiteralPath $Compiler)) {
     throw "Luau compiler was not found: $Compiler"
 }
 
-foreach ($relative in $required) {
+foreach ($relative in $compileFiles) {
     $path = Join-Path $repo $relative
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Required modular file is missing: $relative"
@@ -91,7 +97,7 @@ foreach ($flag in $canonicalPositionFlags) {
     }
 }
 
-Write-Host "Luau compile: PASS ($($required.Count) modular files)"
+Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (5/5)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
