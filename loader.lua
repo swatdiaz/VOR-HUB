@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "374df70b2d251ec1cad547eaad3df16a9c773534"
+local COMMIT = "d30b7c73554f7b6cdb14ef4ecc9af0923c0cd57b"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function sourceUrl(path)
@@ -147,7 +147,7 @@ if gameInfo then
         if not built then
             context.Window:ShowBuildError(gameInfo.Module, buildError)
         else
-            context.Window:SetContextStatus(gameInfo.DisplayName .. "  •  module ready")
+            context.Window:SetContextStatus(gameInfo.DisplayName .. "  â€¢  module ready")
             runtime.Utilities.SetActivity({Kind = "Module", Message = gameInfo.Module .. " loaded"})
         end
     end
@@ -177,6 +177,19 @@ if profilesReady and context.Window.BuildGlobalSettingsPage then
         context.Window:ShowBuildError("core/profiles.lua:BuildGlobalSettingsPage", result)
     end
 end
+
+if gameInfo and context.Window.BuildHomeDashboard then
+    local built, result = xpcall(function()
+        return context.Window:BuildHomeDashboard()
+    end, debug.traceback)
+    if not built then
+        context.Window:ShowBuildError("core/ui.lua:BuildHomeDashboard", result)
+    end
+end
+
+context.Window:SetPanelBackground("VOR Void")
+context.Window:SetMinimizeStyle(runtime.SETTINGS.MinimizedStyleDefault)
+context.Window:SetThemeIntensity(runtime.SETTINGS.ThemeIntensity)
 
 if pendingAutoLoad then
     task.defer(function()
