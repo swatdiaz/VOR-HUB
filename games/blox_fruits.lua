@@ -7314,12 +7314,12 @@ return function(context)
 
         setStatus("Native Blox Fruits functions ready", true)
         refreshBusoStatus()
-        local quest = selectedLevelQuest()
-        if quest then
-            questLabel.Text = string.format("Quest: %s | Target: %s", quest.DisplayName, quest.EnemyName)
-        else
-            questLabel.Text = "Quest: Waiting for live quest data"
-        end
+        questLabel.Text = (function(quest)
+            if quest then
+                return string.format("Quest: %s | Target: %s", quest.DisplayName, quest.EnemyName)
+            end
+            return "Quest: Waiting for live quest data"
+        end)(selectedLevelQuest())
     end, debug.traceback)
     if not built then
         error(buildError, 0)
