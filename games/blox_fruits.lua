@@ -28,6 +28,7 @@ return function(context)
 
         local LevelSection = FarmingPage:AddSection("Auto Level", "Left")
         local FarmSettingsSection = FarmingPage:AddSection("Farm Settings", "Left")
+        local MobFarmSection = FarmingPage:AddSection("Mob Aura & Selection", "Left")
         local FarmPositionSection = FarmingPage:AddSection("Farm Position Controller", "Right")
         local WorldFarmSection = FarmingPage:AddSection("World Farming", "Right")
         local FarmStatusSection = FarmingPage:AddSection("Live Farm Status", "Right")
@@ -346,8 +347,8 @@ return function(context)
         local seaLabel = SeaStatusSection:AddLabel("Sea: Detecting...")
         local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
         local auraLabel = AttackSection:AddLabel("Aura Kill: Off | Range: 10 studs")
-        local mobAuraLabel = AttackSection:AddLabel("Mob Aura TP: Off | Distance: --")
-        local selectedMobFarmLabel = AttackSection:AddLabel("Selected Mob Farm: Off | Enemy: None")
+        local mobAuraLabel = MobFarmSection:AddLabel("Mob Aura TP: Off | Distance: --")
+        local selectedMobFarmLabel = MobFarmSection:AddLabel("Selected Mob Farm: Off | Enemy: None")
         local busoLabel = AttackSection:AddLabel("Buso: Detecting...")
         local observationLabel = AttackSection:AddLabel("Observation: Reading live state...")
         local fruitGachaLabel = FruitSection:AddLabel("Fruit Gacha: Ready anywhere")
@@ -5053,7 +5054,7 @@ return function(context)
                 state.AttackInterval = value
             end,
         })
-        mobAuraToggle = AttackSection:AddToggle({
+        mobAuraToggle = MobFarmSection:AddToggle({
             Name = "Mob Aura TP",
             Description = "Teleports above the nearest living workspace.Enemies NPC and keeps Aura Kill armed",
             Flag = "blox_mob_aura_tp",
@@ -5092,7 +5093,7 @@ return function(context)
                 gui:SetAttribute("BloxMobAuraTp", enabled)
             end,
         })
-        AttackSection:AddSlider({
+        MobFarmSection:AddSlider({
             Name = "Mob Aura Search Distance",
             Description = "Only teleports to the nearest living NPC inside this many studs",
             Flag = "blox_mob_aura_search_range",
@@ -5108,7 +5109,7 @@ return function(context)
                 gui:SetAttribute("BloxMobAuraSearchRange", state.MobAuraSearchRange)
             end,
         })
-        selectedMobDropdown = AttackSection:AddDropdown({
+        selectedMobDropdown = MobFarmSection:AddDropdown({
             Name = "Mob Farm Enemy",
             Flag = "blox_selected_mob_name",
             Options = mobFarmOptions(),
@@ -5123,7 +5124,7 @@ return function(context)
                 gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
             end,
         })
-        selectedMobFarmToggle = AttackSection:AddToggle({
+        selectedMobFarmToggle = MobFarmSection:AddToggle({
             Name = "Selected Mob Farm TP",
             Description = "Farms only the chosen enemy and waits above its spawn when none are currently loaded",
             Flag = "blox_selected_mob_farm",
@@ -5166,7 +5167,7 @@ return function(context)
                 gui:SetAttribute("BloxSelectedMobFarm", enabled)
             end,
         })
-        AttackSection:AddSlider({
+        MobFarmSection:AddSlider({
             Name = "Selected Mob Search Distance",
             Description = "Maximum distance for the chosen loaded enemy; spawn waiting still works anywhere in this sea",
             Flag = "blox_selected_mob_search_range",
@@ -5182,7 +5183,7 @@ return function(context)
                 gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
             end,
         })
-        AttackSection:AddButton({
+        MobFarmSection:AddButton({
             Name = "Refresh Mob Farm Enemies",
             Description = "Re-reads enemy spawns and currently loaded workspace.Enemies names",
             Callback = function()

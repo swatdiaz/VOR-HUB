@@ -283,46 +283,39 @@ return function(context)
 
         appearance:AddDropdown({
             Name = "UI Background",
+            Description = "Changes the artwork behind the VOR panels",
             Flag = "vor_panel_background",
-            Options = {"VOR Void (287316330)", "VOR Purple (13223834035)"},
-            Default = "VOR Void (287316330)",
+            Options = {"VOR Void", "VOR Purple"},
+            Default = "VOR Void",
             Callback = function(value)
-                self.Gui:SetAttribute("VORPanelBackground", tostring(value))
+                self:SetPanelBackground(value)
             end,
         })
         appearance:AddDropdown({
             Name = "VOR Accent Color",
+            Description = "Recolors active controls, borders, highlights, and navigation",
             Flag = "frozen_accent_preset",
             Options = {"VOR Violet", "Royal Purple", "Neon Amethyst", "Abyss Purple", "Void Magenta", "Silver Violet", "Blacklight", "Imperial Plum"},
             Default = "VOR Violet",
             Callback = function(value)
-                self.Gui:SetAttribute("VORAccentPreset", tostring(value))
+                self:SetAccentPreset(value)
             end,
         })
         appearance:AddSlider({
             Name = "Hub Transparency",
+            Description = "Controls transparency across the complete shell and its panels",
             Flag = "hub_transparency",
             Min = 0.10,
             Max = 0.80,
             Default = 0.24,
             Step = 0.05,
             Callback = function(value)
-                self.Main.BackgroundTransparency = tonumber(value) or 0.24
-            end,
-        })
-        appearance:AddSlider({
-            Name = "UI Animation Rate",
-            Flag = "vor_ui_animation_rate",
-            Min = 30,
-            Max = 240,
-            Default = SETTINGS.UIAnimationRate,
-            Step = 30,
-            Callback = function(value)
-                SETTINGS.UIAnimationRate = math.clamp(tonumber(value) or 240, 30, 240)
+                self:SetHubTransparency(value)
             end,
         })
         appearance:AddDropdown({
             Name = "Minimized Style",
+            Description = "Choose a floating crest or a labeled compact reopen bar",
             Flag = "hub_minimized_style",
             Options = {"Void Crest", "Compact Bar"},
             Default = SETTINGS.MinimizedStyleDefault,
@@ -331,14 +324,29 @@ return function(context)
             end,
         })
         appearance:AddDropdown({
-            Name = "Theme Intensity",
+            Name = "Visual Detail",
+            Description = "Full Effects shows artwork, Void Glass darkens it, Performance removes artwork",
             Flag = "vor_theme_intensity",
-            Options = {"Luxury", "Void", "Minimal"},
+            Options = {"Full Effects", "Void Glass", "Performance"},
             Default = SETTINGS.ThemeIntensity,
             Callback = function(value)
                 self:SetThemeIntensity(value)
             end,
         })
+
+        -- Preserve the old saved flag without wasting Settings-page space on
+        -- a slider that never changed Roblox's render rate.
+        self.PersistentControls["vor_ui_animation_rate"] = {
+            Name = "Legacy UI Animation Rate",
+            Flag = "vor_ui_animation_rate",
+            Persist = true,
+            Get = function()
+                return SETTINGS.UIAnimationRate
+            end,
+            Set = function(_, value)
+                SETTINGS.UIAnimationRate = math.clamp(tonumber(value) or 240, 30, 240)
+            end,
+        }
         appearance:AddToggle({
             Name = "Reduced Motion",
             Flag = "vor_reduced_motion",

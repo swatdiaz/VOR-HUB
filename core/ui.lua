@@ -8,6 +8,11 @@ return function(context)
     local Services = Utilities.Services
     local COLORS = SETTINGS.COLORS
     local LocalPlayer = Utilities.LocalPlayer
+    local BASE_WIDTH = 900
+    local BASE_HEIGHT = 574
+    local RAIL_COLLAPSED_WIDTH = 74
+    local RAIL_EXPANDED_WIDTH = 214
+    local RAIL_EXPANSION = RAIL_EXPANDED_WIDTH - RAIL_COLLAPSED_WIDTH
 
     local function create(className, properties, parent)
         local object = Instance.new(className)
@@ -140,14 +145,14 @@ return function(context)
         Name = "LuxuryWindow",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(900, 574),
+        Size = UDim2.fromOffset(BASE_WIDTH, BASE_HEIGHT),
         BackgroundColor3 = COLORS.shell,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 2,
     }, overlay)
     corner(main, 13)
-    stroke(main, COLORS.borderBright, 1, 0.38)
+    local mainStroke = stroke(main, COLORS.borderBright, 1, 0.38)
     create("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(17, 12, 27)),
@@ -157,12 +162,24 @@ return function(context)
         Rotation = 18,
     }, main)
 
+    local panelBackground = create("ImageLabel", {
+        Name = "PanelBackground",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Image = SETTINGS.PanelBackgrounds["VOR Void"],
+        ImageColor3 = Color3.fromRGB(184, 139, 255),
+        ImageTransparency = 0.68,
+        ScaleType = Enum.ScaleType.Crop,
+        ZIndex = 2,
+    }, main)
+
     local scaleObject = create("UIScale", {Scale = SETTINGS.UIScale or 1}, main)
 
     local content = create("Frame", {
         Name = "Content",
-        Position = UDim2.fromOffset(74, 0),
-        Size = UDim2.new(1, -74, 1, 0),
+        Position = UDim2.fromOffset(RAIL_COLLAPSED_WIDTH, 0),
+        Size = UDim2.new(1, -RAIL_COLLAPSED_WIDTH, 1, 0),
         BackgroundTransparency = 1,
         ZIndex = 3,
     }, main)
@@ -187,7 +204,7 @@ return function(context)
     local identity = label(
         topbar,
         (SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported") .. "  •  " .. tostring(game.PlaceId),
-        UDim2.new(0, 280, 0, 22),
+        UDim2.new(0, 220, 0, 22),
         UDim2.fromOffset(20, 10),
         COLORS.muted,
         12,
@@ -198,7 +215,7 @@ return function(context)
     local title = label(
         topbar,
         "VOR HUB  /  " .. (SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key or "UNSUPPORTED"),
-        UDim2.new(0, 330, 0, 24),
+        UDim2.new(0, 220, 0, 24),
         UDim2.fromOffset(20, 31),
         COLORS.text,
         15,
@@ -209,8 +226,8 @@ return function(context)
     local searchBox = create("TextBox", {
         Name = "CommandSearch",
         AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.58, 0, 0.5, 0),
-        Size = UDim2.fromOffset(260, 36),
+        Position = UDim2.new(0.43, 0, 0.5, 0),
+        Size = UDim2.fromOffset(210, 36),
         BackgroundColor3 = COLORS.control,
         BorderSizePixel = 0,
         ClearTextOnFocus = false,
@@ -248,14 +265,15 @@ return function(context)
         return button
     end
 
-    local notificationButton = iconButton("Notifications", "◌", -16, 38)
-    local activityButton = iconButton("Activity", "ACTIVITY", -60, 82)
-    local pauseButton = iconButton("GlobalPause", "PAUSE", -148, 66)
+    local minimizeButton = iconButton("Minimize", "—", -16, 34)
+    local notificationButton = iconButton("Notifications", "🔔", -56, 34)
+    local activityButton = iconButton("Activity", "LOG", -96, 54)
+    local pauseButton = iconButton("GlobalPause", "PAUSE", -156, 52)
     local connectionChip = create("TextLabel", {
         Name = "ConnectionChip",
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -220, 0.5, 0),
-        Size = UDim2.fromOffset(112, 34),
+        Position = UDim2.new(1, -214, 0.5, 0),
+        Size = UDim2.fromOffset(90, 34),
         BackgroundColor3 = Color3.fromRGB(14, 29, 24),
         BorderSizePixel = 0,
         Text = "●  CONNECTED",
@@ -307,7 +325,7 @@ return function(context)
 
     local rail = create("Frame", {
         Name = "VoidRail",
-        Size = UDim2.new(0, 74, 1, 0),
+        Size = UDim2.new(0, RAIL_COLLAPSED_WIDTH, 1, 0),
         BackgroundColor3 = COLORS.rail,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -482,6 +500,7 @@ return function(context)
     local Window = {
         Gui = gui,
         Main = main,
+        PanelBackground = panelBackground,
         Rail = rail,
         Content = content,
         PagesHost = pagesHost,
@@ -498,33 +517,37 @@ return function(context)
         ProfileName = "Default",
         Minimized = false,
         RailExpanded = false,
+        CollapsedPosition = main.Position,
         DrawerOpen = false,
         ActivityMode = "Activity",
         Destroyed = false,
+        HubTransparency = 0.24,
+        ThemeImageTransparency = 0.68,
+        TransparencyBases = setmetatable({}, {__mode = "k"}),
     }
 
     local iconMap = {
-        Home = "⌂",
-        Farming = "♧",
-        Combat = "⚔",
-        Mastery = "✦",
-        Shop = "▣",
-        ["Sea & Raids"] = "♆",
-        Player = "♙",
-        Settings = "⚙",
-        Tools = "◇",
-        Overnight = "☾",
-        Weapons = "†",
-        Progress = "↑",
-        Visuals = "◈",
-        Shooting = "◎",
-        Dribble = "◌",
-        Exploits = "⚠",
-        Dungeons = "◆",
-        AFK = "☾",
-        Missions = "◇",
-        Summon = "✧",
-        Units = "♟",
+        Home = "🏠",
+        Farming = "🌾",
+        Combat = "⚔️",
+        Mastery = "⭐",
+        Shop = "🛒",
+        ["Sea & Raids"] = "🌊",
+        Player = "👤",
+        Settings = "⚙️",
+        Tools = "🛠️",
+        Overnight = "🌙",
+        Weapons = "🗡️",
+        Progress = "📈",
+        Visuals = "👁️",
+        Shooting = "🎯",
+        Dribble = "🏀",
+        Exploits = "⚠️",
+        Dungeons = "🏰",
+        AFK = "💤",
+        Missions = "📜",
+        Summon = "✨",
+        Units = "👥",
     }
 
     local function setProfileState(text, color)
@@ -709,8 +732,24 @@ return function(context)
             return
         end
         self.RailExpanded = expanded
-        local width = expanded and 214 or 74
+        local width = expanded and RAIL_EXPANDED_WIDTH or RAIL_COLLAPSED_WIDTH
+        local targetWidth = BASE_WIDTH + (expanded and RAIL_EXPANSION or 0)
+        local collapsedPosition = self.CollapsedPosition or UDim2.fromScale(0.5, 0.5)
+        local targetPosition = expanded and UDim2.new(
+            collapsedPosition.X.Scale,
+            collapsedPosition.X.Offset - RAIL_EXPANSION * 0.5,
+            collapsedPosition.Y.Scale,
+            collapsedPosition.Y.Offset
+        ) or collapsedPosition
         tween(rail, 0.2, {Size = UDim2.new(0, width, 1, 0)})
+        tween(main, 0.2, {
+            Position = targetPosition,
+            Size = UDim2.fromOffset(targetWidth, BASE_HEIGHT),
+        })
+        tween(content, 0.2, {
+            Position = UDim2.fromOffset(width, 0),
+            Size = UDim2.new(1, -width, 1, 0),
+        })
         for _, page in ipairs(self.PageOrder) do
             if page.NavLabel then
                 tween(page.NavLabel, 0.14, {TextTransparency = expanded and 0 or 1})
@@ -746,6 +785,9 @@ return function(context)
     Utilities.Track(minimized.Activated:Connect(function()
         Window:SetMinimized(false)
     end))
+    Utilities.Track(minimizeButton.Activated:Connect(function()
+        Window:SetMinimized(true)
+    end))
     Utilities.Track(drawerClose.Activated:Connect(function()
         Window:SetDrawer(false)
     end))
@@ -773,8 +815,11 @@ return function(context)
     function Window:SetMinimized(value)
         self.Minimized = value == true
         if self.Minimized then
+            if self.RailExpanded then
+                self:SetRailExpanded(false)
+            end
             minimized.Visible = true
-            tween(main, 0.2, {Size = UDim2.fromOffset(790, 500), BackgroundTransparency = 1})
+            tween(main, 0.2, {Size = UDim2.fromOffset(BASE_WIDTH - 110, BASE_HEIGHT - 74), BackgroundTransparency = 1})
             task.delay(SETTINGS.ReducedMotion and 0 or 0.16, function()
                 if Window.Minimized then
                     main.Visible = false
@@ -782,10 +827,11 @@ return function(context)
             end)
         else
             main.Visible = true
-            main.Size = UDim2.fromOffset(790, 500)
+            main.Position = self.CollapsedPosition or UDim2.fromScale(0.5, 0.5)
+            main.Size = UDim2.fromOffset(BASE_WIDTH - 110, BASE_HEIGHT - 74)
             main.BackgroundTransparency = 0
             minimized.Visible = false
-            tween(main, 0.22, {Size = UDim2.fromOffset(900, 574)}, Enum.EasingStyle.Back)
+            tween(main, 0.22, {Size = UDim2.fromOffset(BASE_WIDTH, BASE_HEIGHT)}, Enum.EasingStyle.Back)
         end
     end
 
@@ -794,7 +840,22 @@ return function(context)
     end
 
     function Window:SetMinimizeStyle(value)
-        SETTINGS.MinimizedStyleDefault = tostring(value or "Void Crest")
+        value = tostring(value or "Void Crest")
+        if value == "Minimize Bar" then
+            value = "Compact Bar"
+        elseif value == "Spiral Circle" then
+            value = "Void Crest"
+        end
+        SETTINGS.MinimizedStyleDefault = value
+        if value == "Compact Bar" then
+            minimized.Size = UDim2.fromOffset(176, 44)
+            minimized.Text = "VOR HUB  |  OPEN"
+            minimized.TextSize = 12
+        else
+            minimized.Size = UDim2.fromOffset(58, 58)
+            minimized.Text = "✦"
+            minimized.TextSize = 29
+        end
         return SETTINGS.MinimizedStyleDefault
     end
 
@@ -810,6 +871,18 @@ return function(context)
     Utilities.Track(Services.UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
+            if dragState.Active then
+                if Window.RailExpanded then
+                    Window.CollapsedPosition = UDim2.new(
+                        main.Position.X.Scale,
+                        main.Position.X.Offset + RAIL_EXPANSION * 0.5,
+                        main.Position.Y.Scale,
+                        main.Position.Y.Offset
+                    )
+                else
+                    Window.CollapsedPosition = main.Position
+                end
+            end
             dragState.Active = false
         end
     end))
@@ -831,7 +904,8 @@ return function(context)
         local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
         local safeWidth = math.max(360, viewport.X - 20)
         local safeHeight = math.max(320, viewport.Y - 20)
-        local scale = math.min(1, safeWidth / 900, safeHeight / 574) * (SETTINGS.UIScale or 1)
+        local scale = math.min(1, safeWidth / BASE_WIDTH, safeHeight / BASE_HEIGHT)
+            * (SETTINGS.UIScale or 1)
         scaleObject.Scale = math.clamp(scale, 0.48, 1.3)
         gui:SetAttribute("VORResponsiveMode", viewport.X < 760 and "Compact" or "Desktop")
     end
@@ -868,7 +942,7 @@ return function(context)
             label(row, name, UDim2.new(1, -100, 0, 23), UDim2.fromOffset(12, description and 5 or math.floor((height - 23) / 2)), COLORS.text, 12, Enum.Font.GothamSemibold)
         end
         if description and description ~= "" then
-            local descriptionLabel = label(row, description, UDim2.new(1, -24, 0, height - 29), UDim2.fromOffset(12, 27), COLORS.dim, 9, Enum.Font.GothamMedium)
+            local descriptionLabel = label(row, description, UDim2.new(1, -24, 0, height - 29), UDim2.fromOffset(12, 27), COLORS.dim, 10, Enum.Font.Gotham)
             descriptionLabel.TextWrapped = true
             descriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
         end
@@ -902,7 +976,7 @@ return function(context)
     function SectionMethods:AddLabel(text)
         local row = makeRow(self, 38, nil, nil)
         row.BackgroundTransparency = 0.42
-        local value = label(row, tostring(text or ""), UDim2.new(1, -20, 1, 0), UDim2.fromOffset(10, 0), COLORS.muted, 10, Enum.Font.GothamMedium)
+        local value = label(row, tostring(text or ""), UDim2.new(1, -20, 1, 0), UDim2.fromOffset(10, 0), COLORS.muted, 11, Enum.Font.Gotham)
         value.TextWrapped = true
         local control = {Row = row, ValueLabel = value, Persist = false}
         function control:Set(newText)
@@ -1471,13 +1545,27 @@ return function(context)
             ZIndex = 35,
         }, navButton)
         corner(beam, 2)
-        local icon = label(navButton, options.Icon or iconMap[name] or "◇", UDim2.fromOffset(54, 45), UDim2.fromOffset(2, 0), COLORS.dim, 19, Enum.Font.GothamBold)
+        local iconBadge = create("Frame", {
+            Name = "IconBadge",
+            Position = UDim2.fromOffset(14, 8),
+            Size = UDim2.fromOffset(29, 29),
+            BackgroundColor3 = COLORS.surfaceRaised,
+            BackgroundTransparency = 0.62,
+            BorderSizePixel = 0,
+            ZIndex = 35,
+        }, navButton)
+        corner(iconBadge, 8)
+        local iconStroke = stroke(iconBadge, COLORS.border, 1, 0.35)
+        local iconText = iconMap[name] or tostring(options.Icon or string.sub(name, 1, 1)):upper()
+        local icon = label(iconBadge, iconText, UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.dim, 15, Enum.Font.Gotham)
         icon.TextXAlignment = Enum.TextXAlignment.Center
         local navLabel = label(navButton, name, UDim2.fromOffset(124, 45), UDim2.fromOffset(62, 0), COLORS.muted, 11, Enum.Font.GothamSemibold)
         navLabel.TextTransparency = 1
         page.NavButton = navButton
         page.NavBeam = beam
         page.NavIcon = icon
+        page.NavIconBadge = iconBadge
+        page.NavIconStroke = iconStroke
         page.NavLabel = navLabel
         self.Pages[name] = page
         table.insert(self.PageOrder, page)
@@ -1514,6 +1602,8 @@ return function(context)
             page.Frame.Visible = active
             page.NavBeam.Visible = active
             page.NavIcon.TextColor3 = active and COLORS.accentBright or COLORS.dim
+            page.NavIconBadge.BackgroundTransparency = active and 0.12 or 0.62
+            page.NavIconStroke.Color = active and COLORS.accent or COLORS.border
             page.NavLabel.TextColor3 = active and COLORS.accentBright or COLORS.muted
             page.NavButton.BackgroundTransparency = active and 0 or 1
             page.NavButton.BackgroundColor3 = active and COLORS.surfaceHover or COLORS.rail
@@ -1613,6 +1703,70 @@ return function(context)
         return home, addCategory, selectCategory
     end
 
+    function Window:BuildHomeDashboard()
+        local home = self.Pages.Home or self:AddPage("Home")
+        if home.DashboardBuilt then
+            self:SelectPage("Home")
+            return home
+        end
+        home.DashboardBuilt = true
+
+        local overview = home:AddSection("VOR Command Center", "Left")
+        overview:AddLabel("Welcome back, " .. tostring(LocalPlayer and LocalPlayer.DisplayName or "Player"))
+        overview:AddLabel("Game module: " .. tostring(SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported"))
+        overview:AddLabel("Version: " .. tostring(SETTINGS.Version) .. " | Module commit: " .. string.sub(tostring(context.Commit or "local"), 1, 8))
+        overview:AddLabel("Runtime: immutable, modular, and verified")
+
+        local updates = home:AddSection("Latest Build", "Left")
+        updates:AddLabel("Only the current game's module is downloaded and compiled.")
+        updates:AddLabel("Blox farming now uses one shared X / Y / Z position controller.")
+        updates:AddLabel("Navigation now uses Roblox-compatible emoji badges.")
+        updates:AddLabel("Background, accent, transparency, and minimize styles are live settings.")
+
+        local launch = home:AddSection("Quick Launch", "Right")
+        local launchOrder = {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
+        for _, pageName in ipairs(launchOrder) do
+            if self.Pages[pageName] then
+                launch:AddButton({
+                    Name = "Open " .. pageName,
+                    Persist = false,
+                    Callback = function()
+                        self:SelectPage(pageName)
+                    end,
+                })
+            end
+        end
+
+        local session = home:AddSection("Live Session", "Right")
+        local pageStatus = session:AddLabel("Page: Home")
+        local profileStatus = session:AddLabel("Profile: " .. tostring(self.ProfileName or "Default"))
+        local pauseStatus = session:AddLabel("Automation: Running")
+        local controlStatus = session:AddLabel("Registered controls: 0")
+        local accumulator = 0
+        local function updateSession()
+            local count = 0
+            for _ in pairs(self.PersistentControls) do
+                count = count + 1
+            end
+            pageStatus.Text = "Page: " .. tostring(self.CurrentPage and self.CurrentPage.Name or "Home")
+            profileStatus.Text = "Profile: " .. tostring(self.ProfileName or "Default")
+            pauseStatus.Text = Utilities.IsPaused() and "Automation: Globally paused" or "Automation: Running"
+            pauseStatus.TextColor3 = Utilities.IsPaused() and COLORS.warning or COLORS.success
+            controlStatus.Text = "Registered controls: " .. tostring(count)
+        end
+        updateSession()
+        Utilities.Track(Services.RunService.Heartbeat:Connect(function(deltaTime)
+            accumulator = accumulator + deltaTime
+            if accumulator >= 0.5 then
+                accumulator = 0
+                updateSession()
+            end
+        end))
+
+        self:SelectPage("Home")
+        return home
+    end
+
     function Window:ShowBuildError(modulePath, err)
         local page = self.Pages["Build Error"] or self:AddPage("Build Error", {Icon = "!"})
         local section = page:AddSection("Module Build Failure", "Left")
@@ -1650,17 +1804,109 @@ return function(context)
         self:Notify("Welcome to VOR", "Use Search to find any control. Save a profile when your setup is ready.", 6)
     end
 
-    function Window:SetThemeIntensity(value)
-        value = tostring(value or "Luxury")
-        SETTINGS.ThemeIntensity = value
-        if value == "Minimal" then
-            main.BackgroundTransparency = 0
-            stroke(main, COLORS.border, 1, 0.65)
-        elseif value == "Void" then
-            main.BackgroundTransparency = 0.08
-        else
-            main.BackgroundTransparency = 0
+    function Window:SetPanelBackground(value)
+        value = tostring(value or "VOR Void")
+        local image = SETTINGS.PanelBackgrounds[value]
+        if image then
+            panelBackground.Image = image
         end
+        gui:SetAttribute("VORPanelBackground", value)
+    end
+
+    function Window:SetAccentPreset(value)
+        value = tostring(value or "VOR Violet")
+        local nextAccent = SETTINGS.AccentPresets[value]
+        if typeof(nextAccent) ~= "Color3" then
+            return false
+        end
+        local oldAccent = COLORS.accent
+        local oldDark = COLORS.accentDark
+        local oldBright = COLORS.accentBright
+        local oldBorder = COLORS.borderBright
+        local nextDark = nextAccent:Lerp(COLORS.black, 0.52)
+        local nextBright = nextAccent:Lerp(COLORS.white, 0.30)
+        local nextBorder = nextAccent:Lerp(COLORS.surface, 0.62)
+        local function swap(valueToCheck)
+            if valueToCheck == oldAccent then
+                return nextAccent
+            elseif valueToCheck == oldDark then
+                return nextDark
+            elseif valueToCheck == oldBright then
+                return nextBright
+            elseif valueToCheck == oldBorder then
+                return nextBorder
+            end
+            return valueToCheck
+        end
+        for _, object in ipairs(gui:GetDescendants()) do
+            if object:IsA("GuiObject") then
+                object.BackgroundColor3 = swap(object.BackgroundColor3)
+            end
+            if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+                object.TextColor3 = swap(object.TextColor3)
+            end
+            if object:IsA("ImageLabel") or object:IsA("ImageButton") then
+                object.ImageColor3 = swap(object.ImageColor3)
+            elseif object:IsA("UIStroke") then
+                object.Color = swap(object.Color)
+            elseif object:IsA("UIGradient") then
+                local points = {}
+                for _, point in ipairs(object.Color.Keypoints) do
+                    table.insert(points, ColorSequenceKeypoint.new(point.Time, swap(point.Value)))
+                end
+                object.Color = ColorSequence.new(points)
+            end
+        end
+        COLORS.accent = nextAccent
+        COLORS.accentDark = nextDark
+        COLORS.accentBright = nextBright
+        COLORS.borderBright = nextBorder
+        panelBackground.ImageColor3 = nextBright
+        gui:SetAttribute("VORAccentPreset", value)
+        return true
+    end
+
+    function Window:SetHubTransparency(value)
+        value = math.clamp(tonumber(value) or 0.24, 0.04, 0.80)
+        self.HubTransparency = value
+        for _, object in ipairs(gui:GetDescendants()) do
+            if object:IsA("GuiObject") and object ~= panelBackground then
+                local base = self.TransparencyBases[object]
+                if base == nil then
+                    base = object.BackgroundTransparency
+                    self.TransparencyBases[object] = base
+                end
+                if base < 1 then
+                    object.BackgroundTransparency = base + (1 - base) * value
+                end
+            end
+        end
+        local imageBase = self.ThemeImageTransparency or 0.68
+        panelBackground.ImageTransparency = imageBase + (1 - imageBase) * value
+        gui:SetAttribute("VORHubTransparency", value)
+    end
+
+    function Window:SetThemeIntensity(value)
+        value = tostring(value or "Full Effects")
+        if value == "Luxury" then
+            value = "Full Effects"
+        elseif value == "Void" then
+            value = "Void Glass"
+        elseif value == "Minimal" then
+            value = "Performance"
+        end
+        SETTINGS.ThemeIntensity = value
+        if value == "Performance" then
+            self.ThemeImageTransparency = 1
+            mainStroke.Transparency = 0.62
+        elseif value == "Void Glass" then
+            self.ThemeImageTransparency = 0.84
+            mainStroke.Transparency = 0.18
+        else
+            self.ThemeImageTransparency = 0.68
+            mainStroke.Transparency = 0.38
+        end
+        self:SetHubTransparency(self.HubTransparency)
         gui:SetAttribute("VORThemeIntensity", value)
     end
 

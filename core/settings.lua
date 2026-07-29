@@ -81,7 +81,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.0.0",
+        Version = "3.1.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
@@ -98,7 +98,7 @@ return function(runtime)
         UIAnimationRate = 240,
         MinimizedStyleDefault = "Void Crest",
         MinimizedCircleSize = 58,
-        ThemeIntensity = "Luxury",
+        ThemeIntensity = "Full Effects",
         ReducedMotion = false,
         HighContrast = false,
         UIScale = 1,
@@ -138,6 +138,25 @@ return function(runtime)
         white = Color3.fromRGB(255, 255, 255),
         black = Color3.fromRGB(0, 0, 0),
         toggleOff = Color3.fromRGB(54, 45, 67),
+    }
+
+    settings.PanelBackgrounds = {
+        ["VOR Void"] = "rbxthumb://type=Asset&id=287316330&w=768&h=432",
+        ["VOR Purple"] = "rbxthumb://type=Asset&id=13223834035&w=768&h=432",
+        -- Legacy profile values remain valid.
+        ["VOR Void (287316330)"] = "rbxthumb://type=Asset&id=287316330&w=768&h=432",
+        ["VOR Purple (13223834035)"] = "rbxthumb://type=Asset&id=13223834035&w=768&h=432",
+    }
+
+    settings.AccentPresets = {
+        ["VOR Violet"] = Color3.fromRGB(151, 70, 255),
+        ["Royal Purple"] = Color3.fromRGB(129, 46, 226),
+        ["Neon Amethyst"] = Color3.fromRGB(199, 91, 255),
+        ["Abyss Purple"] = Color3.fromRGB(91, 35, 167),
+        ["Void Magenta"] = Color3.fromRGB(174, 46, 211),
+        ["Silver Violet"] = Color3.fromRGB(188, 164, 226),
+        ["Blacklight"] = Color3.fromRGB(104, 52, 255),
+        ["Imperial Plum"] = Color3.fromRGB(119, 44, 143),
     }
 
     settings.CATEGORY_DECALS = {
