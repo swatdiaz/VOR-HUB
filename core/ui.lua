@@ -1735,11 +1735,21 @@ return function(context)
         local displayText = label(display, "", UDim2.new(1, -28, 1, 0), UDim2.fromOffset(9, 0), COLORS.muted, 11, Enum.Font.GothamMedium)
         local arrow = label(display, "⌄", UDim2.fromOffset(22, 30), UDim2.new(1, -24, 0, 0), COLORS.accentBright, 13, Enum.Font.GothamBold)
         arrow.TextXAlignment = Enum.TextXAlignment.Center
-        local optionHolder = create("Frame", {
+        local optionHolder = create("ScrollingFrame", {
             Position = UDim2.fromOffset(10, 46),
             Size = UDim2.new(1, -20, 0, 0),
             BackgroundTransparency = 1,
+            BorderSizePixel = 0,
             ClipsDescendants = true,
+            Active = true,
+            ScrollingEnabled = true,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            CanvasSize = UDim2.fromOffset(0, 0),
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = COLORS.accentBright,
+            ScrollBarImageTransparency = 1,
+            ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
             ZIndex = 14,
         }, row)
         local optionLayout = create("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, optionHolder)
@@ -1764,6 +1774,7 @@ return function(context)
             arrow.Text = "⌄"
             row.Size = UDim2.new(1, 0, 0, options.Description and 58 or 48)
             optionHolder.Size = UDim2.new(1, -20, 0, 0)
+            optionHolder.CanvasPosition = Vector2.zero
         end
 
         local function rebuild()
@@ -1775,7 +1786,7 @@ return function(context)
             local shown = math.min(#control.Values, 7)
             for index, value in ipairs(control.Values) do
                 local optionButton = create("TextButton", {
-                    Size = UDim2.new(1, 0, 0, 28),
+                    Size = UDim2.new(1, -7, 0, 28),
                     BackgroundColor3 = COLORS.surfaceRaised,
                     BorderSizePixel = 0,
                     AutoButtonColor = false,
@@ -1805,6 +1816,7 @@ return function(context)
                     end
                 end))
             end
+            optionHolder.ScrollBarImageTransparency = #control.Values > 7 and 0.12 or 1
         end
 
         function control:Set(value, silent)
@@ -1842,6 +1854,7 @@ return function(context)
                 local height = shown * 32
                 row.Size = UDim2.new(1, 0, 0, (options.Description and 58 or 48) + height + 5)
                 optionHolder.Size = UDim2.new(1, -20, 0, height)
+                optionHolder.CanvasPosition = Vector2.zero
             else
                 close()
             end

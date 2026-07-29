@@ -248,7 +248,7 @@ return function(context)
             SelectedMobWaitingAtSpawn = false,
             RegisterHitClosure = nil,
             LastRegisterHitResolve = -math.huge,
-            WeaponType = "Sword",
+            WeaponType = "Best Available",
             AutoBuso = true,
             LastBuso = 0,
             AutoObservation = false,
@@ -1139,7 +1139,18 @@ return function(context)
         end
 
         local function selectedTool()
-            return toolForSelection(state.WeaponType)
+            local selected = toolForSelection(state.WeaponType)
+            if selected then
+                return selected
+            end
+            -- Fresh accounts start with Combat instead of a Sword. Profiles
+            -- created on another account can still request Sword, so fall back
+            -- to the starter Melee tool instead of silently farming with no
+            -- damage at all.
+            if string.lower(tostring(state.WeaponType or "")) == "sword" then
+                return toolForSelection("Melee") or toolForSelection("Best Available")
+            end
+            return nil
         end
 
         local function equipTool(tool)
@@ -1341,13 +1352,24 @@ return function(context)
                 local comboKey = string.lower(tostring(weaponName))
                 local combo = ((state.AuraCombos[comboKey] or 0) % #basics) + 1
                 local track = cache and cache[pureName .. "-basic" .. combo]
-                if not track then
+                local duration
+                local nativeCadence
+                if track then
+                    local speedMultiplier = track:GetAttribute("SpeedMult") or 1
+                    duration = tonumber(track.Length) / math.max(tonumber(speedMultiplier) or 1, 0.01)
+                    if duration <= 0 then
+                        error("basic attack duration is invalid")
+                    end
+                elseif string.lower(weaponTypeForTool(tool, weaponData)) == "melee" then
+                    -- Mobile/new-account Combat can have valid WeaponData
+                    -- before its local animation cache is populated. Use the
+                    -- same server-compatible registration window as the
+                    -- verified Sword fallback so the first melee can deal
+                    -- damage without requiring a manual swing first.
+                    duration = 0 / 0
+                    nativeCadence = 0.18
+                else
                     error("basic attack track is not loaded")
-                end
-                local speedMultiplier = track:GetAttribute("SpeedMult") or 1
-                local duration = tonumber(track.Length) / math.max(tonumber(speedMultiplier) or 1, 0.01)
-                if duration <= 0 then
-                    error("basic attack duration is invalid")
                 end
                 local char = character()
                 local attackSpeed = char and tonumber(char:GetAttribute("AttackSpeedMultiplier")) or 1
@@ -1356,7 +1378,7 @@ return function(context)
                     Combo = combo,
                     ComboKey = comboKey,
                     Duration = duration,
-                    NativeCadence = duration * AURA_KILL_NATIVE_COOLDOWN_SCALE / attackSpeed,
+                    NativeCadence = nativeCadence or (duration * AURA_KILL_NATIVE_COOLDOWN_SCALE / attackSpeed),
                 }
             end)
             if not ok then
@@ -4982,9 +5004,10 @@ return function(context)
         local weaponStatusLabel
         AttackSection:AddDropdown({
             Name = "Weapon",
+            Description = "Best Available automatically uses starter Combat on fresh accounts, then upgrades with your inventory",
             Flag = "blox_weapon_type",
             Options = {"Sword", "Melee", "M1 Fruit", "Best Available"},
-            Default = "Sword",
+            Default = "Best Available",
             Callback = function(value)
                 state.WeaponType = tostring(value)
                 state.AuraCombo = 0
