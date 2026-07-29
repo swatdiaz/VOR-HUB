@@ -300,37 +300,10 @@ return function(context)
             Name = "VORIntro",
             Active = true,
             Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = Color3.fromRGB(13, 6, 24),
-            BackgroundTransparency = 0,
+            BackgroundTransparency = 1,
             GroupTransparency = 0,
             ZIndex = 800,
         }, Gui)
-        create("ImageLabel", {
-            Name = "IntroArtwork",
-            Size = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            Image = SETTINGS.PanelBackgrounds[SETTINGS.DefaultPanelBackground],
-            ImageTransparency = 0.06,
-            ScaleType = Enum.ScaleType.Crop,
-            ZIndex = 800,
-        }, intro)
-        local colorVeil = create("Frame", {
-            Name = "IntroColorVeil",
-            Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = COLORS.accentDark,
-            BackgroundTransparency = 0.46,
-            BorderSizePixel = 0,
-            ZIndex = 801,
-        }, intro)
-        create("UIGradient", {
-            Rotation = 90,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.14),
-                NumberSequenceKeypoint.new(0.5, 0.54),
-                NumberSequenceKeypoint.new(1, 0.18),
-            }),
-        }, colorVeil)
 
         local chime = nil
         if SETTINGS.IntroSoundEnabled and tostring(SETTINGS.IntroSoundId or "") ~= "" then
