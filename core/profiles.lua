@@ -285,8 +285,8 @@ return function(context)
             Name = "UI Background",
             Description = "Changes the artwork behind the VOR panels",
             Flag = "vor_panel_background",
-            Options = {"VOR Void", "VOR Purple"},
-            Default = "VOR Void",
+            Options = {"VOR Signature (557862299)", "VOR Void", "VOR Purple"},
+            Default = SETTINGS.DefaultPanelBackground,
             Callback = function(value)
                 self:SetPanelBackground(value)
             end,

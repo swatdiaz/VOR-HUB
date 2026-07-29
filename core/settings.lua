@@ -103,6 +103,7 @@ return function(runtime)
         HighContrast = false,
         UIScale = 1,
         TextScale = 1,
+        DefaultPanelBackground = "VOR Signature (557862299)",
         ActiveGame = activeGame,
         SupportedGames = supportedGames,
         IsBloxFruits = activeGame ~= nil
@@ -141,6 +142,7 @@ return function(runtime)
     }
 
     settings.PanelBackgrounds = {
+        ["VOR Signature (557862299)"] = "rbxthumb://type=Asset&id=557862299&w=768&h=432",
         ["VOR Void"] = "rbxthumb://type=Asset&id=287316330&w=768&h=432",
         ["VOR Purple"] = "rbxthumb://type=Asset&id=13223834035&w=768&h=432",
         -- Legacy profile values remain valid.

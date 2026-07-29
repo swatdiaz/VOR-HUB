@@ -167,7 +167,7 @@ return function(context)
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Image = SETTINGS.PanelBackgrounds["VOR Void"],
+        Image = SETTINGS.PanelBackgrounds[SETTINGS.DefaultPanelBackground],
         ImageColor3 = Color3.fromRGB(184, 139, 255),
         ImageTransparency = 0.68,
         ScaleType = Enum.ScaleType.Crop,
@@ -1805,7 +1805,7 @@ return function(context)
     end
 
     function Window:SetPanelBackground(value)
-        value = tostring(value or "VOR Void")
+        value = tostring(value or SETTINGS.DefaultPanelBackground)
         local image = SETTINGS.PanelBackgrounds[value]
         if image then
             panelBackground.Image = image
