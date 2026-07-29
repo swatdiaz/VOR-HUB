@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "eff6d75802ed51d751ae9d61827f70a1ca7b803e"
+local COMMIT = "670d99ed32adf0545147eff1a3d79470103a46ea"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 if not game:IsLoaded() then
