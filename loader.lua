@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "400999c37f88b2203d2bace0709532754204b070"
+local COMMIT = "6c0bdeacbaa47401e208dd6f438f83fc1acdc67e"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function sourceUrl(path)
@@ -119,17 +119,27 @@ local context = {
     Runtime = runtime,
 }
 
+local function bootStatus(message, color)
+    context.Window:Notify("VOR Loader", message, 4.5, color)
+end
+
+bootStatus("Interface initialized", context.COLORS.success)
+
 local function installCore(path)
+    bootStatus("Loading " .. path .. "...", context.COLORS.accentBright)
     local loaded, builder = loadModule(path)
     if not loaded then
+        bootStatus(path .. " download or compile failed", context.COLORS.error)
         context.Window:ShowBuildError(path, builder)
         return false
     end
     local built, result = runBuilder(path, builder, context)
     if not built then
+        bootStatus(path .. " builder failed", context.COLORS.error)
         context.Window:ShowBuildError(path, result)
         return false
     end
+    bootStatus(path .. " ready", context.COLORS.success)
     return true
 end
 
@@ -139,19 +149,25 @@ local gameInfo = runtime.SETTINGS.ActiveGame
 
 if gameInfo then
     context.Window:SetModuleIdentity(gameInfo.DisplayName, runtime.SETTINGS.Version, true)
+    bootStatus("Detected " .. gameInfo.DisplayName, context.COLORS.success)
+    bootStatus("Downloading only " .. gameInfo.Module .. "...", context.COLORS.accentBright)
     local loaded, gameBuilder = loadModule(gameInfo.Module)
     if not loaded then
+        bootStatus(gameInfo.Module .. " compile failed", context.COLORS.error)
         context.Window:ShowBuildError(gameInfo.Module, gameBuilder)
     else
         local built, buildError = runBuilder(gameInfo.Module, gameBuilder, context)
         if not built then
+            bootStatus(gameInfo.Module .. " builder failed", context.COLORS.error)
             context.Window:ShowBuildError(gameInfo.Module, buildError)
         else
-            context.Window:SetContextStatus(gameInfo.DisplayName .. "  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢  module ready")
+            context.Window:SetContextStatus(gameInfo.DisplayName .. "  ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢  module ready")
             runtime.Utilities.SetActivity({Kind = "Module", Message = gameInfo.Module .. " loaded"})
+            bootStatus("Game module injected successfully", context.COLORS.success)
         end
     end
 else
+    bootStatus("Game not supported", context.COLORS.warning)
     context.Window:SetModuleIdentity("Unsupported Game", runtime.SETTINGS.Version, false)
     local page = context.Window:AddPage("Unsupported")
     local section = page:AddSection("Game not supported", "Left")
@@ -194,13 +210,14 @@ context.Window:SetThemeIntensity(runtime.SETTINGS.ThemeIntensity)
 if pendingAutoLoad then
     task.defer(function()
         local loaded, message = context.Window:LoadProfile(pendingAutoLoad)
-        context.Window:Notify("Auto Load", message, loaded and 3 or 6)
+        context.Window:Notify("Auto Load", message, loaded and 3 or 6, loaded and context.COLORS.success or context.COLORS.error)
     end)
 end
 
 context.Gui:SetAttribute("VORModuleCommit", COMMIT)
 context.Gui:SetAttribute("VORModulePath", gameInfo and gameInfo.Module or "unsupported")
 context.Gui:SetAttribute("VORModularBuild", true)
+bootStatus("VOR Hub is ready", context.COLORS.success)
 
 if accessReady and context.Window.RequestKeyAccess then
     context.Window:RequestKeyAccess(function()
