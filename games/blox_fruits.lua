@@ -280,6 +280,8 @@ return function(context)
             ActiveFarmHeightOverride = nil,
             AntiRagdollApplied = false,
             AntiRagdollHumanoid = nil,
+            FarmAnimateScript = nil,
+            FarmAnimateWasDisabled = nil,
             SafeMode = false,
             SafeHealthPercent = 30,
             CurrentEnemyName = nil,
@@ -4998,6 +5000,39 @@ return function(context)
             return math.min(AURA_KILL_MAX_RANGE, math.ceil(pathDistance + 8))
         end
 
+        function FarmVertical.SetCalmPose(enabled)
+            local char = character()
+            local animate = char and char:FindFirstChild("Animate")
+            if not enabled or not animate or not animate:IsA("LocalScript") then
+                local previous = state.FarmAnimateScript
+                if previous and previous.Parent and state.FarmAnimateWasDisabled ~= nil then
+                    pcall(function()
+                        previous.Disabled = state.FarmAnimateWasDisabled
+                    end)
+                end
+                state.FarmAnimateScript = nil
+                state.FarmAnimateWasDisabled = nil
+                gui:SetAttribute("BloxFarmCalmPose", false)
+                return
+            end
+
+            if state.FarmAnimateScript ~= animate then
+                state.FarmAnimateScript = animate
+                state.FarmAnimateWasDisabled = animate.Disabled
+            end
+            animate.Disabled = true
+            local body = humanoid()
+            local animator = body and body:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
+                    pcall(function()
+                        animationTrack:Stop(0)
+                    end)
+                end
+            end
+            gui:SetAttribute("BloxFarmCalmPose", true)
+        end
+
         local function syncMobAuraRange()
             local requiredRange = requiredMobAuraRange()
             if (state.MobAuraTp or state.SelectedMobFarm)
@@ -6108,6 +6143,8 @@ return function(context)
             state.ActiveFarmHeightOverride = nil
             state.AntiRagdollApplied = false
             state.AntiRagdollHumanoid = nil
+            state.FarmAnimateScript = nil
+            state.FarmAnimateWasDisabled = nil
             if state.AutoBuso then
                 task.delay(0.5, function()
                     if state.Alive and state.AutoBuso then
@@ -6174,6 +6211,9 @@ return function(context)
             end
             local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
             FarmVertical.SetAntiRagdoll(combatFarmEnabled)
+            FarmVertical.SetCalmPose(state.AuraKill and (
+                combatFarmEnabled or state.MobAuraTp or state.SelectedMobFarm
+            ))
             local activeCombatFarm = combatFarmEnabled and modelAlive(state.ActiveFarmTarget)
             -- Noclip remains enabled while waiting at a quest/boss/raid spawn.
             -- Keep a vertical hold for that entire session or gravity sends the
@@ -6548,6 +6588,7 @@ return function(context)
             state.SeaEvent.RestoreBoatNoclip()
             state.SeaEvent.DestroySafety()
             FarmVertical.SetAntiRagdoll(false)
+            FarmVertical.SetCalmPose(false)
             FarmVertical.Release()
             for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
                 local enemyRoot = modelRoot(enemy)
