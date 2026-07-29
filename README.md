@@ -5,7 +5,7 @@ GitHub-backed source for VOR Hub.
 ## Audited immutable loader (recommended)
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/3e94cd429349e20dabffde036ae94aff76958f45/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/af59646a39583414bfb74c81bb99e774ed59a63e/loader.lua"))()
 ```
 
 This entrypoint and the hub release it loads are both commit-pinned. Future
