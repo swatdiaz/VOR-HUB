@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "6d20c63bbd9291738ba1d93baf0fa9df0e87a989"
+local COMMIT = "79f5a6e6754e3389b5bb82860cb609f4cd65ebc1"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function sourceUrl(path)
@@ -147,7 +147,7 @@ if gameInfo then
         if not built then
             context.Window:ShowBuildError(gameInfo.Module, buildError)
         else
-            context.Window:SetContextStatus(gameInfo.DisplayName .. "  Ã¢â‚¬Â¢  module ready")
+            context.Window:SetContextStatus(gameInfo.DisplayName .. "  ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢  module ready")
             runtime.Utilities.SetActivity({Kind = "Module", Message = gameInfo.Module .. " loaded"})
         end
     end
