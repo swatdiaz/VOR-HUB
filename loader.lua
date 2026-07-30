@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "f89b2f245f88571f028dad303369d8d98e31bc4f"
+local COMMIT = "b165601e9b905ef2b44db8d3795f2a3fc2ccf84f"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 if not game:IsLoaded() then
@@ -117,6 +117,10 @@ if not ok then
     emergencyError("core/settings.lua", runtime.SETTINGS)
     return
 end
+-- Semantic releases describe the feature set; the immutable module commit
+-- identifies the exact published build. The header therefore changes on every
+-- publish even when a patch does not justify another semantic version bump.
+runtime.SETTINGS.BuildVersion = runtime.SETTINGS.Version .. "+" .. string.sub(COMMIT, 1, 7)
 
 local utilitiesBuilder
 ok, utilitiesBuilder = loadModule("core/utilities.lua")
@@ -194,7 +198,7 @@ local accessReady = installCore("core/access.lua")
 local gameInfo = runtime.SETTINGS.ActiveGame
 
 if gameInfo then
-    context.Window:SetModuleIdentity(gameInfo.DisplayName, runtime.SETTINGS.Version, true)
+    context.Window:SetModuleIdentity(gameInfo.DisplayName, runtime.SETTINGS.BuildVersion, true)
     bootStatus("Detected " .. gameInfo.DisplayName, context.COLORS.success)
     bootStatus("Downloading only " .. gameInfo.Module .. "...", context.COLORS.accentBright)
     local loaded, gameBuilder = loadModule(gameInfo.Module)
@@ -214,7 +218,7 @@ if gameInfo then
     end
 else
     bootStatus("Game not supported", context.COLORS.warning)
-    context.Window:SetModuleIdentity("Unsupported Game", runtime.SETTINGS.Version, false)
+    context.Window:SetModuleIdentity("Unsupported Game", runtime.SETTINGS.BuildVersion, false)
     local page = context.Window:AddPage("Unsupported")
     local section = page:AddSection("Game not supported", "Left")
     section:AddLabel("Game not supported")
