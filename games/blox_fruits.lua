@@ -256,7 +256,7 @@ return function(context)
             SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak"),
             LastSubmergedTravel = -math.huge,
             SubmergedTravelRequestedAt = -math.huge,
-            SubmarineWorkerFallback = Vector3.new(-16269, 25, 1373),
+            SubmarineWorkerFallback = Vector3.new(-16269, 5, 1373),
             AutoObservation = false,
             LastObservation = 0,
             GatherEnemies = false,
@@ -2764,13 +2764,18 @@ return function(context)
                     return worker:GetPivot()
                 end)
                 if pivotOk then
-                    workerPosition = pivot.Position
+                    workerPosition = Vector3.new(
+                        pivot.Position.X,
+                        state.SubmarineWorkerFallback.Y,
+                        pivot.Position.Z
+                    )
                 end
             end
-            local distance = (root.Position - workerPosition).Magnitude
+            local distance = (Vector3.new(root.Position.X, 0, root.Position.Z)
+                - Vector3.new(workerPosition.X, 0, workerPosition.Z)).Magnitude
             gui:SetAttribute("BloxSubmergedWorkerDistance", distance)
             if distance > 12 then
-                moveTo(CFrame.new(workerPosition + Vector3.new(0, 3, 0)))
+                moveTo(CFrame.new(workerPosition))
                 setStatus("Traveling to the Submarine Worker", nil)
                 gui:SetAttribute("BloxSubmergedTravelState", "Traveling to worker")
                 gui:SetAttribute("BloxSubmergedDialogueStage", "Approaching NPC")
