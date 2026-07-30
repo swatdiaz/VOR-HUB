@@ -15,6 +15,7 @@ return function(context)
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
     local environment = type(getgenv) == "function" and getgenv() or _G
@@ -53,6 +54,9 @@ return function(context)
         AutoMagnet = true,
         MagnetRange = 500,
         AutoBuso = true,
+        AutoObservation = false,
+        AutoRaceV3 = false,
+        AutoRaceV4 = false,
         AntiAfk = true,
         ManualNoclip = false,
         PlayerESP = false,
@@ -75,6 +79,12 @@ return function(context)
         LastDifficultyRequest = 0,
         LastStartRequest = 0,
         LastBusoRequest = 0,
+        LastObservationRequest = 0,
+        LastRaceV3Request = 0,
+        LastRaceV4Request = 0,
+        ObservationRequests = 0,
+        RaceV3Requests = 0,
+        RaceV4Requests = 0,
         LastTargetScan = 0,
         LastMagnet = 0,
         LastSimulationRadius = 0,
@@ -123,6 +133,8 @@ return function(context)
     local trinketDataLabel = TrinketSection:AddLabel("Simulation Data: Reading...")
     local trinketStatusLabel = TrinketSection:AddLabel("Trinket: Ready")
     local busoLabel = AuraSection:AddLabel("Aura Ability: Reading...")
+    local observationLabel = AuraSection:AddLabel("Observation: Reading...")
+    local raceLabel = AuraSection:AddLabel("Race Ability: Ready")
     local espStatusLabel = VisionSection:AddLabel("ESP: Off")
 
     local function setStatus(message, success)
@@ -224,6 +236,8 @@ return function(context)
     local Modules = ReplicatedStorage:FindFirstChild("Modules")
     local Net = Modules and Modules:FindFirstChild("Net")
     local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
+    local LegacyRemotes = ReplicatedStorage:FindFirstChild("Remotes")
+    local CommE = LegacyRemotes and LegacyRemotes:FindFirstChild("CommE")
     local CombatUtil = safeRequire(Modules and Modules:FindFirstChild("CombatUtil"))
     local FruitMouse = safeRequire(ReplicatedStorage:FindFirstChild("Mouse"))
 
@@ -642,6 +656,168 @@ return function(context)
             state.LastError = "Auto Aura failed: " .. tostring(method)
         end
         return false
+    end
+
+    local function universalContextButtons()
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local main = playerGui and playerGui:FindFirstChild("Main")
+        local bottom = main and main:FindFirstChild("BottomHUDList")
+        return bottom and bottom:FindFirstChild("UniversalContextButtons")
+    end
+
+    local function hudAction(name)
+        local buttons = universalContextButtons()
+        return buttons and buttons:FindFirstChild(name)
+    end
+
+    local function fireHudAction(action)
+        if not action or type(firesignal) ~= "function" then
+            return false
+        end
+        local button = action:FindFirstChild("Button") or action:FindFirstChild("CaptureInput")
+        if not button or not button:IsA("GuiButton") then
+            return false
+        end
+        local fired = pcall(function()
+            firesignal(button.Activated)
+            firesignal(button.MouseButton1Click)
+        end)
+        return fired
+    end
+
+    local function sendActionInput(actionName, keyCode, virtualKey)
+        local action = hudAction(actionName)
+        if UserInputService.TouchEnabled and fireHudAction(action) then
+            return true, "mobile HUD"
+        end
+        local inputOk, inputManager = pcall(function()
+            return game:GetService("VirtualInputManager")
+        end)
+        if inputOk and inputManager then
+            local sent = pcall(function()
+                inputManager:SendKeyEvent(true, keyCode, false, game)
+                task.wait(0.04)
+                inputManager:SendKeyEvent(false, keyCode, false, game)
+            end)
+            if sent then
+                return true, keyCode.Name .. " key"
+            end
+        end
+        if type(keypress) == "function" and type(keyrelease) == "function" then
+            local sent = pcall(function()
+                keypress(virtualKey)
+                task.wait(0.04)
+                keyrelease(virtualKey)
+            end)
+            if sent then
+                return true, "executor " .. keyCode.Name
+            end
+        end
+        if fireHudAction(action) then
+            return true, "HUD fallback"
+        end
+        return false, "no supported input method"
+    end
+
+    local function observationActive()
+        return LocalPlayer:GetAttribute("KenActive") == true
+    end
+
+    local function stepAutoObservation()
+        if not state.AutoObservation or observationActive()
+            or os.clock() - state.LastObservationRequest < 1 then
+            return
+        end
+        state.LastObservationRequest = os.clock()
+        local ok, method = sendActionInput("BoundActionKen", Enum.KeyCode.E, 0x45)
+        if ok then
+            state.ObservationRequests += 1
+            observationLabel.Text = "Observation: Activation requested via " .. method
+            task.delay(0.2, function()
+                if state.Alive and state.AutoObservation and not observationActive()
+                    and CommE and CommE:IsA("RemoteEvent") then
+                    pcall(function()
+                        CommE:FireServer("Ken", true)
+                    end)
+                end
+            end)
+        else
+            state.LastError = "Auto Observation failed: " .. tostring(method)
+        end
+    end
+
+    local function raceV3Ready()
+        local action = hudAction("BoundActionRaceAbility")
+        if not action then
+            return false
+        end
+        local locked = action:FindFirstChild("LockedFrame")
+        if locked and locked:IsA("GuiObject") and locked.Visible then
+            return false
+        end
+        local cooldown = action:FindFirstChild("CooldownLabel")
+        local seconds = cooldown and tonumber(cooldown.Text)
+        return not seconds or seconds <= 0.05
+    end
+
+    local function raceTransformed()
+        local char = character()
+        if not char then
+            return false
+        end
+        local transformed = char:FindFirstChild("RaceTransformed")
+        return (transformed and transformed:IsA("ValueBase") and transformed.Value == true)
+            or char:GetAttribute("RaceTransformed") == true
+            or LocalPlayer:GetAttribute("RaceTransformed") == true
+    end
+
+    local function raceV4Ready()
+        if raceTransformed() then
+            return false
+        end
+        local char = character()
+        local energy = char and char:FindFirstChild("RaceEnergy")
+        local awakening = char and char:FindFirstChild("Awakening")
+        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+        awakening = awakening or (backpack and backpack:FindFirstChild("Awakening"))
+        return energy ~= nil and energy:IsA("ValueBase")
+            and tonumber(energy.Value) ~= nil and tonumber(energy.Value) >= 1
+            and awakening ~= nil
+    end
+
+    local function stepAutoRace()
+        local now = os.clock()
+        if state.AutoRaceV4 and raceV4Ready() and now - state.LastRaceV4Request >= 1.5 then
+            state.LastRaceV4Request = now
+            local activate = ReplicatedStorage:FindFirstChild("Events")
+            activate = activate and activate:FindFirstChild("ActivateRaceV4")
+            local ok = activate ~= nil and activate:IsA("BindableEvent") and pcall(function()
+                activate:Fire()
+            end)
+            local method = ok and "native ActivateRaceV4" or nil
+            if not ok then
+                ok, method = sendActionInput("ActivateRaceV4", Enum.KeyCode.Y, 0x59)
+            end
+            if ok then
+                state.RaceV4Requests += 1
+                raceLabel.Text = "Race V4: Awakening requested via " .. method
+                return
+            end
+        end
+        if state.AutoRaceV3 and raceV3Ready() and now - state.LastRaceV3Request >= 0.75 then
+            state.LastRaceV3Request = now
+            local ok = CommE ~= nil and CommE:IsA("RemoteEvent") and pcall(function()
+                CommE:FireServer("ActivateAbility")
+            end)
+            local method = ok and "native race remote" or nil
+            if not ok then
+                ok, method = sendActionInput("BoundActionRaceAbility", Enum.KeyCode.T, 0x54)
+            end
+            if ok then
+                state.RaceV3Requests += 1
+                raceLabel.Text = "Race V3: Ability requested via " .. method
+            end
+        end
     end
 
     local function weaponNameForTool(tool)
@@ -2044,6 +2220,50 @@ return function(context)
         end,
     })
     AuraSection:AddToggle({
+        Name = "Auto Observation (Ken)",
+        Description = "Keeps Instinct active using E on PC and the native Ken button on mobile",
+        Flag = "blox_dungeon_auto_observation",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoObservation = enabled == true
+            state.LastObservationRequest = 0
+            if gui then
+                gui:SetAttribute("BloxDungeonAutoObservation", state.AutoObservation)
+            end
+            if not state.AutoObservation and observationActive() then
+                task.defer(function()
+                    sendActionInput("BoundActionKen", Enum.KeyCode.E, 0x45)
+                end)
+            end
+        end,
+    })
+    AuraSection:AddToggle({
+        Name = "Auto Race V3 Ability",
+        Description = "Uses the equipped race ability whenever its T/mobile cooldown is ready",
+        Flag = "blox_dungeon_auto_race_v3",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoRaceV3 = enabled == true
+            state.LastRaceV3Request = 0
+            if gui then
+                gui:SetAttribute("BloxDungeonAutoRaceV3", state.AutoRaceV3)
+            end
+        end,
+    })
+    AuraSection:AddToggle({
+        Name = "Auto Race V4 Awakening",
+        Description = "Activates Race V4 with Y/mobile input when the awakening meter is full",
+        Flag = "blox_dungeon_auto_race_v4",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoRaceV4 = enabled == true
+            state.LastRaceV4Request = 0
+            if gui then
+                gui:SetAttribute("BloxDungeonAutoRaceV4", state.AutoRaceV4)
+            end
+        end,
+    })
+    AuraSection:AddToggle({
         Name = "Manual Noclip",
         Description = "Dungeon farming enables noclip only while actively moving",
         Flag = "blox_dungeon_manual_noclip",
@@ -2095,6 +2315,9 @@ return function(context)
             state.AutoLeave = false
             state.AutoFarm = false
             state.AutoSelectCards = false
+            state.AutoObservation = false
+            state.AutoRaceV3 = false
+            state.AutoRaceV4 = false
             state.CurrentTarget = nil
             restoreCardHook()
             restoreEnemyCollision()
@@ -2125,6 +2348,10 @@ return function(context)
         state.InRun = dungeonRunActive()
         if state.InRun then
             state.WasInRun = true
+        end
+        stepAutoObservation()
+        if state.InRun and state.AutoFarm then
+            stepAutoRace()
         end
 
         local movementActive = false
@@ -2273,6 +2500,27 @@ return function(context)
                 and "Aura Ability: Active"
                 or (state.AutoBuso and "Aura Ability: Activating..." or "Aura Ability: Off")
             busoLabel.TextColor3 = active and COLORS.success or COLORS.muted
+            observationLabel.Text = observationActive()
+                and "Observation: Active"
+                or (state.AutoObservation and "Observation: Activating..." or "Observation: Off")
+            observationLabel.TextColor3 = observationActive() and COLORS.success or COLORS.muted
+            if raceTransformed() then
+                raceLabel.Text = "Race V4: Awakened"
+                raceLabel.TextColor3 = COLORS.success
+            elseif not state.AutoRaceV3 and not state.AutoRaceV4 then
+                raceLabel.Text = "Race Ability: Off"
+                raceLabel.TextColor3 = COLORS.muted
+            else
+                raceLabel.TextColor3 = COLORS.muted
+            end
+            if gui then
+                gui:SetAttribute("BloxDungeonObservationActive", observationActive())
+                gui:SetAttribute("BloxDungeonObservationRequests", state.ObservationRequests)
+                gui:SetAttribute("BloxDungeonRaceV3Requests", state.RaceV3Requests)
+                gui:SetAttribute("BloxDungeonRaceV4Requests", state.RaceV4Requests)
+                gui:SetAttribute("BloxDungeonRaceV4Ready", raceV4Ready())
+                gui:SetAttribute("BloxDungeonRaceTransformed", raceTransformed())
+            end
 
             if state.LastError and state.LastError ~= "" then
                 statusLabel.Text = "Status: " .. state.LastError
@@ -2295,6 +2543,9 @@ return function(context)
         gui:SetAttribute("BloxDungeonVisiblePages", "Dungeons,Player,Settings")
         gui:SetAttribute("BloxDungeonAttackMethod", "Sword + Fruit M1")
         gui:SetAttribute("BloxDungeonDoubleAttack", state.DoubleAttack)
+        gui:SetAttribute("BloxDungeonAutoObservation", state.AutoObservation)
+        gui:SetAttribute("BloxDungeonAutoRaceV3", state.AutoRaceV3)
+        gui:SetAttribute("BloxDungeonAutoRaceV4", state.AutoRaceV4)
         gui:SetAttribute("BloxDungeonTrinketCost", 400)
         track(gui.Destroying:Connect(function()
             state.Alive = false
@@ -2303,6 +2554,9 @@ return function(context)
             state.AutoStart = false
             state.AutoLeave = false
             state.AutoSelectCards = false
+            state.AutoObservation = false
+            state.AutoRaceV3 = false
+            state.AutoRaceV4 = false
             restoreCardHook()
             restoreEnemyCollision()
             setCharacterNoclip(false)
