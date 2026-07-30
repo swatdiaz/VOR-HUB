@@ -2570,30 +2570,12 @@ return function(context)
                 gui:SetAttribute("BloxSubmergedTravelState", "Arrived")
                 return false
             end
+            if not state.SubmarineWorkerSpeak and Net then
+                state.SubmarineWorkerSpeak = Net:FindFirstChild("RF/SubmarineWorkerSpeak")
+            end
             if not state.SubmarineWorkerSpeak then
                 setError("Submarine Worker remote is unavailable")
                 gui:SetAttribute("BloxSubmergedTravelState", "Remote unavailable")
-                return true
-            end
-
-            local worldNpcs = workspace:FindFirstChild("NPCs")
-            local replicatedNpcs = ReplicatedStorage:FindFirstChild("NPCs")
-            local worker = (worldNpcs and worldNpcs:FindFirstChild("Submarine Worker"))
-                or (replicatedNpcs and replicatedNpcs:FindFirstChild("Submarine Worker"))
-            local root = rootPart()
-            if not worker or not root then
-                setError("Submarine Worker location is still loading")
-                gui:SetAttribute("BloxSubmergedTravelState", "Waiting for worker")
-                return true
-            end
-
-            local workerPosition = worker:GetPivot().Position
-            local distance = (root.Position - workerPosition).Magnitude
-            if distance > 14 then
-                moveTo(CFrame.new(workerPosition + Vector3.new(0, 3, 0)))
-                setStatus("Traveling to the Submarine Worker", nil)
-                gui:SetAttribute("BloxSubmergedTravelState", "Traveling to worker")
-                gui:SetAttribute("BloxSubmergedWorkerDistance", distance)
                 return true
             end
 
@@ -2621,7 +2603,7 @@ return function(context)
             local travelOk, result = pcall(function()
                 return state.SubmarineWorkerSpeak:InvokeServer("TravelToSubmergedIsland")
             end)
-            if not travelOk then
+            if not travelOk or result ~= true then
                 setError("Submarine travel failed: " .. tostring(result))
                 gui:SetAttribute("BloxSubmergedTravelState", "Travel failed")
                 return true
