@@ -154,11 +154,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.7"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.8"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.7 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.8 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -188,6 +188,12 @@ if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $magnetMovementDecoupl
     throw "Auto Magnet must retain a stable 250-stud enemy pull without taking ownership of character movement"
 }
 
+$mobAuraTweenTravel = $bloxText -match 'moveTo\(CFrame\.lookAt\(goalPosition, goalPosition \+ facing\)\)'
+$selectedSpawnTweenTravel = $bloxText -match 'moveTo\(CFrame\.new\(goalPosition\)\)'
+if (-not ($mobAuraTweenTravel -and $selectedSpawnTweenTravel)) {
+    throw "Mob Aura and selected-mob travel must use the shared tween controller instead of direct root teleports"
+}
+
 $experimentalText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_experimental.lua") -Raw
 $creditedMainDouble = $experimentalText -match 'api\.SetOverride\(false\)'
 $requestSpamRemoved = $experimentalText -notmatch '(?s)if not runtime\.SwordBusy.*?dispatchSword\(\).*?if not runtime\.FruitBusy.*?dispatchFruit\(\)'
@@ -202,10 +208,11 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.7)"
+Write-Host "Visible semantic version: PASS (3.2.8)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS"
+Write-Host "Mob Aura target travel: PASS (shared tween controller)"

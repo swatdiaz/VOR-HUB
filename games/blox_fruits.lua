@@ -2384,9 +2384,7 @@ return function(context)
                                 height,
                                 state.FarmPositionZ
                             )
-                            root.AssemblyLinearVelocity = Vector3.zero
-                            root.AssemblyAngularVelocity = Vector3.zero
-                            root.CFrame = CFrame.new(goalPosition)
+                            moveTo(CFrame.new(goalPosition))
                             state.MobAuraDistance = spawnDistance
                             return true
                         end
@@ -2489,12 +2487,13 @@ return function(context)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
             if (state.MobAuraOrbit or state.MobAuraRandomSquare) and orbitOffset.Magnitude > 0.05 then
+                cancelMove()
                 root.CFrame = CFrame.lookAt(
                     goalPosition,
                     Vector3.new(anchor.X, goalPosition.Y, anchor.Z)
                 )
             else
-                root.CFrame = CFrame.lookAt(goalPosition, goalPosition + facing)
+                moveTo(CFrame.lookAt(goalPosition, goalPosition + facing))
             end
             state.MobAuraTargetName = normalizeEnemyName(target.Name)
             state.MobAuraDistance = (targetRoot.Position - root.Position).Magnitude
