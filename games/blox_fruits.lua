@@ -75,7 +75,6 @@ return function(context)
         -- use its already-replicated event directly and leave RegisterHit on
         -- CombatUtil's initialized internal sender.
         local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
-        local SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak")
         local AURA_KILL_DEFAULT_RANGE = 10
         local AURA_KILL_MAX_RANGE = 70
         local AURA_KILL_HIT_DELAY = 0.13
@@ -253,6 +252,7 @@ return function(context)
             WeaponType = "Best Available",
             AutoBuso = true,
             LastBuso = 0,
+            SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak"),
             LastSubmergedTravel = -math.huge,
             AutoObservation = false,
             LastObservation = 0,
@@ -2549,13 +2549,13 @@ return function(context)
             return selected
         end
 
-        local function isSubmergedQuest(quest)
+        state.IsSubmergedQuest = function(quest)
             return quest
                 and type(quest.InternalName) == "string"
                 and string.find(quest.InternalName, "SubmergedQuest", 1, true) == 1
         end
 
-        local function isAtSubmergedIsland()
+        state.IsAtSubmergedIsland = function()
             local data = LocalPlayer:FindFirstChild("Data")
             local lastSpawn = data and data:FindFirstChild("LastSpawnPoint")
             if lastSpawn and tostring(lastSpawn.Value) == "SubmergedIsland" then
@@ -2565,12 +2565,12 @@ return function(context)
             return root ~= nil and root.Position.Y < -1200
         end
 
-        local function stepSubmergedTravel()
-            if isAtSubmergedIsland() then
+        state.StepSubmergedTravel = function()
+            if state.IsAtSubmergedIsland() then
                 gui:SetAttribute("BloxSubmergedTravelState", "Arrived")
                 return false
             end
-            if not SubmarineWorkerSpeak then
+            if not state.SubmarineWorkerSpeak then
                 setError("Submarine Worker remote is unavailable")
                 gui:SetAttribute("BloxSubmergedTravelState", "Remote unavailable")
                 return true
@@ -2605,7 +2605,7 @@ return function(context)
             state.LastSubmergedTravel = now
             cancelMove(false)
             local accessOk, unlocked = pcall(function()
-                return SubmarineWorkerSpeak:InvokeServer("AskKilledTikiBoss")
+                return state.SubmarineWorkerSpeak:InvokeServer("AskKilledTikiBoss")
             end)
             if not accessOk then
                 setError("Submarine access check failed: " .. tostring(unlocked))
@@ -2619,7 +2619,7 @@ return function(context)
             end
 
             local travelOk, result = pcall(function()
-                return SubmarineWorkerSpeak:InvokeServer("TravelToSubmergedIsland")
+                return state.SubmarineWorkerSpeak:InvokeServer("TravelToSubmergedIsland")
             end)
             if not travelOk then
                 setError("Submarine travel failed: " .. tostring(result))
@@ -2672,7 +2672,7 @@ return function(context)
             state.CurrentEnemyName = quest.EnemyName
             questLabel.Text = string.format("Quest: %s (Lv. %s)", quest.DisplayName, tostring(quest.LevelReq))
 
-            if isSubmergedQuest(quest) and stepSubmergedTravel() then
+            if state.IsSubmergedQuest(quest) and state.StepSubmergedTravel() then
                 return
             end
 
