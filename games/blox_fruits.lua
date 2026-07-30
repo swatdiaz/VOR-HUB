@@ -88,7 +88,10 @@ return function(context)
             FruitTargetLimit = 3,
             FruitCadence = 0.075,
         }
-        local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.225
+        -- The live Fruit LocalScript subtracts this Character attribute from
+        -- both its regular 0.3-second gate and its fifth-hit 1-second gate.
+        -- A value of 1 removes both local manual-click cooldowns completely.
+        local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 1
         local NATIVE_FRUIT_SETTLE_TIME = 0.24
         local MULTI_GRAB_LIMIT = 3
         local MULTI_GRAB_RANGE = 600
@@ -1541,11 +1544,10 @@ return function(context)
         end
 
         local function nativeFruitAttackCadence()
-            local reducedCadence = math.max(
-                0.04,
-                NATIVE_FRUIT_M1_CADENCE - math.max(tonumber(state.FruitM1CooldownReduction) or 0, 0)
-            )
-            return state.FastAttack and math.max(0.04, reducedCadence * 0.55) or reducedCadence
+            -- FruitTAPCooldown belongs to the player's manual Tool.Activated
+            -- gate. Aura Kill keeps its own cadence so this UI setting cannot
+            -- accidentally throttle or accelerate the automatic attack loop.
+            return state.FastAttack and DoubleAttackEngine.FruitCadence or NATIVE_FRUIT_M1_CADENCE
         end
 
         local function transientAuraMiss(message)
@@ -1847,9 +1849,7 @@ return function(context)
                     return false, fireError
                 end
                 state.NativeFruitCombos[comboKey] = 1
-                local nativeCooldown = 0.3
-                    - math.max(tonumber(state.FruitM1CooldownReduction) or 0, 0)
-                state.FruitM1ReadyAt = os.clock() + math.max(0.075, nativeCooldown)
+                state.FruitM1ReadyAt = os.clock() + DoubleAttackEngine.FruitCadence
                 state.AuraStage = "silent-fruit-m1-sent"
                 return true
             end
@@ -5670,11 +5670,11 @@ return function(context)
         })
         AttackSection:AddSlider({
             Name = "Fruit M1 Cooldown Reduction",
-            Description = "Manual left-click reduction: 0.225 changes the native 0.300s gate to 0.075s; automatic Aura timing is separate",
+            Description = "Manual left-click cooldown removal; 1.0 removes both the normal 0.3s gate and the fifth-hit 1.0s gate",
             Flag = "blox_fruit_m1_cooldown_reduction",
             Min = 0,
             Max = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
-            Step = 0.005,
+            Step = 0.01,
             Default = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
             Callback = function(value)
                 local reduction = applyFruitM1CooldownReduction(value)
