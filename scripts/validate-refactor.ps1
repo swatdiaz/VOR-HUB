@@ -16,6 +16,7 @@ $required = @(
     "games/mypark.lua",
     "games/anime_expeditions.lua",
     "games/blox_fruits.lua",
+    "games/blox_fruits_experimental.lua",
     "games/blox_fruits_parity.lua",
     "games/blox_fruits_race.lua",
     "games/blox_fruits_pvp.lua",
@@ -153,11 +154,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.5"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.6"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.5 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.6 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -184,6 +185,13 @@ if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $axialSolixPattern)) {
     throw "Auto Magnet must retain a stable enemy anchor, 250-stud pull, and axial Solix movement pattern"
 }
 
+$experimentalText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_experimental.lua") -Raw
+$creditedMainDouble = $experimentalText -match 'api\.SetOverride\(false\)'
+$requestSpamRemoved = $experimentalText -notmatch '(?s)if not runtime\.SwordBusy.*?dispatchSword\(\).*?if not runtime\.FruitBusy.*?dispatchFruit\(\)'
+if (-not ($creditedMainDouble -and $requestSpamRemoved)) {
+    throw "Double Attack must leave combat ownership with the credited main Aura engine"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (5/5)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
@@ -191,9 +199,10 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.5)"
+Write-Host "Visible semantic version: PASS (3.2.6)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec)"
+Write-Host "Double Attack credited-engine ownership: PASS"

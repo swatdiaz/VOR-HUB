@@ -1,6 +1,5 @@
--- Isolated high-rate Double Attack runtime. The normal Combat toggle owns this
--- engine; keeping it in a separate module protects the main builder's register
--- budget and makes the aggressive cadence easy to replace without UI bloat.
+-- Auxiliary Double Attack controls. Credited Sword + Fruit damage stays in the
+-- main combat engine; this module must never replace it with request-only spam.
 return function(context)
     local Window = assert(context.Window, "Double Attack runtime requires Window")
     local gui = assert(context.Gui, "Double Attack runtime requires Gui")
@@ -65,9 +64,12 @@ return function(context)
             runtime.LastSword = 0
             runtime.LastFruit = 0
             runtime.LastError = nil
-            api.SetOverride(active)
-            gui:SetAttribute("BloxFastDoubleAttack", active)
         end
+        -- The former high-rate dispatcher produced thousands of requests with
+        -- zero HP loss, while its override disabled the working Aura engine.
+        -- Always release combat ownership to the main credited path.
+        api.SetOverride(false)
+        gui:SetAttribute("BloxFastDoubleAttack", false)
         if active then
             armRequiredControls()
         end
@@ -162,7 +164,7 @@ return function(context)
             gui:SetAttribute("BloxDragonstormAutoTrack", runtime.Dragonstorm)
         end,
     })
-    section:AddLabel("The normal Double Attack toggle now runs the fastest validated Sword + Fruit M1 engine. Triple and Melee were removed.")
+    section:AddLabel("Double Attack uses the main server-credited Sword + Fruit M1 engine. Request-only spam is disabled.")
 
     track(RunService.Heartbeat:Connect(function()
         if not updateOverride() then
@@ -170,12 +172,6 @@ return function(context)
         end
         api.EnsureBuso()
         local now = os.clock()
-        if not runtime.SwordBusy and now - runtime.LastSword >= 0.13 then
-            dispatchSword()
-        end
-        if not runtime.FruitBusy and now - runtime.LastFruit >= 0.055 then
-            dispatchFruit()
-        end
         if runtime.Dragonstorm and not runtime.GunBusy and now - runtime.LastGun >= 0.08 then
             dispatchDragonstorm()
         end
@@ -187,12 +183,12 @@ return function(context)
         end
         runtime.LastUi = os.clock()
         statusLabel.Text = runtime.Active
-            and "Double Attack: Fast Sword + Fruit M1"
+            and "Double Attack: Credited Sword + Fruit M1"
             or (doubleEnabled() and "Double Attack: Waiting for Aura Kill" or "Double Attack: Off")
         statusLabel.TextColor3 = runtime.Active and (colors.success or Color3.fromRGB(70, 225, 150))
             or (colors.muted or Color3.fromRGB(145, 135, 165))
         detailLabel.Text = string.format(
-            "Requests S/F/G: %d/%d/%d | Targets: %d/%d/%d%s",
+            "Main engine owns Sword + Fruit | Aux requests S/F/G: %d/%d/%d | Targets: %d/%d/%d%s",
             runtime.SwordRequests,
             runtime.FruitRequests,
             runtime.GunRequests,
@@ -201,7 +197,7 @@ return function(context)
             runtime.GunTargets,
             runtime.LastError and (" | " .. runtime.LastError) or ""
         )
-        gui:SetAttribute("BloxExperimentalMode", runtime.Active and "Fast Double" or "Off")
+        gui:SetAttribute("BloxExperimentalMode", runtime.Active and "Credited Main Double" or "Off")
         gui:SetAttribute("BloxExperimentalSwordRequests", runtime.SwordRequests)
         gui:SetAttribute("BloxExperimentalFruitRequests", runtime.FruitRequests)
         gui:SetAttribute("BloxDragonstormRequests", runtime.GunRequests)
