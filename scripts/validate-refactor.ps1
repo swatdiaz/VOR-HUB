@@ -18,7 +18,6 @@ $required = @(
     "games/blox_fruits.lua",
     "games/blox_fruits_parity.lua",
     "games/blox_fruits_pvp.lua",
-    "games/blox_fruits_cosmetics.lua",
     "games/blox_fruits_third_sea.lua",
     "games/blox_fruits_dungeons.lua"
 )
@@ -77,7 +76,14 @@ foreach ($match in [regex]::Matches($settingsText, '["''](blox_[^"'']+)["'']')) 
     [void]$modularFlags.Add($match.Groups[1].Value)
 }
 
-$missing = @($baselineFlags | Where-Object { -not $modularFlags.Contains($_) } | Sort-Object)
+$retiredFlags = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
+    # Explicitly removed because weapon-model replacement could corrupt the
+    # character assembly and trigger security kicks.
+    "blox_void_dark_blade_v3"
+))
+$missing = @($baselineFlags | Where-Object {
+    -not $modularFlags.Contains($_) -and -not $retiredFlags.Contains($_)
+} | Sort-Object)
 if ($missing.Count -gt 0) {
     throw "Persistent flag parity failed. Missing: $($missing -join ', ')"
 }

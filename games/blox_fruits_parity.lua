@@ -947,28 +947,6 @@ return function(context)
         end
     end
 
-    if pages.Player and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
-        runtime.CosmeticsLoaded, runtime.CosmeticsBuilder = context.LoadModule("games/blox_fruits_cosmetics.lua")
-        if not runtime.CosmeticsLoaded then
-            error("cosmetics module compile failed: " .. tostring(runtime.CosmeticsBuilder))
-        end
-        runtime.CosmeticsOk, runtime.CosmeticsError = context.RunBuilder(
-            "games/blox_fruits_cosmetics.lua",
-            runtime.CosmeticsBuilder,
-            {
-                Window = Window,
-                Gui = gui,
-                Track = track,
-                Page = pages.Player,
-                Helpers = context.Helpers,
-            }
-        )
-        runtime.CosmeticsBuilder = nil
-        if not runtime.CosmeticsOk then
-            error("cosmetics module builder failed: " .. tostring(runtime.CosmeticsError))
-        end
-    end
-
     if context.ThirdSeaAPI and context.ThirdSeaAPI.IsThirdSea
         and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
         runtime.ThirdSeaLoaded, runtime.ThirdSeaBuilder = context.LoadModule("games/blox_fruits_third_sea.lua")
