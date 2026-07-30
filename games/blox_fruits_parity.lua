@@ -816,6 +816,28 @@ return function(context)
     buildVisuals()
     buildShopParity()
 
+    if pages.PVP and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.PvpLoaded, runtime.PvpBuilder = context.LoadModule("games/blox_fruits_pvp.lua")
+        if not runtime.PvpLoaded then
+            error("PvP module compile failed: " .. tostring(runtime.PvpBuilder))
+        end
+        runtime.PvpOk, runtime.PvpError = context.RunBuilder(
+            "games/blox_fruits_pvp.lua",
+            runtime.PvpBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Page = pages.PVP,
+                Helpers = context.Helpers,
+            }
+        )
+        runtime.PvpBuilder = nil
+        if not runtime.PvpOk then
+            error("PvP module builder failed: " .. tostring(runtime.PvpError))
+        end
+    end
+
     track(workspace.ChildAdded:Connect(function(child)
         if runtime.IslandNotifications then
             local lower = string.lower(child.Name)

@@ -343,6 +343,7 @@ return function(context)
             GraphicsBackup = setmetatable({}, {__mode = "k"}),
             WaterPlatform = nil,
         }
+        state.PVPPage = addHomeCategory("PVP", 7)
 
         local statusLabel = FarmStatusSection:AddLabel("Status: Initializing...")
         local questLabel = FarmStatusSection:AddLabel("Quest: Reading live quest data...")
@@ -7588,7 +7589,10 @@ return function(context)
                     Shop = ShopPage,
                     Sea = SeaPage,
                     Player = PlayerPage,
+                    PVP = state.PVPPage,
                 },
+                LoadModule = context.LoadModule,
+                RunBuilder = context.RunBuilder,
                 State = state,
                 Remotes = {CommF = CommF, CommE = CommE, Redeem = Redeem},
                 Helpers = {
