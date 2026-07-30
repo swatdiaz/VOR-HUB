@@ -1658,6 +1658,78 @@ return function(context)
             return true, nil, #targets
         end
 
+        state.ExperimentalDispatchRegistered = function(selection, keepSwordEquipped)
+            local tool = toolForSelection(selection)
+            local char = character()
+            if not tool or not char then
+                return false, "No " .. tostring(selection) .. " Tool was found"
+            end
+            local weaponData = weaponDataForTool(tool)
+            if not hasRegisteredBasicMoveset(weaponData) then
+                return false, tostring(selection) .. " combat data is unavailable"
+            end
+            local profile, profileError = DoubleAttackEngine.SwordProfile(tool, weaponData)
+            if not profile then
+                return false, profileError
+            end
+            local registerHit = resolveRegisterHitClosure()
+            if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                return false, "experimental combat registration is unavailable"
+            end
+            local targets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
+            if #targets == 0 then
+                return false, "No enemy is inside experimental attack range"
+            end
+
+            local originalParent = tool.Parent
+            if keepSwordEquipped and string.lower(tostring(selection)) ~= "sword" then
+                local sword = toolForSelection("Sword")
+                if not sword then
+                    return false, "A Sword is required to keep the visible weapon equipped"
+                end
+                equipTool(sword)
+                if tool.Parent ~= char then
+                    tool.Parent = char
+                    task.wait()
+                end
+            else
+                local _, changed = equipTool(tool)
+                if changed then
+                    task.wait(0.04)
+                end
+            end
+            if tool.Parent ~= char then
+                return false, tostring(selection) .. " could not be armed"
+            end
+
+            RegisterAttackEvent:FireServer(profile.Duration)
+            task.wait(AURA_KILL_HIT_DELAY)
+            targets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
+            if #targets == 0 then
+                if keepSwordEquipped and originalParent and tool.Parent ~= originalParent then
+                    tool.Parent = originalParent
+                end
+                return false, "the experimental target left Aura range"
+            end
+            local primary = targets[1]
+            local extraHits = {}
+            for index = 2, #targets do
+                local hit = targets[index]
+                table.insert(extraHits, {hit.Enemy, hit.HitPart})
+            end
+            registerHit(char, primary.Enemy, primary.HitPart, weaponData, extraHits)
+            registerHit(true)
+            state.AuraCombos[profile.ComboKey] = profile.Combo
+            if keepSwordEquipped and originalParent and tool.Parent ~= originalParent then
+                tool.Parent = originalParent
+            end
+            local sword = keepSwordEquipped and toolForSelection("Sword") or nil
+            if sword then
+                equipTool(sword)
+            end
+            return true, nil, #targets
+        end
+
         local function playingTrackSet()
             local tracks = {}
             local body = humanoid()
@@ -1862,6 +1934,7 @@ return function(context)
             if not state.Alive
                 or not state.AuraKill
                 or not state.DoubleAttack
+                or state.ExperimentalAttackOverride
                 or state.InventoryBusy
                 or state.FruitDispatchPending then
                 return false
@@ -1912,7 +1985,8 @@ return function(context)
         end
 
         local function auraKillOnce()
-            if not state.AuraKill or state.AuraAttackPending or state.InventoryBusy then
+            if not state.AuraKill or state.AuraAttackPending or state.InventoryBusy
+                or state.ExperimentalAttackOverride then
                 return false
             end
             if not busoActive() then
@@ -7515,6 +7589,27 @@ return function(context)
                 RunBuilder = context.RunBuilder,
                 State = state,
                 Remotes = {CommF = CommF, CommE = CommE, Redeem = Redeem},
+                ExperimentalAPI = {
+                    SetOverride = function(enabled)
+                        state.ExperimentalAttackOverride = enabled == true
+                        state.AuraAttackPending = false
+                        state.FruitDispatchPending = false
+                        gui:SetAttribute("BloxExperimentalAttackOverride", state.ExperimentalAttackOverride)
+                    end,
+                    IsReady = function()
+                        return state.Alive and state.AuraKill and not state.InventoryBusy
+                    end,
+                    EnsureBuso = ensureBuso,
+                    Targets = DoubleAttackEngine.Targets,
+                    DispatchRegistered = state.ExperimentalDispatchRegistered,
+                    DispatchFruit = DoubleAttackEngine.SendFruit,
+                    ToolForSelection = toolForSelection,
+                    EquipTool = equipTool,
+                    Character = character,
+                    Humanoid = humanoid,
+                    RootPart = rootPart,
+                    ModelAlive = modelAlive,
+                },
                 ThirdSeaAPI = {
                     IsThirdSea = workspace:FindFirstChild("Map") ~= nil
                         and workspace.Map:FindFirstChild("Turtle") ~= nil,

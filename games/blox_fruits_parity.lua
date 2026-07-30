@@ -947,6 +947,32 @@ return function(context)
         end
     end
 
+    if context.ExperimentalAPI
+        and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.ExperimentalLoaded, runtime.ExperimentalBuilder = context.LoadModule(
+            "games/blox_fruits_experimental.lua"
+        )
+        if not runtime.ExperimentalLoaded then
+            error("Experimental module compile failed: " .. tostring(runtime.ExperimentalBuilder))
+        end
+        runtime.ExperimentalOk, runtime.ExperimentalError = context.RunBuilder(
+            "games/blox_fruits_experimental.lua",
+            runtime.ExperimentalBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Pages = pages,
+                COLORS = COLORS,
+                API = context.ExperimentalAPI,
+            }
+        )
+        runtime.ExperimentalBuilder = nil
+        if not runtime.ExperimentalOk then
+            error("Experimental module builder failed: " .. tostring(runtime.ExperimentalError))
+        end
+    end
+
     if context.ThirdSeaAPI and context.ThirdSeaAPI.IsThirdSea
         and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
         runtime.ThirdSeaLoaded, runtime.ThirdSeaBuilder = context.LoadModule("games/blox_fruits_third_sea.lua")
