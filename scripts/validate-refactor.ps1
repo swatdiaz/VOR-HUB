@@ -153,11 +153,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.2"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.3"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.2 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.3 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -173,6 +173,12 @@ if ($infiniteRangeCount -lt 3 -or -not $magnetOwnershipGateRemoved -or -not $mag
     throw "Infinite mob ranges or ownership-independent Auto Magnet contract failed"
 }
 
+$liveMagnetAnchor = $bloxText -match 'targetCFrame\s*=\s*CFrame\.new\(root\.Position\s*-\s*Vector3\.new\(0, state\.GatherDistance, 0\)\)'
+$staleMagnetAnchorRemoved = $bloxText -notmatch 'targetCFrame\s*=\s*CFrame\.new\(state\.MagnetAnchorCFrame\.Position\)'
+if (-not ($liveMagnetAnchor -and $staleMagnetAnchorRemoved)) {
+    throw "Auto Magnet must follow the live under-player anchor without restoring a stale enemy CFrame"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (5/5)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
@@ -180,7 +186,8 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.2)"
+Write-Host "Visible semantic version: PASS (3.2.3)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Infinite mob search and magnet ranges: PASS (5,000,000)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
+Write-Host "Live under-player Magnet anchor: PASS"

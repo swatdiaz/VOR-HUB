@@ -3538,6 +3538,9 @@ return function(context)
             table.sort(candidates, function(left, right)
                 return left.Distance < right.Distance
             end)
+            -- Solix-style live anchor: every scan derives the stack from the
+            -- player's CURRENT root, so NPCs remain under the character during
+            -- tweens, snap corrections, and target changes.
             local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
             if not multiGrabEnabled then
                 local anchorCandidate = nil
@@ -3566,7 +3569,6 @@ return function(context)
                     state.MagnetAnchorCFrame = anchorCandidate.Root.CFrame
                     state.MagnetAnchorName = targetName
                 end
-                targetCFrame = CFrame.new(state.MagnetAnchorCFrame.Position)
             end
             if multiGrabEnabled then
                 for _, candidate in ipairs(candidates) do
@@ -5399,7 +5401,7 @@ return function(context)
 
         ExploitSection:AddToggle({
             Name = "Auto Magnet",
-            Description = "Fixed-anchor stacking for every active NPC farming mode, including raids",
+            Description = "Keeps matching loaded NPCs stacked directly under your current position in every farming mode",
             Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
