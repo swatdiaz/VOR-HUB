@@ -1340,6 +1340,11 @@ return function(context)
                 selectedFilter = state.SelectedMobName
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
+            elseif state.AutoMagnet and state.CurrentEnemyName then
+                -- Auto Magnet owns one active NPC name at a time. Keep the
+                -- attack queue on that same-name pile instead of letting a
+                -- naturally nearby mob from another group enter the batch.
+                selectedFilter = state.CurrentEnemyName
             end
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
@@ -2133,15 +2138,16 @@ return function(context)
                 -- Grab is off. Fruit independently covers its nearest three.
                 attackTargets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
                 target = attackTargets[1] or target
-            elseif (state.GatherEnemies or (
+            elseif (state.AutoMagnet or state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid
                 and LocalPlayer:GetAttribute("IslandRaiding") == true
             )) and #targets > 1 then
                 attackTargets = {}
-                -- Non-Buddha melee validation accepts two rigs in one bundled
-                -- hit but rejects oversized lists. Rotate pairs through the
-                -- three-enemy pile so every NPC is covered without fake hits.
+                -- Solix's live credited pattern is a two-rig native window,
+                -- even when its UI advertises a larger maximum. Rotate pairs
+                -- through the same-name Magnet pile instead of hitting only
+                -- one NPC per cycle or sending an oversized rejected batch.
                 local multiLimit = math.min(#targets, MULTI_ATTACK_TARGET_LIMIT)
                 for offset = 0, multiLimit - 1 do
                     local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
@@ -3559,18 +3565,6 @@ return function(context)
                         and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
                 )
                 local matchesTarget = not targetName or enemyMatches(enemy, targetName)
-                if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
-                    matchesTarget = false
-                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
-                    for expected in pairs(state.ThirdSeaFarmNames) do
-                        if normalized == expected
-                            or string.find(normalized, expected, 1, true)
-                            or string.find(expected, normalized, 1, true) then
-                            matchesTarget = true
-                            break
-                        end
-                    end
-                end
                 local captured = state.AutoMagnet and state.GatherOriginalStates[enemy] ~= nil
                 if enemyRoot and modelAlive(enemy) and (distance <= gatherRange or captured) and insideRaid then
                     if matchesTarget then
