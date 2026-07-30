@@ -3492,11 +3492,9 @@ return function(context)
             pcall(function()
                 if type(sethiddenproperty) == "function" then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
-                    if state.ExperimentalMagnetBoost then
-                        sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
-                    end
+                    sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
                 end
-                if state.ExperimentalMagnetBoost and type(setsimulationradius) == "function" then
+                if type(setsimulationradius) == "function" then
                     setsimulationradius(math.huge, math.huge)
                 end
             end)
@@ -3604,29 +3602,34 @@ return function(context)
                 if index > limit then
                     break
                 end
-                local networkOwned = type(isnetworkowner) ~= "function" or isnetworkowner(candidate.Root)
-                if networkOwned then
-                    local enemyBody = candidate.Enemy:FindFirstChildOfClass("Humanoid")
-                    if enemyBody then
-                        if state.GatherOriginalStates[candidate.Enemy] == nil then
-                            state.GatherOriginalStates[candidate.Enemy] = {
-                                CFrame = candidate.Root.CFrame,
-                                CanCollide = candidate.Root.CanCollide,
-                                WalkSpeed = enemyBody.WalkSpeed,
-                                JumpPower = enemyBody.JumpPower,
-                                AutoRotate = enemyBody.AutoRotate,
-                                PlatformStand = enemyBody.PlatformStand,
-                            }
-                        end
-                        pcall(function()
-                            candidate.Root.CFrame = targetCFrame
-                            candidate.Root.AssemblyLinearVelocity = Vector3.zero
-                            candidate.Root.AssemblyAngularVelocity = Vector3.zero
-                            candidate.Root.CanCollide = false
-                            enemyBody.WalkSpeed = 0
-                            enemyBody.JumpPower = 0
-                            enemyBody.AutoRotate = false
-                        end)
+                local enemyBody = candidate.Enemy:FindFirstChildOfClass("Humanoid")
+                if enemyBody then
+                    if state.GatherOriginalStates[candidate.Enemy] == nil then
+                        state.GatherOriginalStates[candidate.Enemy] = {
+                            CFrame = candidate.Root.CFrame,
+                            CanCollide = candidate.Root.CanCollide,
+                            WalkSpeed = enemyBody.WalkSpeed,
+                            JumpPower = enemyBody.JumpPower,
+                            AutoRotate = enemyBody.AutoRotate,
+                            PlatformStand = enemyBody.PlatformStand,
+                        }
+                    end
+                    -- isnetworkowner() reports false for current Blox Fruits
+                    -- NPCs even at 8-19 studs. Treating that diagnostic as a
+                    -- hard gate made Magnet skip every candidate forever.
+                    -- Request maximum simulation radius above, then perform and
+                    -- continuously repeat the same root write used by the old
+                    -- working VOR/Solix magnet.
+                    local moved = pcall(function()
+                        candidate.Root.CFrame = targetCFrame
+                        candidate.Root.AssemblyLinearVelocity = Vector3.zero
+                        candidate.Root.AssemblyAngularVelocity = Vector3.zero
+                        candidate.Root.CanCollide = false
+                        enemyBody.WalkSpeed = 0
+                        enemyBody.JumpPower = 0
+                        enemyBody.AutoRotate = false
+                    end)
+                    if moved then
                         gathered += 1
                     end
                 end
@@ -5409,14 +5412,14 @@ return function(context)
         })
         ExploitSection:AddSlider({
             Name = "Magnet Range",
-            Description = "Maximum distance for matching combat NPCs to join the fixed network-owned stack",
+            Description = "Maximum loaded-NPC distance for the stack; 5,000,000 studs is effectively infinite across the map",
             Flag = "blox_magnet_range",
             Min = 50,
-            Max = 1500,
-            Step = 25,
+            Max = 5000000,
+            Step = 1000,
             Default = 300,
             Callback = function(value)
-                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 1500)
+                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 5000000)
                 state.LastGatherScan = 0
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
@@ -5735,14 +5738,14 @@ return function(context)
         })
         MobFarmSection:AddSlider({
             Name = "Mob Aura Search Distance",
-            Description = "Only teleports to the nearest living NPC inside this many studs",
+            Description = "Nearest loaded-NPC search distance; 5,000,000 studs is effectively infinite across the map",
             Flag = "blox_mob_aura_search_range",
             Min = 25,
-            Max = 2500,
-            Step = 25,
+            Max = 5000000,
+            Step = 1000,
             Default = 500,
             Callback = function(value)
-                state.MobAuraSearchRange = math.clamp(tonumber(value) or 500, 25, 2500)
+                state.MobAuraSearchRange = math.clamp(tonumber(value) or 500, 25, 5000000)
                 state.MobAuraTarget = nil
                 state.MobAuraAnchorTarget = nil
                 state.MobAuraStableAnchor = nil
@@ -5809,14 +5812,14 @@ return function(context)
         })
         MobFarmSection:AddSlider({
             Name = "Selected Mob Search Distance",
-            Description = "Maximum distance for the chosen loaded enemy; spawn waiting still works anywhere in this sea",
+            Description = "Maximum distance for the chosen loaded enemy; 5,000,000 studs is effectively infinite",
             Flag = "blox_selected_mob_search_range",
             Min = 500,
-            Max = 30000,
-            Step = 500,
-            Default = 30000,
+            Max = 5000000,
+            Step = 1000,
+            Default = 5000000,
             Callback = function(value)
-                state.SelectedMobSearchRange = math.clamp(tonumber(value) or 30000, 500, 30000)
+                state.SelectedMobSearchRange = math.clamp(tonumber(value) or 5000000, 500, 5000000)
                 state.MobAuraTarget = nil
                 state.MobAuraAnchorTarget = nil
                 state.MobAuraStableAnchor = nil
