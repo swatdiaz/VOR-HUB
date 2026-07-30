@@ -3453,6 +3453,31 @@ return function(context)
             state.GatherOriginalCFrames[enemy] = nil
         end
 
+        state.HoldGatherEnemy = function(enemy)
+            local enemyRoot = modelRoot(enemy)
+            local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
+            if not enemyRoot or not enemyBody or enemyBody.Health <= 0 then
+                state.RestoreGatherEnemy(enemy, false)
+                return false
+            end
+            local magnetTween = state.MagnetTweens[enemy]
+            if magnetTween and magnetTween.Tween then
+                pcall(function()
+                    magnetTween.Tween:Cancel()
+                end)
+            end
+            state.MagnetTweens[enemy] = nil
+            pcall(function()
+                enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                enemyRoot.CanCollide = false
+                enemyBody.WalkSpeed = 0
+                enemyBody.JumpPower = 0
+                enemyBody.AutoRotate = false
+            end)
+            return true
+        end
+
         local function gatherStep()
             local now = os.clock()
             local scanInterval = state.ExperimentalMagnetBoost and 0.03 or 0.08
@@ -3469,17 +3494,18 @@ return function(context)
             local raidGatherEnabled = state.RaidMultiGrab and state.AutoRaid
                 and RaidRuntime.Active() and not raidVoidActive
             local multiGrabEnabled = state.GatherEnemies or raidGatherEnabled
-            local enabled = not raidVoidActive and (
-                multiGrabEnabled
-                or (state.AutoMagnet and (
-                    state.AutoFarmLevel
-                    or state.AutoBoss
-                    or state.AutoRaid
-                    or state.MobAuraTp
-                    or state.SelectedMobFarm
-                    or state.ThirdSeaFarmActive
-                ))
+            local farmMagnetActive = state.AutoMagnet and (
+                state.AutoFarmLevel
+                or state.AutoBoss
+                or state.AutoRaid
+                or state.MobAuraTp
+                or state.SelectedMobFarm
+                or state.ThirdSeaFarmActive
             )
+            -- Solix keeps already-captured NPCs frozen while Auto Magnet stays
+            -- enabled, even when the farm temporarily travels or turns off.
+            -- New captures still require an active farm target.
+            local enabled = not raidVoidActive and (multiGrabEnabled or state.AutoMagnet)
             if not enabled then
                 state.Gathered = 0
                 state.RaidGathered = 0
@@ -3504,12 +3530,24 @@ return function(context)
                     setsimulationradius(math.huge, math.huge)
                 end
             end)
+            if state.AutoMagnet and not farmMagnetActive and not multiGrabEnabled then
+                local retained = 0
+                for enemy in pairs(state.GatherOriginalStates) do
+                    if state.HoldGatherEnemy(enemy) then
+                        retained += 1
+                    end
+                end
+                state.Gathered = retained
+                state.RaidGathered = 0
+                gui:SetAttribute("BloxAutoMagnetCount", retained)
+                gui:SetAttribute("BloxAutoMagnetRange", state.MagnetRange)
+                return
+            end
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
-            -- Nearest Mob Aura is the old multi-kill mode: its current target
-            -- supplies the stable pile anchor, but every living NPC type inside
-            -- Magnet Range joins that pile. Quest, boss, and selected-mob farms
-            -- remain name-filtered so they cannot drag unrelated enemies.
-            local targetName = (raidGatherEnabled or (state.AutoMagnet and state.MobAuraTp)) and nil
+            -- One farm target supplies the name and fixed pile anchor. Every
+            -- matching NPC acquired inside Magnet Range joins the same attack
+            -- batch; other names wait for their own target cycle.
+            local targetName = raidGatherEnabled and nil
                 or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
             local candidates = {}
             local candidateSet = {}
@@ -3533,7 +3571,8 @@ return function(context)
                         end
                     end
                 end
-                if enemyRoot and modelAlive(enemy) and distance <= gatherRange and insideRaid then
+                local captured = state.AutoMagnet and state.GatherOriginalStates[enemy] ~= nil
+                if enemyRoot and modelAlive(enemy) and (distance <= gatherRange or captured) and insideRaid then
                     if matchesTarget then
                         table.insert(candidates, {Enemy = enemy, Root = enemyRoot, Distance = distance})
                         candidateSet[enemy] = true
@@ -3542,7 +3581,11 @@ return function(context)
             end
             for enemy in pairs(state.GatherOriginalStates) do
                 if not candidateSet[enemy] then
-                    state.RestoreGatherEnemy(enemy, true)
+                    if not state.AutoMagnet then
+                        state.RestoreGatherEnemy(enemy, true)
+                    else
+                        state.HoldGatherEnemy(enemy)
+                    end
                 end
             end
             table.sort(candidates, function(left, right)
@@ -5459,7 +5502,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Mob Aura + Auto Magnet stacks every NPC type in Magnet Range for multi-hit; selected farms stay name-filtered.")
+        ExploitSection:AddLabel("Auto Magnet captures matching farm targets inside 500, keeps captured piles locked, and multi-hits each same-name group.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
