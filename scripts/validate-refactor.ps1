@@ -154,11 +154,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.8"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.9"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.8 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.9 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -188,6 +188,11 @@ if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $magnetMovementDecoupl
     throw "Auto Magnet must retain a stable 250-stud enemy pull without taking ownership of character movement"
 }
 
+$mobAuraMultiKill = $bloxText -match '\(raidGatherEnabled or \(state\.AutoMagnet and state\.MobAuraTp\)\) and nil'
+if (-not $mobAuraMultiKill) {
+    throw "Mob Aura Auto Magnet must gather every enemy type in range while selected farms remain name-filtered"
+}
+
 $mobAuraTweenTravel = $bloxText -match 'moveTo\(CFrame\.lookAt\(goalPosition, goalPosition \+ facing\)\)'
 $selectedSpawnTweenTravel = $bloxText -match 'moveTo\(CFrame\.new\(goalPosition\)\)'
 if (-not ($mobAuraTweenTravel -and $selectedSpawnTweenTravel)) {
@@ -208,7 +213,7 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.8)"
+Write-Host "Visible semantic version: PASS (3.2.9)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
@@ -216,3 +221,4 @@ Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
+Write-Host "Mob Aura Magnet multi-kill: PASS (all enemy types in range)"

@@ -3505,7 +3505,11 @@ return function(context)
                 end
             end)
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
-            local targetName = raidGatherEnabled and nil
+            -- Nearest Mob Aura is the old multi-kill mode: its current target
+            -- supplies the stable pile anchor, but every living NPC type inside
+            -- Magnet Range joins that pile. Quest, boss, and selected-mob farms
+            -- remain name-filtered so they cannot drag unrelated enemies.
+            local targetName = (raidGatherEnabled or (state.AutoMagnet and state.MobAuraTp)) and nil
                 or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
             local candidates = {}
             local candidateSet = {}
@@ -5455,7 +5459,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Multi Grab was retired. Auto Magnet has no artificial three-enemy cap.")
+        ExploitSection:AddLabel("Mob Aura + Auto Magnet stacks every NPC type in Magnet Range for multi-hit; selected farms stay name-filtered.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
