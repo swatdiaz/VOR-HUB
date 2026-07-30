@@ -270,6 +270,8 @@ return function(context)
             GatherOriginalStates = setmetatable({}, {__mode = "k"}),
             AutoMagnet = false,
             ExperimentalMagnetBoost = false,
+            DragonstormOwned = nil,
+            LastDragonstormOwnershipCheck = 0,
             MagnetRange = 300,
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
@@ -1932,6 +1934,29 @@ return function(context)
         end
 
         function DoubleAttackEngine.SendDragonstorm()
+            if state.DragonstormOwned == nil
+                or os.clock() - state.LastDragonstormOwnershipCheck >= 5 then
+                state.LastDragonstormOwnershipCheck = os.clock()
+                state.DragonstormOwned = false
+                if CommF then
+                    local checked, inventory = pcall(function()
+                        return CommF:InvokeServer("getInventoryWeapons")
+                    end)
+                    if checked and type(inventory) == "table" then
+                        for _, item in pairs(inventory) do
+                            if type(item) == "table"
+                                and string.lower(tostring(item.Name)) == "dragonstorm" then
+                                state.DragonstormOwned = true
+                                break
+                            end
+                        end
+                    end
+                end
+                gui:SetAttribute("BloxDragonstormServerOwned", state.DragonstormOwned)
+            end
+            if not state.DragonstormOwned then
+                return false, "Dragonstorm is not owned in the server inventory; visual copies cannot deal damage"
+            end
             local gun = toolForSelection("Gun")
             local root = rootPart()
             local targets = DoubleAttackEngine.Targets(1)
