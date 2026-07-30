@@ -1658,7 +1658,7 @@ return function(context)
             return true, nil, #targets
         end
 
-        state.ExperimentalDispatchRegistered = function(selection, keepSwordEquipped)
+        state.ExperimentalDispatchRegistered = function(selection, keepSwordEquipped, hitDelay)
             local tool = toolForSelection(selection)
             local char = character()
             if not tool or not char then
@@ -1681,34 +1681,33 @@ return function(context)
                 return false, "No enemy is inside experimental attack range"
             end
 
-            local originalParent = tool.Parent
             if keepSwordEquipped and string.lower(tostring(selection)) ~= "sword" then
                 local sword = toolForSelection("Sword")
                 if not sword then
                     return false, "A Sword is required to keep the visible weapon equipped"
                 end
                 equipTool(sword)
-                if tool.Parent ~= char then
-                    tool.Parent = char
-                    task.wait()
-                end
             else
                 local _, changed = equipTool(tool)
                 if changed then
                     task.wait(0.04)
                 end
             end
-            if tool.Parent ~= char then
+            if not keepSwordEquipped and tool.Parent ~= char then
                 return false, tostring(selection) .. " could not be armed"
             end
 
             RegisterAttackEvent:FireServer(profile.Duration)
-            task.wait(AURA_KILL_HIT_DELAY)
+            local requestedHitDelay = math.clamp(
+                tonumber(hitDelay) or AURA_KILL_HIT_DELAY,
+                0,
+                AURA_KILL_HIT_DELAY
+            )
+            if requestedHitDelay > 0 then
+                task.wait(requestedHitDelay)
+            end
             targets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
             if #targets == 0 then
-                if keepSwordEquipped and originalParent and tool.Parent ~= originalParent then
-                    tool.Parent = originalParent
-                end
                 return false, "the experimental target left Aura range"
             end
             local primary = targets[1]
@@ -1720,9 +1719,6 @@ return function(context)
             registerHit(char, primary.Enemy, primary.HitPart, weaponData, extraHits)
             registerHit(true)
             state.AuraCombos[profile.ComboKey] = profile.Combo
-            if keepSwordEquipped and originalParent and tool.Parent ~= originalParent then
-                tool.Parent = originalParent
-            end
             local sword = keepSwordEquipped and toolForSelection("Sword") or nil
             if sword then
                 equipTool(sword)

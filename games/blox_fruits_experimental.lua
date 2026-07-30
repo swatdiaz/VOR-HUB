@@ -150,7 +150,8 @@ return function(context)
                 operationOk, sent, message, count = pcall(
                     api.DispatchRegistered,
                     category,
-                    runtime.Triple and category == "Melee"
+                    category == "Melee",
+                    runtime.Requested[category]
                 )
             end
             if operationOk and sent then
@@ -184,6 +185,9 @@ return function(context)
                 runtime["Fast" .. category] = enabled == true
                 runtime.LastDispatch[category] = 0
                 syncOverride()
+                if category == "Melee" and enabled then
+                    restoreVisibleSword(0)
+                end
             end,
         })
         section:AddSlider({
