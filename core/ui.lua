@@ -426,12 +426,13 @@ return function(context)
         ClipsDescendants = true,
         ZIndex = 30,
     }, main)
-    create("Frame", {
+    local railDivider = create("Frame", {
         Name = "RailDivider",
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, 0, 0, 0),
         Size = UDim2.new(0, 1, 1, 0),
         BackgroundColor3 = COLORS.border,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 31,
     }, rail)
@@ -659,6 +660,7 @@ return function(context)
         Shop = "🛒",
         ["Sea & Raids"] = "🌊",
         Player = "👤",
+        PVP = "💀",
         Settings = "⚙️",
         Tools = "🛠️",
         Overnight = "🌙",
@@ -1128,6 +1130,10 @@ return function(context)
             collapsedPosition.Y.Offset
         ) or collapsedPosition
         tween(rail, 0.2, {Size = UDim2.new(0, width, 1, 0)})
+        navScroll.ScrollBarThickness = expanded and 3 or 0
+        navScroll.ScrollBarImageColor3 = COLORS.accentBright
+        navScroll.ScrollBarImageTransparency = expanded and 0.18 or 1
+        tween(railDivider, 0.14, {BackgroundTransparency = expanded and 0.12 or 1})
         tween(main, 0.2, {
             Position = targetPosition,
             Size = UDim2.fromOffset(targetWidth, BASE_HEIGHT),
@@ -2048,7 +2054,9 @@ return function(context)
 
         local navButton = create("TextButton", {
             Name = Utilities.MakeFlag(name) .. "_nav",
-            Size = UDim2.new(1, 0, 0, 45),
+            -- Reserve a gutter for the expanded rail scrollbar so the active
+            -- page background never paints over its draggable handle.
+            Size = UDim2.new(1, -7, 0, 45),
             BackgroundColor3 = COLORS.rail,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,

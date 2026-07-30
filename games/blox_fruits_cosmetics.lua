@@ -61,6 +61,37 @@ return function(context)
         return nil
     end
 
+    local function equipVisualBaseTool()
+        local current = equippedTool()
+        if current then
+            return current
+        end
+        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+        local body = helpers.Humanoid and helpers.Humanoid() or nil
+        if not backpack or not body then
+            return nil
+        end
+        local fallback
+        for _, object in ipairs(backpack:GetChildren()) do
+            if object:IsA("Tool") then
+                local tooltip = string.lower(tostring(object.ToolTip or ""))
+                if tooltip == "sword" then
+                    fallback = object
+                    break
+                elseif not fallback and (tooltip == "melee" or tooltip == "gun" or tooltip == "blox fruit") then
+                    fallback = object
+                end
+            end
+        end
+        if fallback then
+            pcall(function()
+                body:EquipTool(fallback)
+            end)
+            task.wait()
+        end
+        return equippedTool()
+    end
+
     local function toolParts(tool)
         local result = {}
         if tool then
@@ -216,9 +247,9 @@ return function(context)
             statusLabel.Text = "Visual swap: Off"
             return false
         end
-        local realTool = equippedTool()
+        local realTool = equipVisualBaseTool()
         if not realTool then
-            statusLabel.Text = "Visual swap: Equip a real weapon first"
+            statusLabel.Text = "Visual swap: No usable combat Tool found"
             return false
         end
         local realParts = toolParts(realTool)
@@ -369,5 +400,5 @@ return function(context)
     track(gui.Destroying:Connect(restore))
 
     gui:SetAttribute("BloxVisualWeaponModule", true)
-    gui:SetAttribute("BloxVisualWeaponModuleVersion", "1")
+    gui:SetAttribute("BloxVisualWeaponModuleVersion", "2")
 end
