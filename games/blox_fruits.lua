@@ -276,6 +276,8 @@ return function(context)
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
             MagnetAnchorName = nil,
+            ThirdSeaFarmActive = false,
+            ThirdSeaFarmNames = {},
             TweenSpeed = 300,
             LastPositionJitterAt = 0,
             PositionJitterCorner = 0,
@@ -3359,11 +3361,13 @@ return function(context)
                     or state.AutoRaid
                     or state.MobAuraTp
                     or state.SelectedMobFarm
+                    or state.ThirdSeaFarmActive
                 ))
             )
             if not enabled then
                 state.Gathered = 0
                 state.RaidGathered = 0
+                gui:SetAttribute("BloxAutoMagnetCount", 0)
                 state.GatherSingleFallbackEnemy = nil
                 for enemy in pairs(state.GatherOriginalStates) do
                     state.RestoreGatherEnemy(enemy, true)
@@ -3398,8 +3402,21 @@ return function(context)
                     raidIsland and enemyRoot
                         and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
                 )
+                local matchesTarget = not targetName or enemyMatches(enemy, targetName)
+                if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
+                    matchesTarget = false
+                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
+                    for expected in pairs(state.ThirdSeaFarmNames) do
+                        if normalized == expected
+                            or string.find(normalized, expected, 1, true)
+                            or string.find(expected, normalized, 1, true) then
+                            matchesTarget = true
+                            break
+                        end
+                    end
+                end
                 if enemyRoot and modelAlive(enemy) and distance <= gatherRange and insideRaid then
-                    if not targetName or enemyMatches(enemy, targetName) then
+                    if matchesTarget then
                         table.insert(candidates, {Enemy = enemy, Root = enemyRoot, Distance = distance})
                         candidateSet[enemy] = true
                     end
@@ -3431,6 +3448,7 @@ return function(context)
                     state.MagnetAnchorCFrame = nil
                     state.MagnetAnchorName = nil
                     state.Gathered = 0
+                    gui:SetAttribute("BloxAutoMagnetCount", 0)
                     return
                 end
                 if state.MagnetAnchorTarget ~= anchorCandidate.Enemy
@@ -3462,6 +3480,7 @@ return function(context)
                     state.MobAuraAnchorTarget = nil
                     state.MobAuraStableAnchor = nil
                     state.Gathered = 0
+                    gui:SetAttribute("BloxAutoMagnetCount", 0)
                     return
                 elseif #candidates > 1 then
                     state.GatherSingleFallbackEnemy = nil
@@ -3504,6 +3523,8 @@ return function(context)
             end
             state.Gathered = gathered
             state.RaidGathered = raidGatherEnabled and gathered or 0
+            gui:SetAttribute("BloxAutoMagnetCount", gathered)
+            gui:SetAttribute("BloxAutoMagnetRange", gatherRange)
         end
 
         state.SeaEvent.BoatNames = {
@@ -5278,7 +5299,9 @@ return function(context)
             Step = 25,
             Default = 300,
             Callback = function(value)
-                state.MagnetRange = value
+                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 1500)
+                state.LastGatherScan = 0
+                gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
         ExploitSection:AddLabel("Multi Grab was retired. Auto Magnet has no artificial three-enemy cap.")
@@ -6571,6 +6594,7 @@ return function(context)
                 auraKillOnce()
             end
             local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
+                or state.ThirdSeaFarmActive
             FarmVertical.SetAntiRagdoll(combatFarmEnabled)
             FarmVertical.SetCalmPose(state.AuraKill and (
                 combatFarmEnabled or state.MobAuraTp or state.SelectedMobFarm
@@ -6615,7 +6639,8 @@ return function(context)
             end
             gatherStep()
             if state.Noclip or state.Traveling or state.MobAuraTp or state.SelectedMobFarm
-                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest then
+                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest
+                or state.ThirdSeaFarmActive then
                 applyNoclip()
             end
             updateEnergy()
@@ -7651,6 +7676,10 @@ return function(context)
                         or game.PlaceId == 100117331123089,
                     SetCombat = function(enabled)
                         local desired = enabled == true
+                        state.ThirdSeaFarmActive = desired
+                        if not desired then
+                            table.clear(state.ThirdSeaFarmNames)
+                        end
                         for flag, value in pairs({
                             blox_auto_attack = desired,
                             blox_fast_attack = desired,
@@ -7672,6 +7701,7 @@ return function(context)
                             ensureBuso()
                         end
                         gui:SetAttribute("BloxThirdSeaCombat", desired)
+                        gui:SetAttribute("BloxThirdSeaFarmActive", desired)
                     end,
                     FarmFirst = function(names, center, radius, heightOverride)
                         local root = rootPart()
@@ -7682,6 +7712,9 @@ return function(context)
                         for _, name in ipairs(type(names) == "table" and names or {}) do
                             wanted[string.lower(normalizeEnemyName(name))] = true
                         end
+                        state.ThirdSeaFarmActive = true
+                        state.ThirdSeaFarmNames = wanted
+                        gui:SetAttribute("BloxThirdSeaFarmActive", true)
                         local function allowed(enemy)
                             if not modelAlive(enemy) then
                                 return false
@@ -7721,6 +7754,7 @@ return function(context)
                         end
                         if enemy then
                             state.ActiveFarmTarget = enemy
+                            state.CurrentEnemyName = normalizeEnemyName(enemy.Name)
                             state.ActiveFarmVerticalLock = true
                             state.ActiveFarmHeightOverride = tonumber(heightOverride)
                             applyNoclip()
@@ -7732,6 +7766,8 @@ return function(context)
                             return normalizeEnemyName(enemy.Name), "Farming"
                         end
                         state.ActiveFarmTarget = nil
+                        state.CurrentEnemyName = type(names) == "table" and names[1]
+                            and normalizeEnemyName(names[1]) or nil
                         for _, name in ipairs(type(names) == "table" and names or {}) do
                             local spawn = enemySpawn(name)
                             if spawn then
@@ -7750,9 +7786,13 @@ return function(context)
                         return moveTo(target)
                     end,
                     Stop = function()
+                        state.ThirdSeaFarmActive = false
+                        table.clear(state.ThirdSeaFarmNames)
                         state.ActiveFarmTarget = nil
+                        state.CurrentEnemyName = nil
                         state.ActiveFarmHeightOverride = nil
                         cancelMove(false)
+                        gui:SetAttribute("BloxThirdSeaFarmActive", false)
                     end,
                     RootPart = rootPart,
                 },

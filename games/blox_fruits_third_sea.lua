@@ -32,6 +32,9 @@ return function(context)
         DetailLabel = nil,
         DojoLabel = nil,
         DragonLabel = nil,
+        CakeLabel = nil,
+        CakeRemaining = nil,
+        CakePortalReady = false,
     }
 
     local taskNames = {
@@ -270,13 +273,29 @@ return function(context)
     end
 
     local function stepCake()
-        local ready = false
         throttled("cake", 2.5, function()
             local ok, result = rawInvoke("CakePrinceSpawner", true)
             local text = tostring(result or "")
-            ready = ok and string.find(string.lower(text), "open the portal now", 1, true) ~= nil
+            local lower = string.lower(text)
+            runtime.CakeRemaining = tonumber(string.match(text, "(%d+)"))
+            runtime.CakePortalReady = ok
+                and string.find(lower, "open the portal now", 1, true) ~= nil
+            if runtime.CakeLabel then
+                if runtime.CakePortalReady then
+                    runtime.CakeLabel.Text = "Cake Prince Portal: READY"
+                elseif runtime.CakeRemaining then
+                    runtime.CakeLabel.Text = string.format(
+                        "Cake Prince Portal: %d NPCs remaining",
+                        runtime.CakeRemaining
+                    )
+                else
+                    runtime.CakeLabel.Text = "Cake Prince Portal: Reading progress..."
+                end
+            end
+            gui:SetAttribute("BloxCakePrinceRemaining", runtime.CakeRemaining or -1)
+            gui:SetAttribute("BloxCakePrincePortalReady", runtime.CakePortalReady)
             setStatus("Cake Prince", text ~= "" and text or "Reading portal progress")
-            if ready then
+            if runtime.CakePortalReady then
                 rawInvoke("CakePrinceSpawner")
             end
         end)
@@ -319,11 +338,21 @@ return function(context)
             return
         end
         if bossLoaded then
+            runtime.CakeRemaining = 0
+            runtime.CakePortalReady = true
+            if runtime.CakeLabel then
+                runtime.CakeLabel.Text = "Cake Prince: BOSS SPAWNED"
+            end
+            gui:SetAttribute("BloxCakePrinceRemaining", 0)
+            gui:SetAttribute("BloxCakePrincePortalReady", true)
             gui:SetAttribute("BloxCakePrinceRoute", "Boss room")
             farm({"Cake Prince", "Dough King"}, nil, nil, 28)
             return
         end
-        gui:SetAttribute("BloxCakePrinceRoute", ready and "Opening portal" or "Farming portal requirement")
+        gui:SetAttribute(
+            "BloxCakePrinceRoute",
+            runtime.CakePortalReady and "Opening portal" or "Farming portal requirement"
+        )
         farm({"Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker"}, nil, nil, 22)
     end
 
@@ -657,6 +686,7 @@ return function(context)
         addTask(dragon, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")
 
         local bosses = pages.Sea:AddSection("Third Sea Bosses", "Right")
+        runtime.CakeLabel = bosses:AddLabel("Cake Prince Portal: Reading progress...")
         addTask(bosses, "cake", "blox_third_auto_cake_prince", "Reads the real Cake Prince portal counter, farms 500 Cake Land NPCs, enters BigMirror, then kills the boss.")
     end
 
