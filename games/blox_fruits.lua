@@ -266,8 +266,12 @@ return function(context)
             Gathered = 0,
             GatherSingleFallbackEnemy = nil,
             GatherOriginalCFrames = setmetatable({}, {__mode = "k"}),
+            GatherOriginalStates = setmetatable({}, {__mode = "k"}),
             AutoMagnet = false,
             MagnetRange = 300,
+            MagnetAnchorTarget = nil,
+            MagnetAnchorCFrame = nil,
+            MagnetAnchorName = nil,
             TweenSpeed = 300,
             LastPositionJitterAt = 0,
             PositionJitterCorner = 0,
@@ -3167,6 +3171,28 @@ return function(context)
             end
         end
 
+        state.RestoreGatherEnemy = function(enemy, restorePosition)
+            local original = state.GatherOriginalStates[enemy]
+            local enemyRoot = modelRoot(enemy)
+            local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
+            if original and enemyRoot and enemyBody and enemyBody.Health > 0 then
+                pcall(function()
+                    if restorePosition and typeof(original.CFrame) == "CFrame" then
+                        enemyRoot.CFrame = original.CFrame
+                    end
+                    enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                    enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                    enemyRoot.CanCollide = original.CanCollide
+                    enemyBody.WalkSpeed = original.WalkSpeed
+                    enemyBody.JumpPower = original.JumpPower
+                    enemyBody.AutoRotate = original.AutoRotate
+                    enemyBody.PlatformStand = original.PlatformStand
+                end)
+            end
+            state.GatherOriginalStates[enemy] = nil
+            state.GatherOriginalCFrames[enemy] = nil
+        end
+
         local function gatherStep()
             local now = os.clock()
             if now - state.LastGatherScan < 0.08 then
@@ -3190,15 +3216,14 @@ return function(context)
                 state.Gathered = 0
                 state.RaidGathered = 0
                 state.GatherSingleFallbackEnemy = nil
-                for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
-                    local enemyRoot = modelRoot(enemy)
-                    if enemyRoot and modelAlive(enemy) then
-                        pcall(function()
-                            enemyRoot.CFrame = originalCFrame
-                        end)
-                    end
+                for enemy in pairs(state.GatherOriginalStates) do
+                    state.RestoreGatherEnemy(enemy, true)
                 end
                 table.clear(state.GatherOriginalCFrames)
+                table.clear(state.GatherOriginalStates)
+                state.MagnetAnchorTarget = nil
+                state.MagnetAnchorCFrame = nil
+                state.MagnetAnchorName = nil
                 return
             end
             pcall(function()
@@ -3209,11 +3234,8 @@ return function(context)
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
             local targetName = raidGatherEnabled and nil
                 or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
-            -- Stack every grabbed NPC directly underneath the player. This
-            -- keeps the pile inside Aura range while the player remains above
-            -- it instead of dragging the enemies in front of the character.
-            local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
             local candidates = {}
+            local candidateSet = {}
             for _, enemy in ipairs(loadedEnemies()) do
                 local enemyRoot = modelRoot(enemy)
                 local distance = enemyRoot and (enemyRoot.Position - root.Position).Magnitude or math.huge
@@ -3224,12 +3246,46 @@ return function(context)
                 if enemyRoot and modelAlive(enemy) and distance <= gatherRange and insideRaid then
                     if not targetName or enemyMatches(enemy, targetName) then
                         table.insert(candidates, {Enemy = enemy, Root = enemyRoot, Distance = distance})
+                        candidateSet[enemy] = true
                     end
+                end
+            end
+            for enemy in pairs(state.GatherOriginalStates) do
+                if not candidateSet[enemy] then
+                    state.RestoreGatherEnemy(enemy, true)
                 end
             end
             table.sort(candidates, function(left, right)
                 return left.Distance < right.Distance
             end)
+            local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
+            if not multiGrabEnabled then
+                local anchorCandidate = nil
+                for _, candidate in ipairs(candidates) do
+                    if candidate.Enemy == state.ActiveFarmTarget then
+                        anchorCandidate = candidate
+                        break
+                    end
+                end
+                if not anchorCandidate then
+                    anchorCandidate = candidates[1]
+                end
+                if not anchorCandidate then
+                    state.MagnetAnchorTarget = nil
+                    state.MagnetAnchorCFrame = nil
+                    state.MagnetAnchorName = nil
+                    state.Gathered = 0
+                    return
+                end
+                if state.MagnetAnchorTarget ~= anchorCandidate.Enemy
+                    or state.MagnetAnchorName ~= targetName
+                    or typeof(state.MagnetAnchorCFrame) ~= "CFrame" then
+                    state.MagnetAnchorTarget = anchorCandidate.Enemy
+                    state.MagnetAnchorCFrame = anchorCandidate.Root.CFrame
+                    state.MagnetAnchorName = targetName
+                end
+                targetCFrame = CFrame.new(state.MagnetAnchorCFrame.Position)
+            end
             if multiGrabEnabled then
                 for _, candidate in ipairs(candidates) do
                     if state.GatherOriginalCFrames[candidate.Enemy] == nil then
@@ -3263,12 +3319,32 @@ return function(context)
                 if index > limit then
                     break
                 end
-                pcall(function()
-                    candidate.Root.CFrame = targetCFrame
-                    candidate.Root.AssemblyLinearVelocity = Vector3.zero
-                    candidate.Root.AssemblyAngularVelocity = Vector3.zero
-                end)
-                gathered += 1
+                local networkOwned = type(isnetworkowner) ~= "function" or isnetworkowner(candidate.Root)
+                if networkOwned then
+                    local enemyBody = candidate.Enemy:FindFirstChildOfClass("Humanoid")
+                    if enemyBody then
+                        if state.GatherOriginalStates[candidate.Enemy] == nil then
+                            state.GatherOriginalStates[candidate.Enemy] = {
+                                CFrame = candidate.Root.CFrame,
+                                CanCollide = candidate.Root.CanCollide,
+                                WalkSpeed = enemyBody.WalkSpeed,
+                                JumpPower = enemyBody.JumpPower,
+                                AutoRotate = enemyBody.AutoRotate,
+                                PlatformStand = enemyBody.PlatformStand,
+                            }
+                        end
+                        pcall(function()
+                            candidate.Root.CFrame = targetCFrame
+                            candidate.Root.AssemblyLinearVelocity = Vector3.zero
+                            candidate.Root.AssemblyAngularVelocity = Vector3.zero
+                            candidate.Root.CanCollide = false
+                            enemyBody.WalkSpeed = 0
+                            enemyBody.JumpPower = 0
+                            enemyBody.AutoRotate = false
+                        end)
+                        gathered += 1
+                    end
+                end
             end
             state.Gathered = gathered
             state.RaidGathered = raidGatherEnabled and gathered or 0
@@ -6306,6 +6382,10 @@ return function(context)
             state.MobAuraStableAnchor = nil
             state.GatherSingleFallbackEnemy = nil
             table.clear(state.GatherOriginalCFrames)
+            table.clear(state.GatherOriginalStates)
+            state.MagnetAnchorTarget = nil
+            state.MagnetAnchorCFrame = nil
+            state.MagnetAnchorName = nil
             state.ActiveFarmTarget = nil
             state.ActiveFarmHeightOverride = nil
             state.AntiRagdollApplied = false
@@ -6784,15 +6864,11 @@ return function(context)
             FarmVertical.SetAntiRagdoll(false)
             FarmVertical.SetCalmPose(false)
             FarmVertical.Release()
-            for enemy, originalCFrame in pairs(state.GatherOriginalCFrames) do
-                local enemyRoot = modelRoot(enemy)
-                if enemyRoot and modelAlive(enemy) then
-                    pcall(function()
-                        enemyRoot.CFrame = originalCFrame
-                    end)
-                end
+            for enemy in pairs(state.GatherOriginalStates) do
+                state.RestoreGatherEnemy(enemy, true)
             end
             table.clear(state.GatherOriginalCFrames)
+            table.clear(state.GatherOriginalStates)
             for enemy, originalCFrame in pairs(state.RaidVoidOriginalCFrames) do
                 local enemyRoot = modelRoot(enemy)
                 local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
