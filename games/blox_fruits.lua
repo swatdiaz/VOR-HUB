@@ -5462,14 +5462,14 @@ return function(context)
         })
         ExploitSection:AddSlider({
             Name = "Magnet Range",
-            Description = "Maximum pull magnitude, matching Solix Hub's 500-stud limit",
+            Description = "Pull magnitude from 0 to 500 studs, matching Solix Hub's range",
             Flag = "blox_magnet_range",
-            Min = 50,
+            Min = 0,
             Max = 500,
             Step = 10,
             Default = 300,
             Callback = function(value)
-                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 500)
+                state.MagnetRange = math.clamp(tonumber(value) or 300, 0, 500)
                 state.LastGatherScan = 0
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,

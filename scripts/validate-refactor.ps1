@@ -153,11 +153,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.4"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.5"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.4 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.5 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -168,7 +168,7 @@ if (-not ($manualFruitMaxOk -and $automaticFruitCadenceOk)) {
 
 $magnetOwnershipGateRemoved = $bloxText -notmatch 'local networkOwned\s*=.*isnetworkowner'
 $magnetSimulationRadius = $bloxText -match 'setsimulationradius\(math\.huge, math\.huge\)'
-$magnetRangeCapped = $bloxText -match '(?s)Name\s*=\s*"Magnet Range".*?Max\s*=\s*500.*?state\.MagnetRange\s*=\s*math\.clamp\([^\r\n]+, 50, 500\)'
+$magnetRangeCapped = $bloxText -match '(?s)Name\s*=\s*"Magnet Range".*?Min\s*=\s*0.*?Max\s*=\s*500.*?state\.MagnetRange\s*=\s*math\.clamp\([^\r\n]+, 0, 500\)'
 $typedMobSearchCount = ([regex]::Matches(
     $bloxText,
     '(?s)MobFarmSection:AddInput\(\{\s*Name\s*=\s*"(?:Mob Aura|Selected Mob) Search Distance"'
@@ -191,9 +191,9 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.4)"
+Write-Host "Visible semantic version: PASS (3.2.5)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
-Write-Host "Auto Magnet range: PASS (500 maximum)"
+Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec)"
