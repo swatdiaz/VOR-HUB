@@ -34,14 +34,14 @@ return function(context)
         local WorldFarmSection = FarmingPage:AddSection("World Farming", "Right")
         local FarmStatusSection = FarmingPage:AddSection("Live Farm Status", "Right")
 
-        local ExploitSection = CombatPage:AddSection("Exploit Options", "Left")
+        local ExploitSection = FarmingPage:AddSection("Auto Magnet", "Left")
         local AttackSection = CombatPage:AddSection("Attack Controller", "Right")
-        local BossSection = CombatPage:AddSection("Boss Farming", "Right")
+        local BossSection = FarmingPage:AddSection("Boss Farming", "Right")
 
         local StatsSection = MasteryPage:AddSection("Auto Stats", "Left")
-        local FightingStyleSection = MasteryPage:AddSection("Fighting Styles", "Right")
+        local FightingStyleSection = ShopPage:AddSection("Fighting Styles", "Right")
         local FruitSection = ShopPage:AddSection("Fruit Utilities", "Left")
-        local TravelSection = ShopPage:AddSection("Travel", "Right")
+        local TravelSection = SeaPage:AddSection("World Travel", "Right")
 
         local RaidSection = SeaPage:AddSection("Dungeon / Raid Automation", "Left")
         local SeaStatusSection = SeaPage:AddSection("Sea & Event Status", "Right")
@@ -305,6 +305,7 @@ return function(context)
             MoveTween = nil,
             MoveGoal = nil,
             MoveToken = 0,
+            MoveEffectiveSpeed = 300,
             MoveRoot = nil,
             MoveRootWasAnchored = false,
             MoveHumanoid = nil,
@@ -357,7 +358,9 @@ return function(context)
             GraphicsBackup = setmetatable({}, {__mode = "k"}),
             WaterPlatform = nil,
         }
-        state.PVPPage = addHomeCategory("PVP", 7)
+        -- PVP is player-facing combat, not a seventh junk-drawer category.
+        -- Keep the existing section builders but mount them under Player.
+        state.PVPPage = PlayerPage
 
         local statusLabel = FarmStatusSection:AddLabel("Status: Initializing...")
         local questLabel = FarmStatusSection:AddLabel("Quest: Reading live quest data...")
@@ -877,7 +880,19 @@ return function(context)
             end
 
             state.MoveGoal = targetCFrame.Position
-            local duration = distance / math.max(state.TweenSpeed, 1)
+            -- Long CFrame rides above roughly 300 studs/second are where the
+            -- server starts restoring an older replicated position. Preserve
+            -- the selected speed for short hops, but cap only the risky long
+            -- leg instead of letting a 650 slider value cause a full rollback.
+            local effectiveSpeed = math.max(tonumber(state.TweenSpeed) or 300, 1)
+            if distance >= 1200 then
+                effectiveSpeed = math.min(effectiveSpeed, 300)
+            elseif distance >= 450 then
+                effectiveSpeed = math.min(effectiveSpeed, 400)
+            end
+            state.MoveEffectiveSpeed = effectiveSpeed
+            gui:SetAttribute("BloxTweenEffectiveSpeed", effectiveSpeed)
+            local duration = distance / effectiveSpeed
             if duration <= 0.08 then
                 root.CFrame = targetCFrame
                 cancelMove(false)
@@ -1438,7 +1453,12 @@ return function(context)
                     local speedMultiplier = track:GetAttribute("SpeedMult") or 1
                     duration = tonumber(track.Length) / math.max(tonumber(speedMultiplier) or 1, 0.01)
                     if duration <= 0 then
-                        error("basic attack duration is invalid")
+                        -- Freshly equipped tools can expose a zero-length track
+                        -- for a few frames. RegisterAttack rejects zero, while
+                        -- the native-compatible non-finite fallback keeps the
+                        -- valid server hit window alive without a visible swing.
+                        duration = 0 / 0
+                        nativeCadence = 0.18
                     end
                 elseif string.lower(weaponTypeForTool(tool, weaponData)) == "melee" then
                     -- Mobile/new-account Combat can have valid WeaponData
@@ -1809,8 +1829,19 @@ return function(context)
                 if direction.Magnitude < 0.05 then
                     direction = root.CFrame.LookVector
                 end
+                local body = humanoid()
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = {workspace._WorldOrigin, workspace.Characters, workspace.Enemies}
+                local grounded = body and workspace:Raycast(
+                    root.Position,
+                    -(body.HipHeight + root.Size.Y * 0.5 + 4) * Vector3.yAxis,
+                    params
+                ) ~= nil or false
                 local fired, fireError = pcall(function()
-                    silentRemote:FireServer(direction.Unit, 1)
+                    -- Match the live Fruit LocalScript exactly: direction,
+                    -- combo index, then the player-on-ground boolean.
+                    silentRemote:FireServer(direction.Unit, 1, grounded)
                 end)
                 if not fired then
                     return false, fireError
@@ -1906,6 +1937,15 @@ return function(context)
                 local comboKey = string.lower(tool.Name)
                 local sent = 0
                 local closestDistance = math.huge
+                local body = humanoid()
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = {workspace._WorldOrigin, workspace.Characters, workspace.Enemies}
+                local grounded = body and workspace:Raycast(
+                    root.Position,
+                    -(body.HipHeight + root.Size.Y * 0.5 + 4) * Vector3.yAxis,
+                    params
+                ) ~= nil or false
                 for _, target in ipairs(targets) do
                     local enemyRoot = modelRoot(target.Enemy)
                     if enemyRoot and modelAlive(target.Enemy) then
@@ -1914,7 +1954,7 @@ return function(context)
                             direction = root.CFrame.LookVector
                         end
                         if direction.Magnitude >= 0.05 then
-                            silentRemote:FireServer(direction.Unit, 1)
+                            silentRemote:FireServer(direction.Unit, 1, grounded)
                             sent += 1
                             closestDistance = math.min(closestDistance, target.Distance)
                         end
@@ -4950,7 +4990,12 @@ return function(context)
                 return
             end
             state.WaterPlatform.CanCollide = true
-            state.WaterPlatform.CFrame = CFrame.new(root.Position.X, 0, root.Position.Z)
+            -- The normal seas use Y=0, but Submerged Island is around Y=-2100.
+            -- A platform two thousand studs above the character is decorative
+            -- garbage, not Walk on Water. Underwater, support the character at
+            -- its current local depth; elsewhere retain the real sea surface.
+            local supportY = root.Position.Y < -100 and (root.Position.Y - 3.2) or 0
+            state.WaterPlatform.CFrame = CFrame.new(root.Position.X, supportY, root.Position.Z)
         end
 
         local function backup(instance, values)
@@ -5623,7 +5668,7 @@ return function(context)
         })
         AttackSection:AddSlider({
             Name = "Fruit M1 Cooldown Reduction",
-            Description = "Manual left-click reduction capped at the fastest server-credited 0.075s Fruit M1 cadence",
+            Description = "Manual left-click reduction: 0.225 changes the native 0.300s gate to 0.075s; automatic Aura timing is separate",
             Flag = "blox_fruit_m1_cooldown_reduction",
             Min = 0,
             Max = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,

@@ -694,7 +694,7 @@ return function(context)
     end
 
     local function buildBusoAndMastery()
-        local buso = pages.Mastery:AddSection("Buso Color", "Left")
+        local buso = pages.Shop:AddSection("Buso Color", "Left")
         local status = buso:AddLabel("Current Buso: Reading dealer...")
         local function refreshBusoColor(showToast)
             local ok, colorName, rarity = rawInvoke("ColorsDealer", "1")
@@ -788,7 +788,7 @@ return function(context)
     end
 
     local function buildItemsAndCodes()
-        local section = pages.Shop:AddSection("Auto Use Items", "Left")
+        local section = pages.Farming:AddSection("Progression Item Farming", "Left")
         for _, entry in ipairs({
             {"Library Key", "Library", "blox_auto_use_library_key"},
             {"Water Key", "Water", "blox_auto_use_water_key"},
@@ -879,23 +879,25 @@ return function(context)
     end
 
     local function buildVisuals()
-        local section = pages.Player:AddSection("World ESP & Alerts", "Right")
-        section:AddToggle({Name = "Devil Fruit ESP", Flag = "blox_fruit_esp", Default = false,
+        local farm = pages.Farming:AddSection("Farming ESP & Alerts", "Right")
+        farm:AddToggle({Name = "Devil Fruit ESP", Flag = "blox_fruit_esp", Default = false,
             Callback = function(enabled) runtime.Esp.Fruit = enabled == true end})
-        section:AddToggle({Name = "Berry ESP", Flag = "blox_berry_esp", Default = false,
+        farm:AddToggle({Name = "Berry ESP", Flag = "blox_berry_esp", Default = false,
             Callback = function(enabled) runtime.Esp.Berry = enabled == true end})
-        section:AddToggle({Name = "Flower ESP", Flag = "blox_flower_esp", Default = false,
+        farm:AddToggle({Name = "Flower ESP", Flag = "blox_flower_esp", Default = false,
             Callback = function(enabled) runtime.Esp.Flower = enabled == true end})
-        section:AddDropdown({
+        farm:AddToggle({Name = "Boss Spawn Notification", Flag = "blox_boss_spawn_notify", Default = false,
+            Callback = function(enabled) runtime.BossNotifications = enabled == true end})
+
+        local sea = pages.Sea:AddSection("Rare Island ESP & Alerts", "Right")
+        sea:AddDropdown({
             Name = "Rare Island ESP",
             Flag = "blox_rare_island_esp",
             Options = {"Mirage Island", "Prehistoric Island", "Kitsune Island", "Frozen Dimension"},
             Multi = true, Default = {},
             Callback = function(value) runtime.Esp.Islands = type(value) == "table" and value or {} end,
         })
-        section:AddToggle({Name = "Boss Spawn Notification", Flag = "blox_boss_spawn_notify", Default = false,
-            Callback = function(enabled) runtime.BossNotifications = enabled == true end})
-        section:AddToggle({Name = "Rare Island Notification", Flag = "blox_island_spawn_notify", Default = false,
+        sea:AddToggle({Name = "Rare Island Notification", Flag = "blox_island_spawn_notify", Default = false,
             Callback = function(enabled) runtime.IslandNotifications = enabled == true end})
     end
 

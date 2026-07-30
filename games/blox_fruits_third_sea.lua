@@ -683,21 +683,23 @@ return function(context)
         addTask(dragon, "dojo", "blox_third_auto_dojo_trainer", "Requests and claims the live Dojo Trainer quest; collects Embers or farms its targets.")
         addTask(dragon, "dragon", "blox_third_auto_dragon_hunter", "Requests the current Dragon Hunter quest and follows its live progress.")
         addTask(dragon, "tyrant", "blox_third_auto_tyrant", "Farms Tyrant of the Skies when the boss exists; otherwise waits without fake progress.")
-        addTask(dragon, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")
 
-        local bosses = pages.Sea:AddSection("Third Sea Bosses", "Right")
+        local race = pages.Player:AddSection("Race Progression", "Right")
+        addTask(race, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")
+
+        local bosses = pages.Farming:AddSection("Third Sea Bosses", "Right")
         runtime.CakeLabel = bosses:AddLabel("Cake Prince Portal: Reading progress...")
         addTask(bosses, "cake", "blox_third_auto_cake_prince", "Reads the real Cake Prince portal counter, farms 500 Cake Land NPCs, enters BigMirror, then kills the boss.")
     end
 
     local function buildWeaponSections()
-        local weapons = pages.Mastery:AddSection("Third Sea Weapon Unlocks", "Left")
+        local weapons = pages.Farming:AddSection("Third Sea Weapon Unlocks", "Left")
         addTask(weapons, "yama", "blox_third_auto_yama", "Builds Elite Hunter progress, then pulls Yama from Hydra Secret Temple.")
         addTask(weapons, "tushita", "blox_third_auto_tushita", "Reads TushitaProgress, lights the five torches in order, then farms Longma.")
         addTask(weapons, "cdk", "blox_third_auto_cdk", "Runs Good and Evil CDK trials and opens the final Cursed Skeleton boss room.")
         addTask(weapons, "guitar", "blox_third_auto_soul_guitar", "Starts the gravestone and ghost stages, follows puzzle objects, then crafts Soul Guitar.")
 
-        local drops = pages.Mastery:AddSection("Third Sea Boss Drops", "Right")
+        local drops = pages.Farming:AddSection("Third Sea Boss Drops", "Right")
         addTask(drops, "hallow", "blox_third_auto_hallow_scythe", "Rolls Bones for Hallow Essence, summons Soul Reaper, and farms the drop.")
         addTask(drops, "canvander", "blox_third_auto_canvander", "Farms Beautiful Pirate until Canvander is owned.")
         addTask(drops, "twin", "blox_third_auto_twin_hooks", "Farms Captain Elephant until Twin Hooks are owned.")

@@ -116,7 +116,44 @@ foreach ($flag in $canonicalPositionFlags) {
     }
 }
 
+$categoryMatches = [regex]::Matches($bloxText, 'addHomeCategory\("([^"]+)"')
+$categoryNames = @($categoryMatches | ForEach-Object { $_.Groups[1].Value })
+$expectedCategories = @("Farming", "Combat", "Mastery", "Shop", "Sea & Raids", "Player")
+if (($categoryNames -join "|") -ne ($expectedCategories -join "|")) {
+    throw "Blox Fruits categories are not canonical: $($categoryNames -join ', ')"
+}
+
+$nativeFruitShape = 'silentRemote:FireServer(direction.Unit, 1, grounded)'
+if (([regex]::Matches($bloxText, [regex]::Escape($nativeFruitShape))).Count -ne 2) {
+    throw "Fruit M1 calls must use the live direction/combo/grounded remote shape twice"
+}
+if ($bloxText -notmatch 'root\.Position\.Y < -100 and \(root\.Position\.Y - 3\.2\) or 0') {
+    throw "Walk on Water is missing its Submerged Island local-depth support"
+}
+
+$parityText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_parity.lua") -Raw
+$thirdSeaText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_third_sea.lua") -Raw
+$routingChecks = @(
+    @($bloxText, 'FarmingPage:AddSection\("Auto Magnet"'),
+    @($bloxText, 'FarmingPage:AddSection\("Boss Farming"'),
+    @($bloxText, 'ShopPage:AddSection\("Fighting Styles"'),
+    @($bloxText, 'SeaPage:AddSection\("World Travel"'),
+    @($parityText, 'pages\.Shop:AddSection\("Buso Color"'),
+    @($parityText, 'pages\.Farming:AddSection\("Farming ESP & Alerts"'),
+    @($parityText, 'pages\.Sea:AddSection\("Rare Island ESP & Alerts"'),
+    @($thirdSeaText, 'pages\.Player:AddSection\("Race Progression"'),
+    @($thirdSeaText, 'pages\.Farming:AddSection\("Third Sea Bosses"')
+)
+foreach ($check in $routingChecks) {
+    if ($check[0] -notmatch $check[1]) {
+        throw "Blox Fruits menu routing contract failed: $($check[1])"
+    }
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (5/5)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
+Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
+Write-Host "Fruit M1 native remote shape: PASS (2/2)"
+Write-Host "Submerged water support: PASS"
