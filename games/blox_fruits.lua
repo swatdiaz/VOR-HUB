@@ -990,26 +990,19 @@ return function(context)
                 state.PositionJitterCorner = 0
                 state.LastPositionJitterAt = 0
             end
-            local squareMovement = state.MobAuraRandomSquare == true or state.AutoMagnet == true
+            local squareMovement = state.MobAuraRandomSquare == true
             local orbitMovement = state.MobAuraOrbit == true and not squareMovement
             local horizontalOffset = Vector3.zero
             if squareMovement then
                 local now = os.clock()
-                local interval = state.AutoMagnet and 0.18
-                    or math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
+                local interval = math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
                 if state.LastPositionJitterAt == 0 or now - state.LastPositionJitterAt >= interval then
-                    local range = state.AutoMagnet and 13
-                        or math.max(2, tonumber(state.MobAuraSquareSize) or 8)
+                    local range = math.max(2, tonumber(state.MobAuraSquareSize) or 8)
                     local nextCorner = math.random(1, 4)
                     if nextCorner == state.PositionJitterCorner then
                         nextCorner = nextCorner % 4 + 1
                     end
-                    local corners = state.AutoMagnet and {
-                        Vector3.new(-range, 0, 0),
-                        Vector3.new(range, 0, 0),
-                        Vector3.new(0, 0, -range),
-                        Vector3.new(0, 0, range),
-                    } or {
+                    local corners = {
                         Vector3.new(-range, 0, -range),
                         Vector3.new(range, 0, -range),
                         Vector3.new(range, 0, range),
@@ -1045,7 +1038,7 @@ return function(context)
                 or (state.RaidMultiGrab and state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true)
             )
             local livePosition = useGatherAnchor and gatheredFrom.Position or enemyRoot.Position
-            if state.AutoMagnet or (not squareMovement and not orbitMovement) then
+            if not squareMovement and not orbitMovement then
                 local stableAnchor = state.PositionAnchorWorld or livePosition
                 local reacquireDistance = math.max(
                     12,
@@ -1084,7 +1077,7 @@ return function(context)
         end
 
         local function moveToFarmPosition(targetCFrame)
-            if not state.AutoMagnet and not state.MobAuraRandomSquare and not state.MobAuraOrbit then
+            if not state.MobAuraRandomSquare and not state.MobAuraOrbit then
                 return moveTo(targetCFrame)
             end
             local root = rootPart()
@@ -1103,10 +1096,8 @@ return function(context)
         end
 
         local function syncFarmAuraRange(heightOverride)
-            local radius = state.AutoMagnet and 13
-                or (state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
+            local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
                 or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
-                )
             local baseRadius = math.sqrt(state.FarmPositionX ^ 2 + state.FarmPositionZ ^ 2)
             local height = math.max(3, tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20)
             local required = math.min(
@@ -2420,8 +2411,7 @@ return function(context)
             local liveAnchor = targetRoot.Position
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
-            local fixedPosition = state.AutoMagnet
-                or (not state.MobAuraOrbit and not state.MobAuraRandomSquare)
+            local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
             if singleFallback then
                 state.MobAuraAnchorTarget = target
                 state.MobAuraStableAnchor = liveAnchor
@@ -2452,23 +2442,16 @@ return function(context)
                 and state.MobAuraStableAnchor or liveAnchor
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
-            if state.AutoMagnet or state.MobAuraRandomSquare then
+            if state.MobAuraRandomSquare then
                 local now = os.clock()
-                local interval = state.AutoMagnet and 0.18
-                    or math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
+                local interval = math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
                 if state.MobAuraLastSquareStep == 0 or now - state.MobAuraLastSquareStep >= interval then
-                    local size = state.AutoMagnet and 13
-                        or math.max(2, tonumber(state.MobAuraSquareSize) or 8)
+                    local size = math.max(2, tonumber(state.MobAuraSquareSize) or 8)
                     local nextCorner = math.random(1, 4)
                     if nextCorner == state.MobAuraSquareCorner then
                         nextCorner = nextCorner % 4 + 1
                     end
-                    local corners = state.AutoMagnet and {
-                        Vector3.new(-size, 0, 0),
-                        Vector3.new(size, 0, 0),
-                        Vector3.new(0, 0, -size),
-                        Vector3.new(0, 0, size),
-                    } or {
+                    local corners = {
                         Vector3.new(-size, 0, -size),
                         Vector3.new(size, 0, -size),
                         Vector3.new(size, 0, size),
@@ -2505,8 +2488,7 @@ return function(context)
 
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            if (state.AutoMagnet or state.MobAuraOrbit or state.MobAuraRandomSquare)
-                and orbitOffset.Magnitude > 0.05 then
+            if (state.MobAuraOrbit or state.MobAuraRandomSquare) and orbitOffset.Magnitude > 0.05 then
                 root.CFrame = CFrame.lookAt(
                     goalPosition,
                     Vector3.new(anchor.X, goalPosition.Y, anchor.Z)
@@ -5495,10 +5477,8 @@ return function(context)
         end
 
         local function requiredMobAuraRange()
-            local radius = state.AutoMagnet and 13
-                or (state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
+            local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
                 or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
-                )
             local baseRadius = math.sqrt(state.FarmPositionX ^ 2 + state.FarmPositionZ ^ 2)
             local pathDistance = math.sqrt(state.MobAuraHeight ^ 2 + (baseRadius + radius) ^ 2)
             return math.min(AURA_KILL_MAX_RANGE, math.ceil(pathDistance + 8))
@@ -6796,7 +6776,7 @@ return function(context)
                         state.ActiveFarmHeightOverride
                     )
                     if targetCFrame then
-                        if state.AutoMagnet or state.MobAuraOrbit or state.MobAuraRandomSquare then
+                        if state.MobAuraOrbit or state.MobAuraRandomSquare then
                             moveToFarmPosition(targetCFrame)
                         elseif not state.Traveling then
                             -- The fixed-above mode still needs to own the exact
