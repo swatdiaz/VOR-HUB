@@ -12,8 +12,6 @@ return function(context)
     local VirtualInputManager = game:GetService("VirtualInputManager")
     local LocalPlayer = Players.LocalPlayer
     local Camera = workspace.CurrentCamera
-    local Mouse = LocalPlayer:GetMouse()
-    local originalNativeAim = LocalPlayer:GetAttribute("AAIM")
 
     local state = {
         Alive = true,
@@ -30,7 +28,6 @@ return function(context)
         TargetTimeout = 20,
         EscapeHealth = 25,
         ReturnHealth = 65,
-        SilentAim = false,
         AimFov = 180,
         Prediction = 0.12,
         AimPart = "HumanoidRootPart",
@@ -436,18 +433,7 @@ return function(context)
         Callback = function(value) state.ReturnHealth = tonumber(value) or 65 end,
     })
 
-    local aim = page:AddSection("Aim Assistance", "Right")
-    aim:AddToggle({
-        Name = "Skill Tracking",
-        Description = "Uses Blox Fruits' native AAIM path so fruit skills home toward the nearest player on PC and mobile",
-        Flag = "blox_pvp_silent_aim",
-        Default = false,
-        Callback = function(enabled)
-            state.SilentAim = enabled == true
-            LocalPlayer:SetAttribute("AAIM", state.SilentAim and true or originalNativeAim)
-            gui:SetAttribute("BloxPvpSkillTracking", state.SilentAim)
-        end,
-    })
+    local aim = page:AddSection("Target Selection", "Right")
     aim:AddToggle({
         Name = "Nearest to Cursor",
         Flag = "blox_pvp_nearest_cursor",
@@ -522,13 +508,9 @@ return function(context)
         gui:SetAttribute("BloxPvpAttacking", (state.AutoAttack or state.AutoBounty) and target ~= nil)
     end))
 
-    -- FruitClient already implements skill homing behind LocalPlayer.AAIM.
-    -- Using that native path avoids touching global __namecall/__index behavior.
-    gui:SetAttribute("BloxPvpSilentAimHook", "NativeAAIM")
-    gui:SetAttribute("BloxPvpSilentAimSafety", "GameNativeAttribute")
+    gui:SetAttribute("BloxPvpSkillTracking", false)
     track(gui.Destroying:Connect(function()
         state.Alive = false
-        LocalPlayer:SetAttribute("AAIM", originalNativeAim)
     end))
     gui:SetAttribute("BloxPvpModule", true)
     gui:SetAttribute("BloxPvpModuleVersion", "4")

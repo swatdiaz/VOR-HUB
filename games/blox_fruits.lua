@@ -75,6 +75,7 @@ return function(context)
         -- use its already-replicated event directly and leave RegisterHit on
         -- CombatUtil's initialized internal sender.
         local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
+        local ShootGunEvent = Net and Net:FindFirstChild("RE/ShootGunEvent")
         local AURA_KILL_DEFAULT_RANGE = 10
         local AURA_KILL_MAX_RANGE = 70
         local AURA_KILL_HIT_DELAY = 0.13
@@ -87,7 +88,7 @@ return function(context)
             FruitTargetLimit = 3,
             FruitCadence = 0.075,
         }
-        local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.28
+        local DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION = 0.225
         local NATIVE_FRUIT_SETTLE_TIME = 0.24
         local MULTI_GRAB_LIMIT = 3
         local MULTI_GRAB_RANGE = 600
@@ -268,6 +269,7 @@ return function(context)
             GatherOriginalCFrames = setmetatable({}, {__mode = "k"}),
             GatherOriginalStates = setmetatable({}, {__mode = "k"}),
             AutoMagnet = false,
+            ExperimentalMagnetBoost = false,
             MagnetRange = 300,
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
@@ -1195,6 +1197,9 @@ return function(context)
                             if selectingFruitM1 and fruitTool then
                                 return tool
                             end
+                            if selected == "gun" and lowered == "gun" then
+                                return tool
+                            end
                             if registeredTool and lowered == selected then
                                 return tool
                             end
@@ -1262,7 +1267,7 @@ return function(context)
             value = math.clamp(
                 tonumber(value) or DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
                 0,
-                1
+                DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION
             )
             state.FruitM1CooldownReduction = value
             local char = character()
@@ -1924,6 +1929,48 @@ return function(context)
             -- suppresses the local dash/animation without moving the enemy.
             local sent, sendError = sendNativeFruitM1(tool, targets[1], true)
             return sent, sendError, sent and 1 or 0
+        end
+
+        function DoubleAttackEngine.SendDragonstorm()
+            local gun = toolForSelection("Gun")
+            local root = rootPart()
+            local targets = DoubleAttackEngine.Targets(1)
+            if not gun or not string.find(string.lower(gun.Name), "dragonstorm", 1, true) then
+                return false, "Dragonstorm is not loaded in the Backpack"
+            end
+            if not ShootGunEvent then
+                return false, "ShootGunEvent is unavailable"
+            end
+            if not root or #targets == 0 then
+                return false, "No enemy is inside Dragonstorm tracking range"
+            end
+            local target = targets[1]
+            local hitPart = target.HitPart
+            local char = character()
+            local originalParent = gun.Parent
+            if not char or not hitPart or not hitPart.Parent then
+                return false, "Dragonstorm target became invalid"
+            end
+
+            -- The live HitscanSingleShot client sends TargetPosition followed by
+            -- a list of hit limbs. Parent the Gun beside the visible Sword long
+            -- enough for server ownership validation; never Humanoid-equip it.
+            if gun.Parent ~= char then
+                gun.Parent = char
+                RunService.Heartbeat:Wait()
+            end
+            local fired, fireError = pcall(function()
+                ShootGunEvent:FireServer(hitPart.Position, {hitPart})
+            end)
+            task.wait(0.02)
+            if originalParent and gun.Parent ~= originalParent then
+                gun.Parent = originalParent
+            end
+            local sword = toolForSelection("Sword")
+            if sword then
+                equipTool(sword)
+            end
+            return fired, fireError, fired and 1 or 0
         end
 
         function DoubleAttackEngine.StepFruit()
@@ -3265,7 +3312,8 @@ return function(context)
 
         local function gatherStep()
             local now = os.clock()
-            if now - state.LastGatherScan < 0.08 then
+            local scanInterval = state.ExperimentalMagnetBoost and 0.03 or 0.08
+            if now - state.LastGatherScan < scanInterval then
                 return
             end
             state.LastGatherScan = now
@@ -3305,6 +3353,12 @@ return function(context)
             pcall(function()
                 if type(sethiddenproperty) == "function" then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                    if state.ExperimentalMagnetBoost then
+                        sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+                    end
+                end
+                if state.ExperimentalMagnetBoost and type(setsimulationradius) == "function" then
+                    setsimulationradius(math.huge, math.huge)
                 end
             end)
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
@@ -5451,11 +5505,11 @@ return function(context)
         })
         AttackSection:AddSlider({
             Name = "Fruit M1 Cooldown Reduction",
-            Description = "Subtracts 0.00-1.00 seconds from native fruit tap cooldowns; 0.28 is rapid",
+            Description = "Manual left-click reduction capped at the fastest server-credited 0.075s Fruit M1 cadence",
             Flag = "blox_fruit_m1_cooldown_reduction",
             Min = 0,
-            Max = 1,
-            Step = 0.01,
+            Max = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
+            Step = 0.005,
             Default = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
             Callback = function(value)
                 local reduction = applyFruitM1CooldownReduction(value)
@@ -7551,8 +7605,14 @@ return function(context)
                     Targets = DoubleAttackEngine.Targets,
                     DispatchRegistered = state.ExperimentalDispatchRegistered,
                     DispatchFruit = DoubleAttackEngine.SendFruit,
+                    DispatchDragonstorm = DoubleAttackEngine.SendDragonstorm,
                     ToolForSelection = toolForSelection,
                     EquipTool = equipTool,
+                    SetMagnetBoost = function(enabled)
+                        state.ExperimentalMagnetBoost = enabled == true
+                        state.LastGatherScan = 0
+                        gui:SetAttribute("BloxExperimentalMagnetBoost", state.ExperimentalMagnetBoost)
+                    end,
                     Character = character,
                     Humanoid = humanoid,
                     RootPart = rootPart,

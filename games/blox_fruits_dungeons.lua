@@ -40,6 +40,7 @@ return function(context)
         AutoStart = resumeAllAutomation,
         AutoLeave = resumeAllAutomation,
         AutoFarm = resumeAllAutomation,
+        DoubleAttack = true,
         AutoSelectCards = resumeAllAutomation,
         Difficulty = "Normal",
         MinimumPlayers = 1,
@@ -1861,6 +1862,18 @@ return function(context)
         end,
     })
     AutomationSection:AddToggle({
+        Name = "Dungeon Double Attack [Fastest]",
+        Description = "Runs silent Sword batches and Fruit M1 together at the shortest validated dungeon cadence",
+        Flag = "blox_dungeon_double_attack",
+        Default = true,
+        Callback = function(enabled)
+            state.DoubleAttack = enabled == true
+            state.LastSwordAttack = 0
+            state.LastFruitAttack = 0
+            gui:SetAttribute("BloxDungeonDoubleAttack", state.DoubleAttack)
+        end,
+    })
+    AutomationSection:AddToggle({
         Name = "Auto Select Cards",
         Description = "Uses the ordered priority list below",
         Flag = "blox_dungeon_auto_cards",
@@ -2170,7 +2183,8 @@ return function(context)
 
     task.spawn(function()
         while state.Alive do
-            if state.AutoFarm and dungeonRunActive() and validFarmTarget(state.CurrentTarget) then
+            if state.AutoFarm and state.DoubleAttack
+                and dungeonRunActive() and validFarmTarget(state.CurrentTarget) then
                 if ensureBuso() then
                     local now = os.clock()
                     if not state.SwordBusy and now - state.LastSwordAttack >= 0.13 then
@@ -2280,6 +2294,7 @@ return function(context)
         gui:SetAttribute("BloxDungeonPlaceId", 73902483975735)
         gui:SetAttribute("BloxDungeonVisiblePages", "Dungeons,Player,Settings")
         gui:SetAttribute("BloxDungeonAttackMethod", "Sword + Fruit M1")
+        gui:SetAttribute("BloxDungeonDoubleAttack", state.DoubleAttack)
         gui:SetAttribute("BloxDungeonTrinketCost", 400)
         track(gui.Destroying:Connect(function()
             state.Alive = false

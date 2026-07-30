@@ -47,6 +47,9 @@ return function(context)
         LastProfileProgress = 0,
         CachedMeleeProgress = "Reading...",
         MasteryKeyIndex = 0,
+        InventoryCache = {},
+        LastInventoryRefresh = 0,
+        MasteredSwords = {},
     }
 
     local function notify(title, message, duration)
@@ -237,15 +240,24 @@ return function(context)
         return tonumber(tool:GetAttribute("Mastery")) or 0
     end
 
-    local function inventory()
-        local ok, result = rawInvoke("getInventory")
+    local function inventory(force)
+        if not force and os.clock() - runtime.LastInventoryRefresh < 3
+            and type(runtime.InventoryCache) == "table" then
+            return runtime.InventoryCache
+        end
+        local ok, result = rawInvoke("getInventoryWeapons")
+        if not ok or type(result) ~= "table" then
+            ok, result = rawInvoke("getInventory")
+        end
         if ok and type(result) == "table" then
+            runtime.InventoryCache = result
+            runtime.LastInventoryRefresh = os.clock()
             return result
         end
-        return {}
+        return runtime.InventoryCache
     end
 
-    local function inventorySwordNames()
+    local function inventorySwordNames(force)
         local names = {}
         local seen = {}
         for _, tool in ipairs(allTools()) do
@@ -254,7 +266,7 @@ return function(context)
                 table.insert(names, tool.Name)
             end
         end
-        for _, item in pairs(inventory()) do
+        for _, item in pairs(inventory(force)) do
             if type(item) == "table" and tostring(item.Type) == "Sword" then
                 local name = tostring(item.Name or item.ItemName or "")
                 if name ~= "" and not seen[name] then
@@ -314,11 +326,19 @@ return function(context)
             and masteryOf(equipped) < runtime.SwordTargetMastery then
             return
         end
+        if equipped and table.find(selected, equipped.Name) then
+            runtime.MasteredSwords[equipped.Name] = masteryOf(equipped)
+        end
         for _, swordName in ipairs(selected) do
-            local mastered = false
-            for _, item in pairs(inventory()) do
+            local mastered = (tonumber(runtime.MasteredSwords[swordName]) or 0)
+                >= runtime.SwordTargetMastery
+            for _, item in pairs(inventory(false)) do
                 if type(item) == "table" and tostring(item.Name) == swordName then
-                    mastered = (tonumber(item.Mastery or item.Level) or 0) >= runtime.SwordTargetMastery
+                    local storedMastery = tonumber(item.Mastery or item.Level)
+                    if storedMastery then
+                        runtime.MasteredSwords[swordName] = storedMastery
+                        mastered = storedMastery >= runtime.SwordTargetMastery
+                    end
                     break
                 end
             end
@@ -712,7 +732,7 @@ return function(context)
         swordDropdown = sword:AddDropdown({
             Name = "Sword Selection",
             Flag = "blox_mastery_swords",
-            Options = inventorySwordNames(),
+            Options = inventorySwordNames(true),
             Multi = true,
             Default = {},
             Callback = function(value) runtime.SelectedSwords = type(value) == "table" and value or {} end,
@@ -720,7 +740,7 @@ return function(context)
         sword:AddButton({
             Name = "Refresh Sword Inventory",
             Callback = function()
-                swordDropdown:SetOptions(inventorySwordNames(), true)
+                swordDropdown:SetOptions(inventorySwordNames(true), true)
                 notify("Sword Mastery", "Inventory refreshed")
             end,
         })

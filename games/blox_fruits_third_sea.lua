@@ -132,7 +132,10 @@ return function(context)
                 end
             end
         end
-        local ok, result = rawInvoke("getInventory")
+        local ok, result = rawInvoke("getInventoryWeapons")
+        if not ok or type(result) ~= "table" then
+            ok, result = rawInvoke("getInventory")
+        end
         if ok and type(result) == "table" then
             for _, entry in pairs(result) do
                 if type(entry) == "table" and entry.Name then
@@ -642,7 +645,6 @@ return function(context)
         runtime.DetailLabel = main:AddLabel("Waiting for a Third Sea task")
         addTask(main, "pirate", "blox_third_auto_pirate_raid", "Farms the live Castle on the Sea pirate raid without stealing movement from other tasks.")
         addTask(main, "elite", "blox_third_auto_elite_hunter", "Requests Elite Hunter quests, farms Deandre, Diablo, or Urban, and stops for God's Chalice.")
-        addTask(main, "cake", "blox_third_auto_cake_prince", "Reads the real portal counter, kills Cake Land mobs, opens the portal, then farms the boss.")
         addTask(main, "citizen", "blox_third_auto_citizen", "Completes Forest Pirates, Captain Elephant, and the Citizen treasure stage.")
         addTask(main, "rainbow", "blox_third_auto_rainbow_haki", "Reads Horned Man progress and farms the currently required boss.")
 
@@ -653,6 +655,9 @@ return function(context)
         addTask(dragon, "dragon", "blox_third_auto_dragon_hunter", "Requests the current Dragon Hunter quest and follows its live progress.")
         addTask(dragon, "tyrant", "blox_third_auto_tyrant", "Farms Tyrant of the Skies when the boss exists; otherwise waits without fake progress.")
         addTask(dragon, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")
+
+        local bosses = pages.Sea:AddSection("Third Sea Bosses", "Right")
+        addTask(bosses, "cake", "blox_third_auto_cake_prince", "Reads the real Cake Prince portal counter, farms 500 Cake Land NPCs, enters BigMirror, then kills the boss.")
     end
 
     local function buildWeaponSections()
