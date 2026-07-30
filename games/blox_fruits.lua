@@ -281,6 +281,7 @@ return function(context)
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
             MagnetAnchorName = nil,
+            MagnetTweens = setmetatable({}, {__mode = "k"}),
             ThirdSeaFarmActive = false,
             ThirdSeaFarmNames = {},
             TweenSpeed = 300,
@@ -989,19 +990,26 @@ return function(context)
                 state.PositionJitterCorner = 0
                 state.LastPositionJitterAt = 0
             end
-            local squareMovement = state.MobAuraRandomSquare == true
+            local squareMovement = state.MobAuraRandomSquare == true or state.AutoMagnet == true
             local orbitMovement = state.MobAuraOrbit == true and not squareMovement
             local horizontalOffset = Vector3.zero
             if squareMovement then
                 local now = os.clock()
-                local interval = math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
+                local interval = state.AutoMagnet and 0.18
+                    or math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
                 if state.LastPositionJitterAt == 0 or now - state.LastPositionJitterAt >= interval then
-                    local range = math.max(2, tonumber(state.MobAuraSquareSize) or 8)
+                    local range = state.AutoMagnet and 13
+                        or math.max(2, tonumber(state.MobAuraSquareSize) or 8)
                     local nextCorner = math.random(1, 4)
                     if nextCorner == state.PositionJitterCorner then
                         nextCorner = nextCorner % 4 + 1
                     end
-                    local corners = {
+                    local corners = state.AutoMagnet and {
+                        Vector3.new(-range, 0, 0),
+                        Vector3.new(range, 0, 0),
+                        Vector3.new(0, 0, -range),
+                        Vector3.new(0, 0, range),
+                    } or {
                         Vector3.new(-range, 0, -range),
                         Vector3.new(range, 0, -range),
                         Vector3.new(range, 0, range),
@@ -1037,7 +1045,7 @@ return function(context)
                 or (state.RaidMultiGrab and state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true)
             )
             local livePosition = useGatherAnchor and gatheredFrom.Position or enemyRoot.Position
-            if not squareMovement and not orbitMovement then
+            if state.AutoMagnet or (not squareMovement and not orbitMovement) then
                 local stableAnchor = state.PositionAnchorWorld or livePosition
                 local reacquireDistance = math.max(
                     12,
@@ -1076,7 +1084,7 @@ return function(context)
         end
 
         local function moveToFarmPosition(targetCFrame)
-            if not state.MobAuraRandomSquare and not state.MobAuraOrbit then
+            if not state.AutoMagnet and not state.MobAuraRandomSquare and not state.MobAuraOrbit then
                 return moveTo(targetCFrame)
             end
             local root = rootPart()
@@ -1095,8 +1103,10 @@ return function(context)
         end
 
         local function syncFarmAuraRange(heightOverride)
-            local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
+            local radius = state.AutoMagnet and 13
+                or (state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
                 or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
+                )
             local baseRadius = math.sqrt(state.FarmPositionX ^ 2 + state.FarmPositionZ ^ 2)
             local height = math.max(3, tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20)
             local required = math.min(
@@ -2407,11 +2417,11 @@ return function(context)
                 return false
             end
 
-            local head = target:FindFirstChild("Head", true)
-            local liveAnchor = head and head:IsA("BasePart") and head.Position or targetRoot.Position
+            local liveAnchor = targetRoot.Position
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
-            local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
+            local fixedPosition = state.AutoMagnet
+                or (not state.MobAuraOrbit and not state.MobAuraRandomSquare)
             if singleFallback then
                 state.MobAuraAnchorTarget = target
                 state.MobAuraStableAnchor = liveAnchor
@@ -2442,16 +2452,23 @@ return function(context)
                 and state.MobAuraStableAnchor or liveAnchor
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
-            if state.MobAuraRandomSquare then
+            if state.AutoMagnet or state.MobAuraRandomSquare then
                 local now = os.clock()
-                local interval = math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
+                local interval = state.AutoMagnet and 0.18
+                    or math.max(0.06, tonumber(state.MobAuraSquareInterval) or 0.18)
                 if state.MobAuraLastSquareStep == 0 or now - state.MobAuraLastSquareStep >= interval then
-                    local size = math.max(2, tonumber(state.MobAuraSquareSize) or 8)
+                    local size = state.AutoMagnet and 13
+                        or math.max(2, tonumber(state.MobAuraSquareSize) or 8)
                     local nextCorner = math.random(1, 4)
                     if nextCorner == state.MobAuraSquareCorner then
                         nextCorner = nextCorner % 4 + 1
                     end
-                    local corners = {
+                    local corners = state.AutoMagnet and {
+                        Vector3.new(-size, 0, 0),
+                        Vector3.new(size, 0, 0),
+                        Vector3.new(0, 0, -size),
+                        Vector3.new(0, 0, size),
+                    } or {
                         Vector3.new(-size, 0, -size),
                         Vector3.new(size, 0, -size),
                         Vector3.new(size, 0, size),
@@ -2488,7 +2505,8 @@ return function(context)
 
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            if (state.MobAuraOrbit or state.MobAuraRandomSquare) and orbitOffset.Magnitude > 0.05 then
+            if (state.AutoMagnet or state.MobAuraOrbit or state.MobAuraRandomSquare)
+                and orbitOffset.Magnitude > 0.05 then
                 root.CFrame = CFrame.lookAt(
                     goalPosition,
                     Vector3.new(anchor.X, goalPosition.Y, anchor.Z)
@@ -3426,6 +3444,13 @@ return function(context)
         end
 
         state.RestoreGatherEnemy = function(enemy, restorePosition)
+            local magnetTween = state.MagnetTweens[enemy]
+            if magnetTween and magnetTween.Tween then
+                pcall(function()
+                    magnetTween.Tween:Cancel()
+                end)
+            end
+            state.MagnetTweens[enemy] = nil
             local original = state.GatherOriginalStates[enemy]
             local enemyRoot = modelRoot(enemy)
             local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
@@ -3538,9 +3563,8 @@ return function(context)
             table.sort(candidates, function(left, right)
                 return left.Distance < right.Distance
             end)
-            -- Solix-style live anchor: every scan derives the stack from the
-            -- player's CURRENT root, so NPCs remain under the character during
-            -- tweens, snap corrections, and target changes.
+            -- Multi Grab follows the player. Auto Magnet instead keeps the farm
+            -- target's original world CFrame as a stable Solix-style pile anchor.
             local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
             if not multiGrabEnabled then
                 local anchorCandidate = nil
@@ -3569,6 +3593,7 @@ return function(context)
                     state.MagnetAnchorCFrame = anchorCandidate.Root.CFrame
                     state.MagnetAnchorName = targetName
                 end
+                targetCFrame = CFrame.new(state.MagnetAnchorCFrame.Position)
             end
             if multiGrabEnabled then
                 for _, candidate in ipairs(candidates) do
@@ -3616,20 +3641,43 @@ return function(context)
                             PlatformStand = enemyBody.PlatformStand,
                         }
                     end
-                    -- isnetworkowner() reports false for current Blox Fruits
-                    -- NPCs even at 8-19 studs. Treating that diagnostic as a
-                    -- hard gate made Magnet skip every candidate forever.
-                    -- Request maximum simulation radius above, then perform and
-                    -- continuously repeat the same root write used by the old
-                    -- working VOR/Solix magnet.
                     local moved = pcall(function()
-                        candidate.Root.CFrame = targetCFrame
-                        candidate.Root.AssemblyLinearVelocity = Vector3.zero
                         candidate.Root.AssemblyAngularVelocity = Vector3.zero
                         candidate.Root.CanCollide = false
                         enemyBody.WalkSpeed = 0
                         enemyBody.JumpPower = 0
                         enemyBody.AutoRotate = false
+                        local distanceToAnchor = (candidate.Root.Position - targetCFrame.Position).Magnitude
+                        if multiGrabEnabled or distanceToAnchor <= 1.5 then
+                            local activeMagnetTween = state.MagnetTweens[candidate.Enemy]
+                            if activeMagnetTween and activeMagnetTween.Tween then
+                                activeMagnetTween.Tween:Cancel()
+                            end
+                            state.MagnetTweens[candidate.Enemy] = nil
+                            candidate.Root.CFrame = targetCFrame
+                            candidate.Root.AssemblyLinearVelocity = Vector3.zero
+                        else
+                            local activeMagnetTween = state.MagnetTweens[candidate.Enemy]
+                            local needsTween = not activeMagnetTween
+                                or typeof(activeMagnetTween.Target) ~= "Vector3"
+                                or (activeMagnetTween.Target - targetCFrame.Position).Magnitude > 0.5
+                                or activeMagnetTween.Tween.PlaybackState ~= Enum.PlaybackState.Playing
+                            if needsTween then
+                                if activeMagnetTween and activeMagnetTween.Tween then
+                                    activeMagnetTween.Tween:Cancel()
+                                end
+                                local tween = TweenService:Create(
+                                    candidate.Root,
+                                    TweenInfo.new(math.max(0.03, distanceToAnchor / 250), Enum.EasingStyle.Linear),
+                                    {CFrame = targetCFrame}
+                                )
+                                state.MagnetTweens[candidate.Enemy] = {
+                                    Tween = tween,
+                                    Target = targetCFrame.Position,
+                                }
+                                tween:Play()
+                            end
+                        end
                     end)
                     if moved then
                         gathered += 1
@@ -5401,7 +5449,7 @@ return function(context)
 
         ExploitSection:AddToggle({
             Name = "Auto Magnet",
-            Description = "Keeps matching loaded NPCs stacked directly under your current position in every farming mode",
+            Description = "Pulls matching NPCs at 250 studs/sec into the farm target's fixed pile, then keeps them locked there",
             Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
@@ -5414,14 +5462,14 @@ return function(context)
         })
         ExploitSection:AddSlider({
             Name = "Magnet Range",
-            Description = "Maximum loaded-NPC distance for the stack; 5,000,000 studs is effectively infinite across the map",
+            Description = "Maximum pull magnitude, matching Solix Hub's 500-stud limit",
             Flag = "blox_magnet_range",
             Min = 50,
-            Max = 5000000,
-            Step = 1000,
+            Max = 500,
+            Step = 10,
             Default = 300,
             Callback = function(value)
-                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 5000000)
+                state.MagnetRange = math.clamp(tonumber(value) or 300, 50, 500)
                 state.LastGatherScan = 0
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
@@ -5447,8 +5495,10 @@ return function(context)
         end
 
         local function requiredMobAuraRange()
-            local radius = state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
+            local radius = state.AutoMagnet and 13
+                or (state.MobAuraRandomSquare and (state.MobAuraSquareSize * math.sqrt(2))
                 or (state.MobAuraOrbit and state.MobAuraOrbitRadius or 0)
+                )
             local baseRadius = math.sqrt(state.FarmPositionX ^ 2 + state.FarmPositionZ ^ 2)
             local pathDistance = math.sqrt(state.MobAuraHeight ^ 2 + (baseRadius + radius) ^ 2)
             return math.min(AURA_KILL_MAX_RANGE, math.ceil(pathDistance + 8))
@@ -5738,16 +5788,18 @@ return function(context)
                 gui:SetAttribute("BloxMobAuraTp", enabled)
             end,
         })
-        MobFarmSection:AddSlider({
+        MobFarmSection:AddInput({
             Name = "Mob Aura Search Distance",
-            Description = "Nearest loaded-NPC search distance; 5,000,000 studs is effectively infinite across the map",
+            Description = "Type the exact nearest-NPC search distance you want, such as 630",
             Flag = "blox_mob_aura_search_range",
-            Min = 25,
-            Max = 5000000,
-            Step = 1000,
             Default = 500,
+            Placeholder = "Example: 630",
             Callback = function(value)
-                state.MobAuraSearchRange = math.clamp(tonumber(value) or 500, 25, 5000000)
+                state.MobAuraSearchRange = math.clamp(
+                    tonumber(value) or state.MobAuraSearchRange,
+                    25,
+                    1000000000
+                )
                 state.MobAuraTarget = nil
                 state.MobAuraAnchorTarget = nil
                 state.MobAuraStableAnchor = nil
@@ -5812,16 +5864,18 @@ return function(context)
                 gui:SetAttribute("BloxSelectedMobFarm", enabled)
             end,
         })
-        MobFarmSection:AddSlider({
+        MobFarmSection:AddInput({
             Name = "Selected Mob Search Distance",
-            Description = "Maximum distance for the chosen loaded enemy; 5,000,000 studs is effectively infinite",
+            Description = "Type the exact chosen-enemy search distance instead of fighting a giant slider",
             Flag = "blox_selected_mob_search_range",
-            Min = 500,
-            Max = 5000000,
-            Step = 1000,
-            Default = 5000000,
+            Default = 30000,
+            Placeholder = "Example: 630",
             Callback = function(value)
-                state.SelectedMobSearchRange = math.clamp(tonumber(value) or 5000000, 500, 5000000)
+                state.SelectedMobSearchRange = math.clamp(
+                    tonumber(value) or state.SelectedMobSearchRange,
+                    25,
+                    1000000000
+                )
                 state.MobAuraTarget = nil
                 state.MobAuraAnchorTarget = nil
                 state.MobAuraStableAnchor = nil
@@ -6742,7 +6796,7 @@ return function(context)
                         state.ActiveFarmHeightOverride
                     )
                     if targetCFrame then
-                        if state.MobAuraOrbit or state.MobAuraRandomSquare then
+                        if state.AutoMagnet or state.MobAuraOrbit or state.MobAuraRandomSquare then
                             moveToFarmPosition(targetCFrame)
                         elseif not state.Traveling then
                             -- The fixed-above mode still needs to own the exact

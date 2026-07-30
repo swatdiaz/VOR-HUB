@@ -153,11 +153,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.3"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.4"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.3 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.4 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -166,17 +166,22 @@ if (-not ($manualFruitMaxOk -and $automaticFruitCadenceOk)) {
     throw "Manual Fruit M1 cooldown removal is not uncapped from Aura timing"
 }
 
-$infiniteRangeCount = ([regex]::Matches($bloxText, 'Max\s*=\s*5000000')).Count
 $magnetOwnershipGateRemoved = $bloxText -notmatch 'local networkOwned\s*=.*isnetworkowner'
 $magnetSimulationRadius = $bloxText -match 'setsimulationradius\(math\.huge, math\.huge\)'
-if ($infiniteRangeCount -lt 3 -or -not $magnetOwnershipGateRemoved -or -not $magnetSimulationRadius) {
-    throw "Infinite mob ranges or ownership-independent Auto Magnet contract failed"
+$magnetRangeCapped = $bloxText -match '(?s)Name\s*=\s*"Magnet Range".*?Max\s*=\s*500.*?state\.MagnetRange\s*=\s*math\.clamp\([^\r\n]+, 50, 500\)'
+$typedMobSearchCount = ([regex]::Matches(
+    $bloxText,
+    '(?s)MobFarmSection:AddInput\(\{\s*Name\s*=\s*"(?:Mob Aura|Selected Mob) Search Distance"'
+)).Count
+if (-not $magnetOwnershipGateRemoved -or -not $magnetSimulationRadius -or -not $magnetRangeCapped -or $typedMobSearchCount -lt 2) {
+    throw "Solix-compatible Magnet range or typed mob-search contract failed"
 }
 
-$liveMagnetAnchor = $bloxText -match 'targetCFrame\s*=\s*CFrame\.new\(root\.Position\s*-\s*Vector3\.new\(0, state\.GatherDistance, 0\)\)'
-$staleMagnetAnchorRemoved = $bloxText -notmatch 'targetCFrame\s*=\s*CFrame\.new\(state\.MagnetAnchorCFrame\.Position\)'
-if (-not ($liveMagnetAnchor -and $staleMagnetAnchorRemoved)) {
-    throw "Auto Magnet must follow the live under-player anchor without restoring a stale enemy CFrame"
+$stableMagnetAnchor = $bloxText -match 'targetCFrame\s*=\s*CFrame\.new\(state\.MagnetAnchorCFrame\.Position\)'
+$magnetTweenSpeed = $bloxText -match 'distanceToAnchor\s*/\s*250'
+$axialSolixPattern = $bloxText -match '(?s)Vector3\.new\(-range, 0, 0\).*?Vector3\.new\(range, 0, 0\).*?Vector3\.new\(0, 0, -range\).*?Vector3\.new\(0, 0, range\)'
+if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $axialSolixPattern)) {
+    throw "Auto Magnet must retain a stable enemy anchor, 250-stud pull, and axial Solix movement pattern"
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
@@ -186,8 +191,9 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.3)"
+Write-Host "Visible semantic version: PASS (3.2.4)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
-Write-Host "Infinite mob search and magnet ranges: PASS (5,000,000)"
+Write-Host "Typed mob search distances: PASS (numeric input)"
+Write-Host "Auto Magnet range: PASS (500 maximum)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
-Write-Host "Live under-player Magnet anchor: PASS"
+Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec)"
