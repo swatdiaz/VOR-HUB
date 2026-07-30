@@ -17,6 +17,7 @@ $required = @(
     "games/anime_expeditions.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_parity.lua",
+    "games/blox_fruits_race.lua",
     "games/blox_fruits_pvp.lua",
     "games/blox_fruits_third_sea.lua",
     "games/blox_fruits_dungeons.lua"
@@ -37,7 +38,9 @@ foreach ($relative in $compileFiles) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Required modular file is missing: $relative"
     }
-    & $Compiler --null $path | Out-Null
+    # -O0 matches the executor's strict 200-register ceiling. Optimized builds
+    # can hide a module that the live loadstring compiler rejects.
+    & $Compiler --null -O0 $path | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Luau compile failed: $relative"
     }

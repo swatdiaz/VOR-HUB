@@ -945,6 +945,30 @@ return function(context)
     buildVisuals()
     buildShopParity()
 
+    if type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.RaceLoaded, runtime.RaceBuilder = context.LoadModule("games/blox_fruits_race.lua")
+        if not runtime.RaceLoaded then
+            error("Race ability module compile failed: " .. tostring(runtime.RaceBuilder))
+        end
+        runtime.RaceOk, runtime.RaceError = context.RunBuilder(
+            "games/blox_fruits_race.lua",
+            runtime.RaceBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Page = pages.Player,
+                COLORS = context.COLORS,
+                Remotes = remotes,
+                Helpers = helpers,
+            }
+        )
+        runtime.RaceBuilder = nil
+        if not runtime.RaceOk then
+            error("Race ability module builder failed: " .. tostring(runtime.RaceError))
+        end
+    end
+
     if pages.PVP and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
         runtime.PvpLoaded, runtime.PvpBuilder = context.LoadModule("games/blox_fruits_pvp.lua")
         if not runtime.PvpLoaded then

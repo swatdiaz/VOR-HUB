@@ -13,7 +13,6 @@ return function(context)
         local TweenService = game:GetService("TweenService")
         local TeleportService = game:GetService("TeleportService")
         local VirtualUser = game:GetService("VirtualUser")
-        local UserInputService = game:GetService("UserInputService")
         local Lighting = game:GetService("Lighting")
         local HttpService = game:GetService("HttpService")
         local CollectionService = game:GetService("CollectionService")
@@ -48,7 +47,6 @@ return function(context)
         local SeaStatusSection = SeaPage:AddSection("Sea & Event Status", "Right")
 
         local PlayerStateSection = PlayerPage:AddSection("Player State", "Left")
-        local RaceSection = PlayerPage:AddSection("Race Abilities", "Left")
         local VisualSection = PlayerPage:AddSection("Visuals", "Right")
         local SessionSection = PlayerPage:AddSection("Session", "Right")
 
@@ -259,12 +257,6 @@ return function(context)
             LastSubmergedTravel = -math.huge,
             AutoObservation = false,
             LastObservation = 0,
-            AutoRaceV3 = false,
-            AutoRaceV4 = false,
-            LastRaceV3Request = 0,
-            LastRaceV4Request = 0,
-            RaceV3Requests = 0,
-            RaceV4Requests = 0,
             GatherEnemies = false,
             GatherRange = MULTI_GRAB_RANGE,
             GatherDistance = 8,
@@ -379,7 +371,6 @@ return function(context)
         local selectedMobFarmLabel = MobFarmSection:AddLabel("Selected Mob Farm: Off | Enemy: None")
         local busoLabel = AttackSection:AddLabel("Buso: Detecting...")
         local observationLabel = AttackSection:AddLabel("Observation: Reading live state...")
-        local raceLabel = RaceSection:AddLabel("Race Ability: Ready")
         local fruitGachaLabel = FruitSection:AddLabel("Fruit Gacha: Ready anywhere")
         local fruitStoreLabel = FruitSection:AddLabel("Fruit Storage: Waiting for a physical fruit")
 
@@ -2769,147 +2760,6 @@ return function(context)
             setStatus("Submarine transport requested", true)
             gui:SetAttribute("BloxSubmergedTravelState", "Transport requested")
             return true
-        end
-
-        local function universalContextButtons()
-            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-            local main = playerGui and playerGui:FindFirstChild("Main")
-            local bottom = main and main:FindFirstChild("BottomHUDList")
-            return bottom and bottom:FindFirstChild("UniversalContextButtons")
-        end
-
-        local function hudAction(name)
-            local buttons = universalContextButtons()
-            return buttons and buttons:FindFirstChild(name)
-        end
-
-        local function fireHudAction(action)
-            if not action or type(firesignal) ~= "function" then
-                return false
-            end
-            local button = action:FindFirstChild("Button") or action:FindFirstChild("CaptureInput")
-            if not button or not button:IsA("GuiButton") then
-                return false
-            end
-            return pcall(function()
-                firesignal(button.Activated)
-                firesignal(button.MouseButton1Click)
-            end)
-        end
-
-        local function sendRaceInput(actionName, keyCode, virtualKey)
-            local action = hudAction(actionName)
-            if UserInputService.TouchEnabled and fireHudAction(action) then
-                return true, "mobile HUD"
-            end
-            local inputOk, inputManager = pcall(function()
-                return game:GetService("VirtualInputManager")
-            end)
-            if inputOk and inputManager then
-                local sent = pcall(function()
-                    inputManager:SendKeyEvent(true, keyCode, false, game)
-                    task.wait(0.04)
-                    inputManager:SendKeyEvent(false, keyCode, false, game)
-                end)
-                if sent then
-                    return true, keyCode.Name .. " key"
-                end
-            end
-            if type(keypress) == "function" and type(keyrelease) == "function" then
-                local sent = pcall(function()
-                    keypress(virtualKey)
-                    task.wait(0.04)
-                    keyrelease(virtualKey)
-                end)
-                if sent then
-                    return true, "executor " .. keyCode.Name
-                end
-            end
-            if fireHudAction(action) then
-                return true, "HUD fallback"
-            end
-            return false, "no supported input method"
-        end
-
-        local function raceV3Ready()
-            local action = hudAction("BoundActionRaceAbility")
-            if not action then
-                return false
-            end
-            local locked = action:FindFirstChild("LockedFrame")
-            if locked and locked:IsA("GuiObject") and locked.Visible then
-                return false
-            end
-            local cooldown = action:FindFirstChild("CooldownLabel")
-            local seconds = cooldown and tonumber(cooldown.Text)
-            return not seconds or seconds <= 0.05
-        end
-
-        local function raceTransformed()
-            local char = character()
-            if not char then
-                return false
-            end
-            local transformed = char:FindFirstChild("RaceTransformed")
-            return (transformed and transformed:IsA("ValueBase") and transformed.Value == true)
-                or char:GetAttribute("RaceTransformed") == true
-                or LocalPlayer:GetAttribute("RaceTransformed") == true
-        end
-
-        local function raceV4Ready()
-            if raceTransformed() then
-                return false
-            end
-            local char = character()
-            local energy = char and char:FindFirstChild("RaceEnergy")
-            local awakening = char and char:FindFirstChild("Awakening")
-            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-            awakening = awakening or (backpack and backpack:FindFirstChild("Awakening"))
-            return energy ~= nil and energy:IsA("ValueBase")
-                and tonumber(energy.Value) ~= nil and tonumber(energy.Value) >= 1
-                and awakening ~= nil
-        end
-
-        local function stepAutoRace()
-            local now = os.clock()
-            if state.AutoRaceV4 and raceV4Ready() and now - state.LastRaceV4Request >= 1.5 then
-                state.LastRaceV4Request = now
-                local activate = ReplicatedStorage:FindFirstChild("Events")
-                activate = activate and activate:FindFirstChild("ActivateRaceV4")
-                local ok = activate ~= nil and activate:IsA("BindableEvent") and pcall(function()
-                    activate:Fire()
-                end)
-                local method = ok and "native ActivateRaceV4" or nil
-                if not ok then
-                    ok, method = sendRaceInput("ActivateRaceV4", Enum.KeyCode.Y, 0x59)
-                end
-                if ok then
-                    state.RaceV4Requests += 1
-                    raceLabel.Text = "Race V4: Awakening requested via " .. method
-                    raceLabel.TextColor3 = COLORS.success
-                    return
-                end
-                raceLabel.Text = "Race V4: Activation failed - " .. tostring(method)
-                raceLabel.TextColor3 = COLORS.error
-            end
-            if state.AutoRaceV3 and raceV3Ready() and now - state.LastRaceV3Request >= 0.75 then
-                state.LastRaceV3Request = now
-                local ok = CommE ~= nil and CommE:IsA("RemoteEvent") and pcall(function()
-                    CommE:FireServer("ActivateAbility")
-                end)
-                local method = ok and "native race remote" or nil
-                if not ok then
-                    ok, method = sendRaceInput("BoundActionRaceAbility", Enum.KeyCode.T, 0x54)
-                end
-                if ok then
-                    state.RaceV3Requests += 1
-                    raceLabel.Text = "Race V3: Ability requested via " .. method
-                    raceLabel.TextColor3 = COLORS.success
-                else
-                    raceLabel.Text = "Race V3: Activation failed - " .. tostring(method)
-                    raceLabel.TextColor3 = COLORS.error
-                end
-            end
         end
 
         local function questVisible()
@@ -6570,29 +6420,6 @@ return function(context)
             end,
         })
 
-        RaceSection:AddToggle({
-            Name = "Auto Race V3 Ability",
-            Description = "Uses the equipped race ability whenever its T/mobile cooldown is ready in any sea",
-            Flag = "blox_auto_race_v3",
-            Default = false,
-            Callback = function(enabled)
-                state.AutoRaceV3 = enabled == true
-                state.LastRaceV3Request = 0
-                gui:SetAttribute("BloxAutoRaceV3", state.AutoRaceV3)
-            end,
-        })
-        RaceSection:AddToggle({
-            Name = "Auto Race V4 Awakening",
-            Description = "Activates Race V4 with Y/mobile input when the awakening meter is full in any sea",
-            Flag = "blox_auto_race_v4",
-            Default = false,
-            Callback = function(enabled)
-                state.AutoRaceV4 = enabled == true
-                state.LastRaceV4Request = 0
-                gui:SetAttribute("BloxAutoRaceV4", state.AutoRaceV4)
-            end,
-        })
-
         VisualSection:AddToggle({
             Name = "Enemy ESP",
             Flag = "blox_enemy_esp",
@@ -6850,8 +6677,6 @@ return function(context)
                     gui:SetAttribute("BloxAutoBoss", state.AutoBoss)
                     gui:SetAttribute("BloxAutoRaid", state.AutoRaid)
                     gui:SetAttribute("BloxAutoBuso", state.AutoBuso)
-                    gui:SetAttribute("BloxAutoRaceV3", state.AutoRaceV3)
-                    gui:SetAttribute("BloxAutoRaceV4", state.AutoRaceV4)
                     gui:SetAttribute("BloxWalkOnWater", state.WalkOnWater)
                     gui:SetAttribute("BloxPlayerESP", state.PlayerESP)
                     if os.clock() - lastQuestDataRefresh >= 6 then
@@ -7011,8 +6836,6 @@ return function(context)
                         refreshBusoStatus()
                     end
 
-                    stepAutoRace()
-
                     if state.AutoObservation
                         and LocalPlayer:GetAttribute("KenActive") ~= true
                         and os.clock() - state.LastObservation >= 1 then
@@ -7117,23 +6940,6 @@ return function(context)
                             tostring(LocalPlayer:GetAttribute("KenDodgesLeft") or "N/A"),
                             tostring(LocalPlayer:GetAttribute("KenMaxDodges") or "N/A")
                         )
-                        if raceTransformed() then
-                            raceLabel.Text = "Race V4: Awakened"
-                            raceLabel.TextColor3 = COLORS.success
-                        elseif not state.AutoRaceV3 and not state.AutoRaceV4 then
-                            raceLabel.Text = "Race Ability: Off"
-                            raceLabel.TextColor3 = COLORS.muted
-                        elseif state.AutoRaceV4 and not raceV4Ready() then
-                            raceLabel.Text = "Race V4: Armed | Waiting for full awakening meter"
-                            raceLabel.TextColor3 = COLORS.muted
-                        elseif state.AutoRaceV3 and not raceV3Ready() then
-                            raceLabel.Text = "Race V3: Armed | Waiting for ability cooldown"
-                            raceLabel.TextColor3 = COLORS.muted
-                        end
-                        gui:SetAttribute("BloxRaceV3Requests", state.RaceV3Requests)
-                        gui:SetAttribute("BloxRaceV4Requests", state.RaceV4Requests)
-                        gui:SetAttribute("BloxRaceV4Ready", raceV4Ready())
-                        gui:SetAttribute("BloxRaceTransformed", raceTransformed())
                         gui:SetAttribute("BloxPlayerESPCount", PlayerEsp.Count())
                         gui:SetAttribute(
                             "BloxPlayerESPSkeletonSupported",
@@ -7167,8 +6973,6 @@ return function(context)
             end
             cleaned = true
             state.Alive = false
-            state.AutoRaceV3 = false
-            state.AutoRaceV4 = false
             state.AuraKill = false
             state.MobAuraTp = false
             state.SelectedMobFarm = false
@@ -7318,12 +7122,6 @@ return function(context)
             gui:SetAttribute("BloxBossVerticalLocked", false)
             gui:SetAttribute("BloxBossAnchorY", 0)
             gui:SetAttribute("BloxAutoBuso", state.AutoBuso)
-            gui:SetAttribute("BloxAutoRaceV3", state.AutoRaceV3)
-            gui:SetAttribute("BloxAutoRaceV4", state.AutoRaceV4)
-            gui:SetAttribute("BloxRaceV3Requests", state.RaceV3Requests)
-            gui:SetAttribute("BloxRaceV4Requests", state.RaceV4Requests)
-            gui:SetAttribute("BloxRaceV4Ready", false)
-            gui:SetAttribute("BloxRaceTransformed", false)
             gui:SetAttribute("BloxWalkOnWater", state.WalkOnWater)
             gui:SetAttribute("BloxPlayerESP", state.PlayerESP)
             gui:SetAttribute("BloxPlayerESPCount", 0)
