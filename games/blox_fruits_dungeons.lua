@@ -44,6 +44,7 @@ return function(context)
         DoubleAttack = true,
         AuraTurbo = true,
         AuraSpeedMultiplier = 2,
+        DungeonM1SpeedModifier = 1,
         AutoSelectCards = resumeAllAutomation,
         Difficulty = "Normal",
         MinimumPlayers = 1,
@@ -953,8 +954,17 @@ return function(context)
         return currentBuildFallback
     end
 
+    local function dungeonM1SpeedModifier()
+        local char = character()
+        local modifier = char and tonumber(char:GetAttribute("AttackSpeedMultiplier")) or 1
+        state.DungeonM1SpeedModifier = math.clamp(modifier or 1, 0.25, 10)
+        return state.DungeonM1SpeedModifier
+    end
+
     local function auraSpeedMultiplier()
-        return state.AuraTurbo and math.clamp(tonumber(state.AuraSpeedMultiplier) or 2, 1, 3) or 1
+        local configured = state.AuraTurbo
+            and math.clamp(tonumber(state.AuraSpeedMultiplier) or 2, 1, 3) or 1
+        return configured * dungeonM1SpeedModifier()
     end
 
     local function swordAttackCadence()
@@ -2571,11 +2581,12 @@ return function(context)
                 state.AttackSampleFruit = state.FruitRequests
             end
             attackLabel.Text = string.format(
-                "Attacks: Sword %d | Fruit %d | Rate %.1f / %.1f | Last multi-hit %d",
+                "Attacks: Sword %d | Fruit %d | Rate %.1f / %.1f | Effective %.2fx | Multi %d",
                 state.SwordRequests,
                 state.FruitRequests,
                 state.SwordRate,
                 state.FruitRate,
+                auraSpeedMultiplier(),
                 state.MultiHitCount
             )
             cardLabel.Text = state.AutoSelectCards
@@ -2616,6 +2627,8 @@ return function(context)
                 gui:SetAttribute("BloxDungeonSwordRate", state.SwordRate)
                 gui:SetAttribute("BloxDungeonFruitRate", state.FruitRate)
                 gui:SetAttribute("BloxDungeonMultiHitCount", state.MultiHitCount)
+                gui:SetAttribute("BloxDungeonM1SpeedModifier", state.DungeonM1SpeedModifier)
+                gui:SetAttribute("BloxDungeonEffectiveAttackSpeed", auraSpeedMultiplier())
             end
 
             if state.LastError and state.LastError ~= "" then
