@@ -7619,8 +7619,11 @@ return function(context)
                     ModelAlive = modelAlive,
                 },
                 ThirdSeaAPI = {
-                    IsThirdSea = workspace:FindFirstChild("Map") ~= nil
-                        and workspace.Map:FindFirstChild("Turtle") ~= nil,
+                    -- StreamingEnabled can unload Turtle even while the player
+                    -- is in Third Sea or its Submerged Island place. PlaceId is
+                    -- the stable router; map children are not.
+                    IsThirdSea = game.PlaceId == 7449423635
+                        or game.PlaceId == 100117331123089,
                     SetCombat = function(enabled)
                         local desired = enabled == true
                         for flag, value in pairs({
