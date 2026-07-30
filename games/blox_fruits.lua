@@ -355,8 +355,8 @@ return function(context)
         local questLabel = FarmStatusSection:AddLabel("Quest: Reading live quest data...")
         local targetLabel = FarmStatusSection:AddLabel("Target: None")
         local berryLabel = FarmStatusSection:AddLabel("Berries: Ready")
-        local gatherLabel = ExploitSection:AddLabel("Gathered enemies: 0")
-        ExploitSection:AddLabel("Target filter: active quest, boss, or raid target only")
+        local magnetLabel = ExploitSection:AddLabel("Auto Magnet: Off | Stacked: 0")
+        ExploitSection:AddLabel("One shared magnet for Auto Level, bosses, raids, Mob Aura, and selected-mob farming.")
         local raidLabel = SeaStatusSection:AddLabel("Raid: Idle")
         local seaLabel = SeaStatusSection:AddLabel("Sea: Detecting...")
         local playerLabel = PlayerStateSection:AddLabel("Player: Reading...")
@@ -5159,28 +5159,6 @@ return function(context)
                 state.SafeHealthPercent = value
             end,
         })
-        FarmSettingsSection:AddToggle({
-            Name = "Auto Magnet",
-            Description = "Fixed-anchor stacking for Auto Level, bosses, raids, Mob Aura, and Selected Mob Farm",
-            Flag = "blox_auto_magnet",
-            Default = false,
-            Callback = function(enabled)
-                state.AutoMagnet = enabled
-            end,
-        })
-        FarmSettingsSection:AddSlider({
-            Name = "Magnet Range",
-            Description = "Maximum distance for matching combat NPCs to join the fixed network-owned stack",
-            Flag = "blox_magnet_range",
-            Min = 50,
-            Max = 1500,
-            Step = 25,
-            Default = 300,
-            Callback = function(value)
-                state.MagnetRange = value
-            end,
-        })
-
         WorldFarmSection:AddButton({
             Name = "Refresh Live Quest Data",
             Description = "Refreshes every quest available in this sea and re-reads the selected quest",
@@ -5200,42 +5178,31 @@ return function(context)
         })
 
         ExploitSection:AddToggle({
-            Name = "Multi Grab Enemies",
-            Description = "Stacks several matching loaded enemies underneath you while Aura Kill attacks the pile",
-            Flag = "blox_enemy_gather",
+            Name = "Auto Magnet",
+            Description = "Fixed-anchor stacking for every active NPC farming mode, including raids",
+            Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
-                state.GatherEnemies = enabled
+                state.AutoMagnet = enabled
                 if not enabled then
                     state.Gathered = 0
                 end
-                gui:SetAttribute("BloxMultiGrabEnemies", enabled)
-            end,
-        })
-        ExploitSection:AddLabel("Locked: Selected / Current Mob | 3 enemies | 600 studs")
-        local gatherMobDropdown = ExploitSection:AddDropdown({
-            Name = "Multi Grab Enemy",
-            Description = "Uses its own NPC choice; Current Farm Target follows Auto Level or Mob Farm",
-            Flag = "blox_multi_grab_enemy",
-            Options = gatherMobOptions(),
-            Default = CURRENT_GATHER_TARGET,
-            Callback = function(value)
-                state.GatherSelectedMob = tostring(value or CURRENT_GATHER_TARGET)
-                gui:SetAttribute("BloxMultiGrabEnemy", state.GatherSelectedMob)
+                gui:SetAttribute("BloxAutoMagnet", enabled)
             end,
         })
         ExploitSection:AddSlider({
-            Name = "Grab Below Distance",
-            Description = "How many studs underneath your character to hold the enemy stack",
-            Flag = "blox_gather_distance",
-            Min = 3,
-            Max = 30,
-            Step = 1,
-            Default = 8,
+            Name = "Magnet Range",
+            Description = "Maximum distance for matching combat NPCs to join the fixed network-owned stack",
+            Flag = "blox_magnet_range",
+            Min = 50,
+            Max = 1500,
+            Step = 25,
+            Default = 300,
             Callback = function(value)
-                state.GatherDistance = math.clamp(tonumber(value) or 8, 3, 30)
+                state.MagnetRange = value
             end,
         })
+        ExploitSection:AddLabel("Multi Grab was retired. Auto Magnet has no artificial three-enemy cap.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
@@ -6073,19 +6040,7 @@ return function(context)
             end,
         })
         RaidSection:AddLabel("Raid farm stays at least 35 studs above NPCs. Combat Height can raise it, never lower it.")
-        RaidSection:AddToggle({
-            Name = "Raid Multi Grab",
-            Description = "Stacks up to 3 living raid NPCs 8 studs below you; disabled automatically during final-island Void Kill",
-            Flag = "blox_raid_multi_grab",
-            Default = false,
-            Callback = function(enabled)
-                state.RaidMultiGrab = enabled
-                if not enabled then
-                    state.RaidGathered = 0
-                end
-                gui:SetAttribute("BloxRaidMultiGrab", enabled)
-            end,
-        })
+        RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking and yields to final-island Void Kill automatically.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
             Description = "Matches Solix: network-finishes Island 5 NPCs at full health and leaves each corpse replicated to fall naturally",
@@ -6850,18 +6805,15 @@ return function(context)
                         invoke("Awakener", "Awaken")
                     end
 
-                    local gatherText = string.format(
-                        "Multi Grab: %d / %d | %s | Range: %d | Below: %.0f%s",
+                    local magnetText = string.format(
+                        "Auto Magnet: %s | Stacked: %d | Range: %d",
+                        state.AutoMagnet and "On" or "Off",
                         state.Gathered,
-                        MULTI_GRAB_LIMIT,
-                        state.GatherSelectedMob,
-                        MULTI_GRAB_RANGE,
-                        state.GatherDistance,
-                        state.GatherSingleFallbackEnemy and " | Last NPC: actual position" or ""
+                        state.MagnetRange
                     )
-                    if gatherText ~= state.LastGatherLabelText then
-                        state.LastGatherLabelText = gatherText
-                        gatherLabel.Text = gatherText
+                    if magnetText ~= state.LastGatherLabelText then
+                        state.LastGatherLabelText = magnetText
+                        magnetLabel.Text = magnetText
                     end
 
                     if os.clock() - lastEsp >= 1 then

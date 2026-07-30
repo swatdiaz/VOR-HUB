@@ -114,7 +114,6 @@ return function(context)
                 runtime.DamageWindows[category] += 1
                 runtime.DamagedTargets[category] += damaged
             end
-            runtime.InFlight[category] = math.max(runtime.InFlight[category] - 1, 0)
         end)
     end
 
@@ -159,6 +158,7 @@ return function(context)
                 if category ~= "Fruit" then
                     runtime.RegisteredBusy = false
                 end
+                runtime.InFlight[category] = math.max(runtime.InFlight[category] - 1, 0)
                 measureDamage(category, before)
                 return
             end
