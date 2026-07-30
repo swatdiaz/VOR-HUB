@@ -26,7 +26,7 @@ return function(context)
         LastAcceptedAt = {Sword = nil, Fruit = nil, Melee = nil},
         ObservedCadence = {Sword = nil, Fruit = nil, Melee = nil},
         LastError = nil,
-        MaxInFlight = 3,
+        MaxInFlight = {Sword = 1, Fruit = 3, Melee = 1},
         LastUi = 0,
     }
 
@@ -63,6 +63,18 @@ return function(context)
         end
         gui:SetAttribute("BloxExperimentalCombat", enabled)
         gui:SetAttribute("BloxExperimentalTripleAttack", runtime.Triple)
+    end
+
+    local function restoreVisibleSword(delay)
+        task.delay(delay or 0, function()
+            if not runtime.Alive then
+                return
+            end
+            local sword = api.ToolForSelection("Sword")
+            if sword then
+                api.EquipTool(sword)
+            end
+        end)
     end
 
     local function healthSnapshot(maximum)
@@ -105,7 +117,7 @@ return function(context)
     end
 
     local function dispatchCategory(category)
-        if runtime.InFlight[category] >= runtime.MaxInFlight then
+        if runtime.InFlight[category] >= runtime.MaxInFlight[category] then
             return
         end
         local before = healthSnapshot(category == "Fruit" and 3 or 12)
@@ -186,6 +198,9 @@ return function(context)
             runtime.LastDispatch.Fruit = 0
             runtime.LastDispatch.Melee = 0
             syncOverride()
+            if not runtime.Triple then
+                restoreVisibleSword(0.3)
+            end
         end,
     })
     addCategoryControls("Sword", 0.13, "blox_experimental_sword")
@@ -273,6 +288,10 @@ return function(context)
     syncOverride()
     gui:SetAttribute("BloxExperimentalModule", true)
     return function()
+        local sword = api.ToolForSelection("Sword")
+        if sword then
+            api.EquipTool(sword)
+        end
         runtime.Alive = false
         runtime.FastSword = false
         runtime.FastFruit = false
