@@ -33,6 +33,9 @@ return function(context)
         OriginalParts = setmetatable({}, {__mode = "k"}),
         Visual = nil,
         RealTool = nil,
+        RealHandle = nil,
+        RelativeFrames = {},
+        VisualTransform = CFrame.identity,
         SourcePath = nil,
         LastApply = 0,
     }
@@ -241,6 +244,9 @@ return function(context)
         end
         table.clear(state.OriginalParts)
         state.RealTool = nil
+        state.RealHandle = nil
+        table.clear(state.RelativeFrames)
+        state.VisualTransform = CFrame.identity
         state.SourcePath = nil
         gui:SetAttribute("BloxVisualWeaponActive", false)
     end
@@ -254,7 +260,9 @@ return function(context)
             if object:IsA("LuaSourceContainer") or object:IsA("Sound") then
                 object:Destroy()
             elseif object:IsA("BasePart") then
-                object.Anchored = false
+                -- The cosmetic must never join the character's physics
+                -- assembly. It is positioned visually on RenderStepped.
+                object.Anchored = true
                 object.CanCollide = false
                 object.CanQuery = false
                 object.CanTouch = false
@@ -330,11 +338,6 @@ return function(context)
         end
         for _, part in ipairs(visualParts) do
             part.CFrame = realHandle.CFrame * transform * relativeFrames[part]
-            local weld = Instance.new("WeldConstraint")
-            weld.Name = "VORVisualWeld"
-            weld.Part0 = realHandle
-            weld.Part1 = part
-            weld.Parent = part
         end
         for _, part in ipairs(realParts) do
             state.OriginalParts[part] = part.LocalTransparencyModifier
@@ -342,6 +345,9 @@ return function(context)
         end
         state.Visual = wrapper
         state.RealTool = realTool
+        state.RealHandle = realHandle
+        state.RelativeFrames = relativeFrames
+        state.VisualTransform = transform
         state.SourcePath = source:GetFullName()
         statusLabel.Text = string.format("Visual swap: %s over %s", state.Selected, realTool.Name)
         gui:SetAttribute("BloxVisualWeaponActive", true)
@@ -438,8 +444,20 @@ return function(context)
             apply()
         end
     end))
+    track(RunService.RenderStepped:Connect(function()
+        local anchor = state.RealHandle
+        if not state.Enabled or not anchor or not anchor.Parent then
+            return
+        end
+        local anchorFrame = anchor.CFrame * state.VisualTransform
+        for part, relative in pairs(state.RelativeFrames) do
+            if part and part.Parent then
+                part.CFrame = anchorFrame * relative
+            end
+        end
+    end))
     track(gui.Destroying:Connect(restore))
 
     gui:SetAttribute("BloxVisualWeaponModule", true)
-    gui:SetAttribute("BloxVisualWeaponModuleVersion", "2")
+    gui:SetAttribute("BloxVisualWeaponModuleVersion", "3")
 end
