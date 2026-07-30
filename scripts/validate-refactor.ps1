@@ -79,7 +79,13 @@ foreach ($match in [regex]::Matches($settingsText, '["''](blox_[^"'']+)["'']')) 
 $retiredFlags = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
     # Explicitly removed because weapon-model replacement could corrupt the
     # character assembly and trigger security kicks.
-    "blox_void_dark_blade_v3"
+    "blox_void_dark_blade_v3",
+    # Retired when the separate multi-grab controls were replaced by the one
+    # shared Auto Magnet controller.
+    "blox_enemy_gather",
+    "blox_gather_distance",
+    "blox_multi_grab_enemy",
+    "blox_raid_multi_grab"
 ))
 $missing = @($baselineFlags | Where-Object {
     -not $modularFlags.Contains($_) -and -not $retiredFlags.Contains($_)

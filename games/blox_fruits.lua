@@ -7771,7 +7771,8 @@ return function(context)
                         for _, name in ipairs(type(names) == "table" and names or {}) do
                             local spawn = enemySpawn(name)
                             if spawn then
-                                moveTo(CFrame.new(spawn.Position + Vector3.new(0, tonumber(heightOverride) or 12, 0)))
+                                local spawnHeight = tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20
+                                moveTo(CFrame.new(spawn.Position + Vector3.new(0, spawnHeight, 0)))
                                 return normalizeEnemyName(name), "Waiting for spawn"
                             end
                         end

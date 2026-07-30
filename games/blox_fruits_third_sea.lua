@@ -194,7 +194,7 @@ return function(context)
     end
 
     local function farm(names, center, radius, height)
-        local target, stage = api.FarmFirst(names, center, radius, height or 22)
+        local target, stage = api.FarmFirst(names, center, radius, height)
         setStatus(stage, target and (stage .. ": " .. target) or stage)
         return target ~= nil
     end
@@ -346,14 +346,14 @@ return function(context)
             gui:SetAttribute("BloxCakePrinceRemaining", 0)
             gui:SetAttribute("BloxCakePrincePortalReady", true)
             gui:SetAttribute("BloxCakePrinceRoute", "Boss room")
-            farm({"Cake Prince", "Dough King"}, nil, nil, 28)
+            farm({"Cake Prince", "Dough King"})
             return
         end
         gui:SetAttribute(
             "BloxCakePrinceRoute",
             runtime.CakePortalReady and "Opening portal" or "Farming portal requirement"
         )
-        farm({"Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker"}, nil, nil, 22)
+        farm({"Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker"})
     end
 
     local function stepYama()
