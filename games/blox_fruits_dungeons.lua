@@ -42,11 +42,15 @@ return function(context)
         AutoLeave = resumeAllAutomation,
         AutoFarm = resumeAllAutomation,
         DoubleAttack = true,
+        AuraTurbo = true,
+        AuraSpeedMultiplier = 2,
         AutoSelectCards = resumeAllAutomation,
         Difficulty = "Normal",
         MinimumPlayers = 1,
         TweenSpeed = 315,
         RandomPosition = true,
+        OrbitPosition = false,
+        OrbitStartedAt = os.clock(),
         PositionX = 1,
         PositionY = 1,
         PositionZ = 1,
@@ -80,6 +84,7 @@ return function(context)
         LastStartRequest = 0,
         LastBusoRequest = 0,
         LastObservationRequest = 0,
+        ObservationPendingUntil = 0,
         LastRaceV3Request = 0,
         LastRaceV4Request = 0,
         ObservationRequests = 0,
@@ -95,6 +100,11 @@ return function(context)
         SwordRequests = 0,
         FruitRequests = 0,
         MultiHitCount = 0,
+        AttackSampleAt = os.clock(),
+        AttackSampleSword = 0,
+        AttackSampleFruit = 0,
+        SwordRate = 0,
+        FruitRate = 0,
         GatheredCount = 0,
         PositionIndex = 3,
         NextPositionChange = 0,
@@ -720,27 +730,31 @@ return function(context)
     end
 
     local function observationActive()
+        local events = ReplicatedStorage:FindFirstChild("Events")
+        local activeQuery = events and events:FindFirstChild("IsObservationActive")
+        if activeQuery and activeQuery:IsA("BindableFunction") then
+            local ok, active = pcall(function()
+                return activeQuery:Invoke()
+            end)
+            if ok then
+                return active == true
+            end
+        end
         return LocalPlayer:GetAttribute("KenActive") == true
     end
 
     local function stepAutoObservation()
         if not state.AutoObservation or observationActive()
-            or os.clock() - state.LastObservationRequest < 1 then
+            or os.clock() < state.ObservationPendingUntil
+            or os.clock() - state.LastObservationRequest < 0.8 then
             return
         end
         state.LastObservationRequest = os.clock()
+        state.ObservationPendingUntil = os.clock() + 1.1
         local ok, method = sendActionInput("BoundActionKen", Enum.KeyCode.E, 0x45)
         if ok then
             state.ObservationRequests += 1
             observationLabel.Text = "Observation: Activation requested via " .. method
-            task.delay(0.2, function()
-                if state.Alive and state.AutoObservation and not observationActive()
-                    and CommE and CommE:IsA("RemoteEvent") then
-                    pcall(function()
-                        CommE:FireServer("Ken", true)
-                    end)
-                end
-            end)
         else
             state.LastError = "Auto Observation failed: " .. tostring(method)
         end
@@ -939,6 +953,18 @@ return function(context)
         return currentBuildFallback
     end
 
+    local function auraSpeedMultiplier()
+        return state.AuraTurbo and math.clamp(tonumber(state.AuraSpeedMultiplier) or 2, 1, 3) or 1
+    end
+
+    local function swordAttackCadence()
+        return math.max(0.05, 0.13 / auraSpeedMultiplier())
+    end
+
+    local function fruitAttackCadence()
+        return math.max(0.018, 0.055 / auraSpeedMultiplier())
+    end
+
     local function swordAttackProfile(tool, weaponData)
         local moveset = type(weaponData) == "table" and weaponData.Moveset or nil
         local basics = type(moveset) == "table" and moveset.Basic or nil
@@ -1027,7 +1053,7 @@ return function(context)
             return false, "No enemy is inside Sword Aura range"
         end
         RegisterAttackEvent:FireServer(profile.Duration)
-        task.wait(0.13)
+        task.wait(swordAttackCadence())
         if not state.Alive or not state.AutoFarm then
             return false, "Farm stopped before the hit window"
         end
@@ -1184,7 +1210,8 @@ return function(context)
         local z = range * (tonumber(state.PositionZ) or 1)
         local targetDistance = (targetRoot.Position - root.Position).Magnitude
 
-        if state.RandomPosition and targetDistance <= math.max(35, range * 2.5) then
+        if state.RandomPosition and not state.OrbitPosition
+            and targetDistance <= math.max(35, range * 2.5) then
             if os.clock() >= state.NextPositionChange then
                 local nextIndex = math.random(1, 4)
                 if nextIndex == state.PositionIndex then
@@ -1205,9 +1232,15 @@ return function(context)
             Vector3.new(0, y, z),
             Vector3.new(0, y, -z),
         }
-        local offset = state.RandomPosition
-            and offsets[state.PositionIndex]
-            or Vector3.new(x, y, z)
+        local offset
+        if state.OrbitPosition and targetDistance <= math.max(35, range * 2.5) then
+            local angle = (os.clock() - state.OrbitStartedAt) * math.rad(220)
+            offset = Vector3.new(math.cos(angle) * x, y, math.sin(angle) * z)
+        elseif state.RandomPosition then
+            offset = offsets[state.PositionIndex]
+        else
+            offset = Vector3.new(x, y, z)
+        end
         local position = targetRoot.Position + offset
         return CFrame.lookAt(position, targetRoot.Position)
     end
@@ -2050,6 +2083,37 @@ return function(context)
         end,
     })
     AutomationSection:AddToggle({
+        Name = "Dungeon Aura Kill Turbo",
+        Description = "Shortens the validated Sword hit window and Fruit request cadence while Auto Farm is attacking",
+        Flag = "blox_dungeon_aura_turbo",
+        Default = true,
+        Callback = function(enabled)
+            state.AuraTurbo = enabled == true
+            state.LastSwordAttack = 0
+            state.LastFruitAttack = 0
+            if gui then
+                gui:SetAttribute("BloxDungeonAuraTurbo", state.AuraTurbo)
+            end
+        end,
+    })
+    AutomationSection:AddSlider({
+        Name = "Sword + Fruit Damage Speed",
+        Description = "Shared server-credit multiplier for both Sword registration and Fruit M1 requests",
+        Flag = "blox_dungeon_aura_speed_multiplier",
+        Min = 1,
+        Max = 3,
+        Step = 0.25,
+        Default = 2,
+        Callback = function(value)
+            state.AuraSpeedMultiplier = math.clamp(tonumber(value) or 2, 1, 3)
+            state.LastSwordAttack = 0
+            state.LastFruitAttack = 0
+            if gui then
+                gui:SetAttribute("BloxDungeonAuraSpeedMultiplier", state.AuraSpeedMultiplier)
+            end
+        end,
+    })
+    AutomationSection:AddToggle({
         Name = "Auto Select Cards",
         Description = "Uses the ordered priority list below",
         Flag = "blox_dungeon_auto_cards",
@@ -2073,6 +2137,19 @@ return function(context)
         Callback = function(enabled)
             state.RandomPosition = enabled
             state.NextPositionChange = 0
+        end,
+    })
+    PositionSection:AddToggle({
+        Name = "Orbit Position Farm",
+        Description = "Smoothly circles the active NPC at 220 degrees per second using the shared X/Y/Z and range values",
+        Flag = "blox_dungeon_orbit_position",
+        Default = false,
+        Callback = function(enabled)
+            state.OrbitPosition = enabled == true
+            state.OrbitStartedAt = os.clock()
+            if gui then
+                gui:SetAttribute("BloxDungeonOrbitPosition", state.OrbitPosition)
+            end
         end,
     })
     PositionSection:AddSlider({
@@ -2227,6 +2304,7 @@ return function(context)
         Callback = function(enabled)
             state.AutoObservation = enabled == true
             state.LastObservationRequest = 0
+            state.ObservationPendingUntil = 0
             if gui then
                 gui:SetAttribute("BloxDungeonAutoObservation", state.AutoObservation)
             end
@@ -2414,7 +2492,9 @@ return function(context)
                 and dungeonRunActive() and validFarmTarget(state.CurrentTarget) then
                 if ensureBuso() then
                     local now = os.clock()
-                    if not state.SwordBusy and now - state.LastSwordAttack >= 0.13 then
+                    local swordCadence = swordAttackCadence()
+                    local fruitCadence = fruitAttackCadence()
+                    if not state.SwordBusy and now - state.LastSwordAttack >= swordCadence then
                         state.SwordBusy = true
                         state.LastSwordAttack = now
                         task.spawn(function()
@@ -2429,7 +2509,7 @@ return function(context)
                             state.SwordBusy = false
                         end)
                     end
-                    if not state.FruitBusy and now - state.LastFruitAttack >= 0.055 then
+                    if not state.FruitBusy and now - state.LastFruitAttack >= fruitCadence then
                         state.FruitBusy = true
                         state.LastFruitAttack = now
                         task.spawn(function()
@@ -2445,7 +2525,7 @@ return function(context)
                     end
                 end
             end
-            task.wait(0.025)
+            task.wait(math.max(0.008, 0.025 / auraSpeedMultiplier()))
         end
     end)
 
@@ -2481,10 +2561,21 @@ return function(context)
             targetLabel.Text = state.CurrentTargetDistance
                 and string.format("Target: %s | %.1f studs | Gathered %d", state.CurrentTargetName, state.CurrentTargetDistance, state.GatheredCount)
                 or ("Target: " .. state.CurrentTargetName)
+            local sampleNow = os.clock()
+            local sampleElapsed = sampleNow - state.AttackSampleAt
+            if sampleElapsed >= 1 then
+                state.SwordRate = (state.SwordRequests - state.AttackSampleSword) / sampleElapsed
+                state.FruitRate = (state.FruitRequests - state.AttackSampleFruit) / sampleElapsed
+                state.AttackSampleAt = sampleNow
+                state.AttackSampleSword = state.SwordRequests
+                state.AttackSampleFruit = state.FruitRequests
+            end
             attackLabel.Text = string.format(
-                "Attacks: Sword %d | Fruit %d | Last multi-hit %d",
+                "Attacks: Sword %d | Fruit %d | Rate %.1f / %.1f | Last multi-hit %d",
                 state.SwordRequests,
                 state.FruitRequests,
+                state.SwordRate,
+                state.FruitRate,
                 state.MultiHitCount
             )
             cardLabel.Text = state.AutoSelectCards
@@ -2520,6 +2611,11 @@ return function(context)
                 gui:SetAttribute("BloxDungeonRaceV4Requests", state.RaceV4Requests)
                 gui:SetAttribute("BloxDungeonRaceV4Ready", raceV4Ready())
                 gui:SetAttribute("BloxDungeonRaceTransformed", raceTransformed())
+                gui:SetAttribute("BloxDungeonSwordRequests", state.SwordRequests)
+                gui:SetAttribute("BloxDungeonFruitRequests", state.FruitRequests)
+                gui:SetAttribute("BloxDungeonSwordRate", state.SwordRate)
+                gui:SetAttribute("BloxDungeonFruitRate", state.FruitRate)
+                gui:SetAttribute("BloxDungeonMultiHitCount", state.MultiHitCount)
             end
 
             if state.LastError and state.LastError ~= "" then
@@ -2543,6 +2639,9 @@ return function(context)
         gui:SetAttribute("BloxDungeonVisiblePages", "Dungeons,Player,Settings")
         gui:SetAttribute("BloxDungeonAttackMethod", "Sword + Fruit M1")
         gui:SetAttribute("BloxDungeonDoubleAttack", state.DoubleAttack)
+        gui:SetAttribute("BloxDungeonAuraTurbo", state.AuraTurbo)
+        gui:SetAttribute("BloxDungeonAuraSpeedMultiplier", state.AuraSpeedMultiplier)
+        gui:SetAttribute("BloxDungeonOrbitPosition", state.OrbitPosition)
         gui:SetAttribute("BloxDungeonAutoObservation", state.AutoObservation)
         gui:SetAttribute("BloxDungeonAutoRaceV3", state.AutoRaceV3)
         gui:SetAttribute("BloxDungeonAutoRaceV4", state.AutoRaceV4)
