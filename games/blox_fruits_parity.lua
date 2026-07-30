@@ -63,6 +63,71 @@ return function(context)
         end)
     end
 
+    local function bypassWarp(targetCFrame)
+        if typeof(targetCFrame) ~= "CFrame" then
+            return false
+        end
+        local startingRoot = helpers.RootPart()
+        if not startingRoot then
+            return false
+        end
+        if (startingRoot.Position - targetCFrame.Position).Magnitude <= 8 then
+            startingRoot.CFrame = targetCFrame
+            return true
+        end
+
+        -- Third Sea only accepts requestEntrance for real portals. Try that
+        -- cheap path first, then use the death/respawn island warp Solix uses
+        -- for arbitrary destinations and verify the server kept the arrival.
+        rawInvoke("requestEntrance", targetCFrame.Position)
+        task.wait(0.65)
+        local portalRoot = helpers.RootPart()
+        if portalRoot and (portalRoot.Position - targetCFrame.Position).Magnitude <= 150 then
+            portalRoot.CFrame = targetCFrame
+            return true
+        end
+
+        local oldCharacter = helpers.Character()
+        local oldHumanoid = helpers.Humanoid()
+        local warpRoot = helpers.RootPart()
+        if not oldCharacter or not oldHumanoid or not warpRoot then
+            return false
+        end
+        for _ = 1, 5 do
+            warpRoot.AssemblyLinearVelocity = Vector3.zero
+            warpRoot.AssemblyAngularVelocity = Vector3.zero
+            warpRoot.CFrame = targetCFrame
+            task.wait(0.06)
+        end
+        rawInvoke("SetSpawnPoint")
+        pcall(function()
+            oldHumanoid.Health = 0
+            oldHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+
+        local deadline = os.clock() + 10
+        repeat
+            task.wait(0.1)
+        until os.clock() >= deadline
+            or (helpers.Character() ~= oldCharacter and helpers.RootPart() ~= nil)
+
+        local newRoot = helpers.RootPart()
+        if not newRoot then
+            return false
+        end
+        for _ = 1, 12 do
+            newRoot.AssemblyLinearVelocity = Vector3.zero
+            newRoot.AssemblyAngularVelocity = Vector3.zero
+            newRoot.CFrame = targetCFrame
+            task.wait(0.08)
+        end
+        rawInvoke("SetSpawnPoint")
+        local arrived = (newRoot.Position - targetCFrame.Position).Magnitude <= 150
+        gui:SetAttribute("BloxBypassTeleportArrived", arrived)
+        return arrived
+    end
+    sharedState.BypassWarp = bypassWarp
+
     local function valueFrom(parent, name, fallback)
         local object = parent and parent:FindFirstChild(name)
         if object and object:IsA("ValueBase") then
@@ -835,6 +900,28 @@ return function(context)
         runtime.PvpBuilder = nil
         if not runtime.PvpOk then
             error("PvP module builder failed: " .. tostring(runtime.PvpError))
+        end
+    end
+
+    if pages.Player and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.CosmeticsLoaded, runtime.CosmeticsBuilder = context.LoadModule("games/blox_fruits_cosmetics.lua")
+        if not runtime.CosmeticsLoaded then
+            error("cosmetics module compile failed: " .. tostring(runtime.CosmeticsBuilder))
+        end
+        runtime.CosmeticsOk, runtime.CosmeticsError = context.RunBuilder(
+            "games/blox_fruits_cosmetics.lua",
+            runtime.CosmeticsBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Page = pages.Player,
+                Helpers = context.Helpers,
+            }
+        )
+        runtime.CosmeticsBuilder = nil
+        if not runtime.CosmeticsOk then
+            error("cosmetics module builder failed: " .. tostring(runtime.CosmeticsError))
         end
     end
 

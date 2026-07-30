@@ -4459,21 +4459,8 @@ return function(context)
                 targetCFrame += Vector3.new(0, 8, 0)
             end
             prepareManualTravel()
-            if state.BypassTeleport then
-                local bypassOk = pcall(function()
-                    -- Blox Fruits accepts entrance requests from any distance.
-                    -- The final local placement handles destinations without an
-                    -- entrance and avoids leaving the player at a marker in air.
-                    invoke("requestEntrance", targetCFrame.Position)
-                    task.wait(0.35)
-                    local root = rootPart()
-                    if root then
-                        root.AssemblyLinearVelocity = Vector3.zero
-                        root.AssemblyAngularVelocity = Vector3.zero
-                        root.CFrame = targetCFrame
-                    end
-                end)
-                return bypassOk
+            if state.BypassTeleport and type(state.BypassWarp) == "function" then
+                return state.BypassWarp(targetCFrame)
             end
             return moveTo(targetCFrame)
         end
@@ -4485,15 +4472,8 @@ return function(context)
                 return false
             end
             prepareManualTravel()
-            if state.BypassTeleport then
-                local root = rootPart()
-                if root then
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                    root.CFrame = target:GetPivot() * CFrame.new(0, 0, -4)
-                    return true
-                end
-                return false
+            if state.BypassTeleport and type(state.BypassWarp) == "function" then
+                return state.BypassWarp(target:GetPivot() * CFrame.new(0, 0, -4))
             end
             return moveTo(target:GetPivot() * CFrame.new(0, 0, -4))
         end
@@ -5588,16 +5568,19 @@ return function(context)
         })
         AttackSection:AddToggle({
             Name = "Auto Observation (Ken)",
-            Description = "Keeps Instinct active through the verified CommE Ken controller",
+            Description = "Keeps Instinct active with E input, mobile HUD button, and verified state fallback",
             Flag = "blox_auto_observation",
             Default = false,
             Callback = function(enabled)
                 state.AutoObservation = enabled
                 state.LastObservation = 0
-                if CommE then
+                if not enabled and LocalPlayer:GetAttribute("KenActive") == true then
                     task.defer(function()
                         pcall(function()
-                            CommE:FireServer("Ken", enabled)
+                            local input = game:GetService("VirtualInputManager")
+                            input:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                            task.wait(0.04)
+                            input:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                         end)
                     end)
                 end
@@ -6553,10 +6536,35 @@ return function(context)
                         refreshBusoStatus()
                     end
 
-                    if state.AutoObservation and CommE and os.clock() - state.LastObservation >= 2 then
+                    if state.AutoObservation
+                        and LocalPlayer:GetAttribute("KenActive") ~= true
+                        and os.clock() - state.LastObservation >= 1 then
                         state.LastObservation = os.clock()
                         pcall(function()
-                            CommE:FireServer("Ken", true)
+                            local input = game:GetService("VirtualInputManager")
+                            input:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                            task.wait(0.04)
+                            input:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        end)
+                        task.delay(0.2, function()
+                            if not state.Alive or not state.AutoObservation
+                                or LocalPlayer:GetAttribute("KenActive") == true then
+                                return
+                            end
+                            pcall(function()
+                                local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+                                local main = playerGui and playerGui:FindFirstChild("Main")
+                                local hud = main and main:FindFirstChild("BottomHUDList")
+                                local buttons = hud and hud:FindFirstChild("UniversalContextButtons")
+                                local ken = buttons and buttons:FindFirstChild("BoundActionKen")
+                                local button = ken and (ken:FindFirstChild("Button") or ken:FindFirstChild("CaptureInput"))
+                                if button and type(firesignal) == "function" then
+                                    firesignal(button.Activated)
+                                    firesignal(button.MouseButton1Click)
+                                elseif CommE then
+                                    CommE:FireServer("Ken", true)
+                                end
+                            end)
                         end)
                     end
 
