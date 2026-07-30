@@ -127,8 +127,8 @@ $nativeFruitShape = 'silentRemote:FireServer(direction.Unit, 1, grounded)'
 if (([regex]::Matches($bloxText, [regex]::Escape($nativeFruitShape))).Count -ne 2) {
     throw "Fruit M1 calls must use the live direction/combo/grounded remote shape twice"
 }
-if ($bloxText -notmatch 'root\.Position\.Y < -100 and \(root\.Position\.Y - 3\.2\) or 0') {
-    throw "Walk on Water is missing its Submerged Island local-depth support"
+if ($bloxText -notmatch 'game\.PlaceId == 100117331123089 and -2161\.889 or 0') {
+    throw "Walk on Water is missing its fixed Submerged Island inner-water surface"
 }
 
 $parityText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_parity.lua") -Raw
@@ -150,6 +150,16 @@ foreach ($check in $routingChecks) {
     }
 }
 
+$loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
+$uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
+$versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.0"'
+$buildVersionOk = $loaderText -match 'BuildVersion\s*=\s*runtime\.SETTINGS\.Version\s*\.\.\s*"\+"\s*\.\.\s*string\.sub\(COMMIT, 1, 7\)'
+$visibleVersionOk = $uiText -match 'SETTINGS\.BuildVersion or SETTINGS\.Version'
+if (-not ($semanticVersionOk -and $buildVersionOk -and $visibleVersionOk)) {
+    throw "Visible VOR build version is not wired to semantic version plus immutable commit"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (5/5)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
@@ -157,3 +167,4 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
+Write-Host "Visible immutable build version: PASS"

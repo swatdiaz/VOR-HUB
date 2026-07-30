@@ -4990,11 +4990,13 @@ return function(context)
                 return
             end
             state.WaterPlatform.CanCollide = true
-            -- The normal seas use Y=0, but Submerged Island is around Y=-2100.
-            -- A platform two thousand studs above the character is decorative
-            -- garbage, not Walk on Water. Underwater, support the character at
-            -- its current local depth; elsewhere retain the real sea surface.
-            local supportY = root.Position.Y < -100 and (root.Position.Y - 3.2) or 0
+            -- Third Sea's outer ocean is Y=0. The separate sea inside the
+            -- Submerged Island place has a fixed surface: the live dock/rope
+            -- floor under the player's feet reads Y=-2161.389. Keep the
+            -- invisible one-stud platform's TOP at that waterline. Only X/Z
+            -- follows the player; following root.Y would make the floor sink
+            -- along with a falling character and provide no support at all.
+            local supportY = game.PlaceId == 100117331123089 and -2161.889 or 0
             state.WaterPlatform.CFrame = CFrame.new(root.Position.X, supportY, root.Position.Z)
         end
 

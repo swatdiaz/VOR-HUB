@@ -409,7 +409,7 @@ return function(context)
     )
     local buildText = label(
         statusFooter,
-        "v" .. SETTINGS.Version,
+        "v" .. tostring(SETTINGS.BuildVersion or SETTINGS.Version),
         UDim2.fromOffset(120, 28),
         UDim2.new(1, -132, 0, 0),
         COLORS.dim,
@@ -705,7 +705,7 @@ return function(context)
     end
 
     function Window:SetModuleIdentity(name, version, verified)
-        identity.Text = string.format("%s  •  v%s%s", tostring(name or "Unknown module"), tostring(version or SETTINGS.Version), verified and "  •  VERIFIED" or "")
+        identity.Text = string.format("%s  •  v%s%s", tostring(name or "Unknown module"), tostring(version or SETTINGS.BuildVersion or SETTINGS.Version), verified and "  •  VERIFIED" or "")
         identity.TextColor3 = verified and COLORS.success or COLORS.muted
     end
 
@@ -2375,7 +2375,7 @@ return function(context)
         local overview = home:AddSection("VOR Command Center", "Left")
         overview:AddLabel("Welcome back, " .. tostring(LocalPlayer and LocalPlayer.DisplayName or "Player"))
         overview:AddLabel("Game module: " .. tostring(SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported"))
-        overview:AddLabel("Version: " .. tostring(SETTINGS.Version) .. " | Module commit: " .. string.sub(tostring(context.Commit or "local"), 1, 8))
+        overview:AddLabel("Version: " .. tostring(SETTINGS.BuildVersion or SETTINGS.Version) .. " | Module commit: " .. string.sub(tostring(context.Commit or "local"), 1, 8))
         overview:AddLabel("Runtime: immutable, modular, and verified")
 
         local updates = home:AddSection("Latest Build", "Left")
