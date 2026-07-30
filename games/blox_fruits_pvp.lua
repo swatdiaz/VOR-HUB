@@ -13,6 +13,7 @@ return function(context)
     local LocalPlayer = Players.LocalPlayer
     local Camera = workspace.CurrentCamera
     local Mouse = LocalPlayer:GetMouse()
+    local originalNativeAim = LocalPlayer:GetAttribute("AAIM")
 
     local state = {
         Alive = true,
@@ -437,11 +438,15 @@ return function(context)
 
     local aim = page:AddSection("Aim Assistance", "Right")
     aim:AddToggle({
-        Name = "Silent Aim",
-        Description = "Safely tracks the predicted target with the camera; no global metamethod hooks",
+        Name = "Skill Tracking",
+        Description = "Uses Blox Fruits' native AAIM path so fruit skills home toward the nearest player on PC and mobile",
         Flag = "blox_pvp_silent_aim",
         Default = false,
-        Callback = function(enabled) state.SilentAim = enabled == true end,
+        Callback = function(enabled)
+            state.SilentAim = enabled == true
+            LocalPlayer:SetAttribute("AAIM", state.SilentAim and true or originalNativeAim)
+            gui:SetAttribute("BloxPvpSkillTracking", state.SilentAim)
+        end,
     })
     aim:AddToggle({
         Name = "Nearest to Cursor",
@@ -487,8 +492,6 @@ return function(context)
         if state.Spectating and alive(target) then
             Camera.CameraSubject = humanoid(target)
         end
-        if state.SilentAim and gui:GetAttribute("BloxPvpSilentAimHook") == "CameraFallback"
-            and alive(target) and screenDistance(target) <= state.AimFov then aimAt(target) end
     end))
 
     track(RunService.Heartbeat:Connect(function()
@@ -519,15 +522,14 @@ return function(context)
         gui:SetAttribute("BloxPvpAttacking", (state.AutoAttack or state.AutoBounty) and target ~= nil)
     end))
 
-    -- Never install global __namecall/__index hooks here. Some executors pass
-    -- the hooked self argument differently, corrupting unrelated Blox Fruits
-    -- calls even while Silent Aim is disabled. Camera tracking is isolated and
-    -- leaves the game's remotes, HUD bootstrap, and replication untouched.
-    gui:SetAttribute("BloxPvpSilentAimHook", "CameraFallback")
-    gui:SetAttribute("BloxPvpSilentAimSafety", "NoMetamethodHooks")
+    -- FruitClient already implements skill homing behind LocalPlayer.AAIM.
+    -- Using that native path avoids touching global __namecall/__index behavior.
+    gui:SetAttribute("BloxPvpSilentAimHook", "NativeAAIM")
+    gui:SetAttribute("BloxPvpSilentAimSafety", "GameNativeAttribute")
     track(gui.Destroying:Connect(function()
         state.Alive = false
+        LocalPlayer:SetAttribute("AAIM", originalNativeAim)
     end))
     gui:SetAttribute("BloxPvpModule", true)
-    gui:SetAttribute("BloxPvpModuleVersion", "3")
+    gui:SetAttribute("BloxPvpModuleVersion", "4")
 end
