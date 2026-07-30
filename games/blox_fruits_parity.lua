@@ -925,6 +925,31 @@ return function(context)
         end
     end
 
+    if context.ThirdSeaAPI and context.ThirdSeaAPI.IsThirdSea
+        and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.ThirdSeaLoaded, runtime.ThirdSeaBuilder = context.LoadModule("games/blox_fruits_third_sea.lua")
+        if not runtime.ThirdSeaLoaded then
+            error("Third Sea module compile failed: " .. tostring(runtime.ThirdSeaBuilder))
+        end
+        runtime.ThirdSeaOk, runtime.ThirdSeaError = context.RunBuilder(
+            "games/blox_fruits_third_sea.lua",
+            runtime.ThirdSeaBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Pages = pages,
+                Remotes = remotes,
+                Helpers = helpers,
+                ThirdSeaAPI = context.ThirdSeaAPI,
+            }
+        )
+        runtime.ThirdSeaBuilder = nil
+        if not runtime.ThirdSeaOk then
+            error("Third Sea module builder failed: " .. tostring(runtime.ThirdSeaError))
+        end
+    end
+
     track(workspace.ChildAdded:Connect(function(child)
         if runtime.IslandNotifications then
             local lower = string.lower(child.Name)

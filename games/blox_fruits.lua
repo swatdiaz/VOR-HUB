@@ -7603,6 +7603,116 @@ return function(context)
                 RunBuilder = context.RunBuilder,
                 State = state,
                 Remotes = {CommF = CommF, CommE = CommE, Redeem = Redeem},
+                ThirdSeaAPI = {
+                    IsThirdSea = workspace:FindFirstChild("Map") ~= nil
+                        and workspace.Map:FindFirstChild("Turtle") ~= nil,
+                    SetCombat = function(enabled)
+                        local desired = enabled == true
+                        for flag, value in pairs({
+                            blox_auto_attack = desired,
+                            blox_fast_attack = desired,
+                            blox_double_attack = desired,
+                            blox_auto_buso = desired,
+                            blox_aura_kill_range = desired and AURA_KILL_MAX_RANGE or state.AuraRange,
+                        }) do
+                            local control = Window.PersistentControls[flag]
+                            if control then
+                                control:Set(value)
+                            end
+                        end
+                        if desired then
+                            state.AutoAttack = true
+                            state.FastAttack = true
+                            state.DoubleAttack = true
+                            state.AutoBuso = true
+                            state.AuraRange = AURA_KILL_MAX_RANGE
+                            ensureBuso()
+                        end
+                        gui:SetAttribute("BloxThirdSeaCombat", desired)
+                    end,
+                    FarmFirst = function(names, center, radius, heightOverride)
+                        local root = rootPart()
+                        if not root then
+                            return nil, "Character is not ready"
+                        end
+                        local wanted = {}
+                        for _, name in ipairs(type(names) == "table" and names or {}) do
+                            wanted[string.lower(normalizeEnemyName(name))] = true
+                        end
+                        local function allowed(enemy)
+                            if not modelAlive(enemy) then
+                                return false
+                            end
+                            local normalized = string.lower(normalizeEnemyName(enemy.Name))
+                            local matches = next(wanted) == nil
+                            for expected in pairs(wanted) do
+                                if normalized == expected or string.find(normalized, expected, 1, true) then
+                                    matches = true
+                                    break
+                                end
+                            end
+                            if not matches then
+                                return false
+                            end
+                            local enemyRoot = modelRoot(enemy)
+                            local centerPosition = typeof(center) == "CFrame" and center.Position or center
+                            return enemyRoot ~= nil and (typeof(centerPosition) ~= "Vector3"
+                                or (enemyRoot.Position - centerPosition).Magnitude <= (tonumber(radius) or math.huge))
+                        end
+                        local enemy = state.ActiveFarmTarget
+                        if not allowed(enemy) then
+                            enemy = nil
+                        end
+                        local bestDistance = math.huge
+                        if not enemy then
+                            for _, candidate in ipairs(loadedEnemies()) do
+                                if allowed(candidate) then
+                                    local candidateRoot = modelRoot(candidate)
+                                    local distance = (candidateRoot.Position - root.Position).Magnitude
+                                    if distance < bestDistance then
+                                        enemy = candidate
+                                        bestDistance = distance
+                                    end
+                                end
+                            end
+                        end
+                        if enemy then
+                            state.ActiveFarmTarget = enemy
+                            state.ActiveFarmVerticalLock = true
+                            state.ActiveFarmHeightOverride = tonumber(heightOverride)
+                            applyNoclip()
+                            syncFarmAuraRange(heightOverride)
+                            local targetCFrame = positionAtEnemy(enemy, true, heightOverride)
+                            if targetCFrame then
+                                moveToFarmPosition(targetCFrame)
+                            end
+                            return normalizeEnemyName(enemy.Name), "Farming"
+                        end
+                        state.ActiveFarmTarget = nil
+                        for _, name in ipairs(type(names) == "table" and names or {}) do
+                            local spawn = enemySpawn(name)
+                            if spawn then
+                                moveTo(CFrame.new(spawn.Position + Vector3.new(0, tonumber(heightOverride) or 12, 0)))
+                                return normalizeEnemyName(name), "Waiting for spawn"
+                            end
+                        end
+                        if typeof(center) == "CFrame" then
+                            moveTo(center)
+                        elseif typeof(center) == "Vector3" then
+                            moveTo(CFrame.new(center))
+                        end
+                        return nil, "No matching enemy loaded"
+                    end,
+                    MoveTo = function(target)
+                        return moveTo(target)
+                    end,
+                    Stop = function()
+                        state.ActiveFarmTarget = nil
+                        state.ActiveFarmHeightOverride = nil
+                        cancelMove(false)
+                    end,
+                    RootPart = rootPart,
+                },
                 Helpers = {
                     Invoke = invoke,
                     Character = character,
