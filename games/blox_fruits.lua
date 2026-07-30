@@ -255,6 +255,8 @@ return function(context)
             LastBuso = 0,
             SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak"),
             LastSubmergedTravel = -math.huge,
+            SubmergedTravelRequestedAt = -math.huge,
+            SubmarineWorkerFallback = Vector3.new(-16269, 25, 1373),
             AutoObservation = false,
             LastObservation = 0,
             GatherEnemies = false,
@@ -2611,7 +2613,9 @@ return function(context)
                         -- GuideModule only exposes quest givers from the current
                         -- sea. Requiring Npc prevents Auto Level from selecting a
                         -- higher-level quest whose giver exists in another sea.
-                        if candidate and candidate.Npc and candidate.LevelReq <= level then
+                        local submerged = candidate
+                            and string.find(candidate.InternalName, "SubmergedQuest", 1, true) == 1
+                        if candidate and (candidate.Npc or submerged) and candidate.LevelReq <= level then
                             local candidateBoss = string.find(candidate.EnemyName, "Boss", 1, true) ~= nil
                             local bestBoss = best and string.find(best.EnemyName, "Boss", 1, true) ~= nil
                             if not best
@@ -2636,7 +2640,9 @@ return function(context)
                 if type(questList) == "table" then
                     for index, quest in pairs(questList) do
                         local candidate = questCandidate(internalName, index, quest)
-                        if candidate and candidate.Npc then
+                        local submerged = candidate
+                            and string.find(candidate.InternalName, "SubmergedQuest", 1, true) == 1
+                        if candidate and (candidate.Npc or submerged) then
                             table.insert(candidates, candidate)
                             if candidate.LevelReq > 0 then
                                 minimumLevel = math.min(minimumLevel, candidate.LevelReq)
@@ -2715,8 +2721,23 @@ return function(context)
 
         state.StepSubmergedTravel = function()
             if state.IsAtSubmergedIsland() then
+                state.SubmergedTravelRequestedAt = -math.huge
                 gui:SetAttribute("BloxSubmergedTravelState", "Arrived")
+                gui:SetAttribute("BloxSubmergedDialogueStage", "Complete")
                 return false
+            end
+
+            local now = os.clock()
+            if state.SubmergedTravelRequestedAt > 0 then
+                local elapsed = now - state.SubmergedTravelRequestedAt
+                if elapsed < 10 then
+                    cancelMove(false)
+                    setStatus("Waiting for the Submarine Worker transport", nil)
+                    gui:SetAttribute("BloxSubmergedTravelState", "Awaiting underwater arrival")
+                    return true
+                end
+                state.SubmergedTravelRequestedAt = -math.huge
+                gui:SetAttribute("BloxSubmergedDialogueStage", "Retrying")
             end
             if not state.SubmarineWorkerSpeak and Net then
                 state.SubmarineWorkerSpeak = Net:FindFirstChild("RF/SubmarineWorkerSpeak")
@@ -2727,9 +2748,43 @@ return function(context)
                 return true
             end
 
-            local now = os.clock()
+            local worldNpcs = workspace:FindFirstChild("NPCs")
+            local replicatedNpcs = ReplicatedStorage:FindFirstChild("NPCs")
+            local worker = (worldNpcs and worldNpcs:FindFirstChild("Submarine Worker"))
+                or (replicatedNpcs and replicatedNpcs:FindFirstChild("Submarine Worker"))
+            local root = rootPart()
+            if not root then
+                setError("Character is not ready for Submarine Worker travel")
+                return true
+            end
+
+            local workerPosition = state.SubmarineWorkerFallback
+            if worker then
+                local pivotOk, pivot = pcall(function()
+                    return worker:GetPivot()
+                end)
+                if pivotOk then
+                    workerPosition = pivot.Position
+                end
+            end
+            local distance = (root.Position - workerPosition).Magnitude
+            gui:SetAttribute("BloxSubmergedWorkerDistance", distance)
+            if distance > 12 then
+                moveTo(CFrame.new(workerPosition + Vector3.new(0, 3, 0)))
+                setStatus("Traveling to the Submarine Worker", nil)
+                gui:SetAttribute("BloxSubmergedTravelState", "Traveling to worker")
+                gui:SetAttribute("BloxSubmergedDialogueStage", "Approaching NPC")
+                return true
+            end
+            if not worker then
+                setStatus("Waiting for the Submarine Worker to load", nil)
+                gui:SetAttribute("BloxSubmergedTravelState", "Waiting for worker")
+                gui:SetAttribute("BloxSubmergedDialogueStage", "Waiting for NPC")
+                return true
+            end
+
             if now - state.LastSubmergedTravel < 3 then
-                setStatus("Waiting for Submerged Island transport", nil)
+                setStatus("Waiting to speak with the Submarine Worker", nil)
                 return true
             end
             state.LastSubmergedTravel = now
@@ -2742,23 +2797,30 @@ return function(context)
                 gui:SetAttribute("BloxSubmergedTravelState", "Access check failed")
                 return true
             end
-            if unlocked ~= true then
+            if unlocked == false then
                 setError("Submerged Island is locked; defeat the required Tiki boss first")
                 gui:SetAttribute("BloxSubmergedTravelState", "Locked")
+                gui:SetAttribute("BloxSubmergedDialogueStage", "First Yes rejected")
                 return true
             end
+
+            gui:SetAttribute("BloxSubmergedDialogueStage", "First Yes confirmed")
+            task.wait(0.2)
 
             local travelOk, result = pcall(function()
                 return state.SubmarineWorkerSpeak:InvokeServer("TravelToSubmergedIsland")
             end)
-            if not travelOk or result ~= true then
+            if not travelOk then
                 setError("Submarine travel failed: " .. tostring(result))
                 gui:SetAttribute("BloxSubmergedTravelState", "Travel failed")
+                gui:SetAttribute("BloxSubmergedDialogueStage", "Second Yes failed")
                 return true
             end
             state.ActiveFarmTarget = nil
-            setStatus("Submarine transport requested", true)
+            state.SubmergedTravelRequestedAt = os.clock()
+            setStatus("Submarine Worker dialogue confirmed; waiting for transport", true)
             gui:SetAttribute("BloxSubmergedTravelState", "Transport requested")
+            gui:SetAttribute("BloxSubmergedDialogueStage", "Second Yes confirmed")
             return true
         end
 
@@ -2804,6 +2866,9 @@ return function(context)
 
             if state.IsSubmergedQuest(quest) and state.StepSubmergedTravel() then
                 return
+            end
+            if state.IsSubmergedQuest(quest) and not quest.Npc then
+                quest.Npc = questNpcData(quest.InternalName)
             end
 
             local visible, questGui = questVisible()
