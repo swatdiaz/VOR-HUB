@@ -75,6 +75,7 @@ return function(context)
         -- use its already-replicated event directly and leave RegisterHit on
         -- CombatUtil's initialized internal sender.
         local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
+        local SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak")
         local AURA_KILL_DEFAULT_RANGE = 10
         local AURA_KILL_MAX_RANGE = 70
         local AURA_KILL_HIT_DELAY = 0.13
@@ -252,6 +253,7 @@ return function(context)
             WeaponType = "Best Available",
             AutoBuso = true,
             LastBuso = 0,
+            LastSubmergedTravel = -math.huge,
             AutoObservation = false,
             LastObservation = 0,
             GatherEnemies = false,
@@ -415,8 +417,8 @@ return function(context)
             if enabledAttribute ~= nil then
                 return enabledAttribute == true
             end
-            -- Aura is the always-present ability LocalScript and the Buso tag
-            -- means the ability is owned; neither proves it is switched on.
+            -- The current Aura LocalScript uses the Buso tag for ownership and
+            -- creates HasBuso only while the ability is actually enabled.
             return char:FindFirstChild("HasBuso") ~= nil
         end
 
@@ -425,7 +427,8 @@ return function(context)
             local char = character()
             local enabledAttribute = char and char:GetAttribute("BusoEnabled")
             state.BusoOwned = char ~= nil and (
-                enabledAttribute ~= nil
+                CollectionService:HasTag(char, "Buso")
+                or enabledAttribute ~= nil
                 or char:FindFirstChild("HasBuso") ~= nil
             )
             gui:SetAttribute("BloxBusoActive", active)
@@ -447,6 +450,13 @@ return function(context)
         end
 
         local function sendBusoInput()
+            -- This is the exact action used by the current Aura LocalScript on
+            -- both keyboard and mobile. Prefer it over simulated J input so a
+            -- successful key injection cannot be mistaken for activation.
+            local remoteOk, remoteResult = invoke("Buso")
+            if remoteOk then
+                return true, "Native CommF"
+            end
             local okService, inputManager = pcall(function()
                 return game:GetService("VirtualInputManager")
             end)
@@ -470,10 +480,7 @@ return function(context)
                 end
                 state.LastError = tostring(message)
             end
-            -- Older Blox Fruits builds used CommF_ for Buso. Keep it only as
-            -- a fallback; the current Aura Ability is driven by the J input.
-            local ok, message = invoke("Buso")
-            return ok, ok and "Legacy CommF" or message
+            return false, remoteResult
         end
 
         local function ensureBuso(force)
@@ -505,8 +512,11 @@ return function(context)
                 setError("Auto Buso failed: " .. tostring(message))
                 return false
             end
-            -- BusoEnabled and its visuals replicate asynchronously after J.
-            task.delay(0.25, refreshBusoStatus)
+            -- HasBuso replicates asynchronously after the server toggles it.
+            task.delay(0.35, function()
+                local active = refreshBusoStatus()
+                gui:SetAttribute("BloxLastBusoVerified", active)
+            end)
             busoLabel.Text = "Buso: Activation requested"
             busoLabel.TextColor3 = COLORS.muted
             return true
@@ -2539,6 +2549,89 @@ return function(context)
             return selected
         end
 
+        local function isSubmergedQuest(quest)
+            return quest
+                and type(quest.InternalName) == "string"
+                and string.find(quest.InternalName, "SubmergedQuest", 1, true) == 1
+        end
+
+        local function isAtSubmergedIsland()
+            local data = LocalPlayer:FindFirstChild("Data")
+            local lastSpawn = data and data:FindFirstChild("LastSpawnPoint")
+            if lastSpawn and tostring(lastSpawn.Value) == "SubmergedIsland" then
+                return true
+            end
+            local root = rootPart()
+            return root ~= nil and root.Position.Y < -1200
+        end
+
+        local function stepSubmergedTravel()
+            if isAtSubmergedIsland() then
+                gui:SetAttribute("BloxSubmergedTravelState", "Arrived")
+                return false
+            end
+            if not SubmarineWorkerSpeak then
+                setError("Submarine Worker remote is unavailable")
+                gui:SetAttribute("BloxSubmergedTravelState", "Remote unavailable")
+                return true
+            end
+
+            local worldNpcs = workspace:FindFirstChild("NPCs")
+            local replicatedNpcs = ReplicatedStorage:FindFirstChild("NPCs")
+            local worker = (worldNpcs and worldNpcs:FindFirstChild("Submarine Worker"))
+                or (replicatedNpcs and replicatedNpcs:FindFirstChild("Submarine Worker"))
+            local root = rootPart()
+            if not worker or not root then
+                setError("Submarine Worker location is still loading")
+                gui:SetAttribute("BloxSubmergedTravelState", "Waiting for worker")
+                return true
+            end
+
+            local workerPosition = worker:GetPivot().Position
+            local distance = (root.Position - workerPosition).Magnitude
+            if distance > 14 then
+                moveTo(CFrame.new(workerPosition + Vector3.new(0, 3, 0)))
+                setStatus("Traveling to the Submarine Worker", nil)
+                gui:SetAttribute("BloxSubmergedTravelState", "Traveling to worker")
+                gui:SetAttribute("BloxSubmergedWorkerDistance", distance)
+                return true
+            end
+
+            local now = os.clock()
+            if now - state.LastSubmergedTravel < 3 then
+                setStatus("Waiting for Submerged Island transport", nil)
+                return true
+            end
+            state.LastSubmergedTravel = now
+            cancelMove(false)
+            local accessOk, unlocked = pcall(function()
+                return SubmarineWorkerSpeak:InvokeServer("AskKilledTikiBoss")
+            end)
+            if not accessOk then
+                setError("Submarine access check failed: " .. tostring(unlocked))
+                gui:SetAttribute("BloxSubmergedTravelState", "Access check failed")
+                return true
+            end
+            if unlocked ~= true then
+                setError("Submerged Island is locked; defeat the required Tiki boss first")
+                gui:SetAttribute("BloxSubmergedTravelState", "Locked")
+                return true
+            end
+
+            local travelOk, result = pcall(function()
+                return SubmarineWorkerSpeak:InvokeServer("TravelToSubmergedIsland")
+            end)
+            if not travelOk then
+                setError("Submarine travel failed: " .. tostring(result))
+                gui:SetAttribute("BloxSubmergedTravelState", "Travel failed")
+                return true
+            end
+            state.ActiveFarmTarget = nil
+            setStatus("Submarine transport requested", true)
+            gui:SetAttribute("BloxSubmergedTravelState", "Transport requested")
+            return true
+        end
+
         local function questVisible()
             local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
             local main = playerGui and playerGui:FindFirstChild("Main")
@@ -2578,6 +2671,10 @@ return function(context)
             state.CurrentQuestName = quest.DisplayName
             state.CurrentEnemyName = quest.EnemyName
             questLabel.Text = string.format("Quest: %s (Lv. %s)", quest.DisplayName, tostring(quest.LevelReq))
+
+            if isSubmergedQuest(quest) and stepSubmergedTravel() then
+                return
+            end
 
             local visible, questGui = questVisible()
             if visible and not questMatches(questGui, quest.EnemyName) then
@@ -5552,7 +5649,7 @@ return function(context)
         })
         AttackSection:AddToggle({
             Name = "Auto Buso",
-            Description = "Uses the real Aura Ability J input on PC and mobile, then restores Buso after respawn",
+            Description = "Uses the game's native Aura action, verifies HasBuso, and restores it after respawn on PC and mobile",
             Flag = "blox_auto_buso",
             Default = true,
             Callback = function(enabled)
