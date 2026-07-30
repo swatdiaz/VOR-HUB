@@ -315,14 +315,21 @@ return function(context)
                 math.rad(state.Rotation.Z)
             )
         local sourceFrame = visualHandle.CFrame
+        -- Snapshot every relative transform before touching the cloned
+        -- assembly. Moving one still-welded part used to drag the remaining
+        -- parts, so each later relative CFrame was calculated from corrupted
+        -- coordinates and the visual exploded into enormous white blocks.
+        local relativeFrames = {}
         for _, part in ipairs(visualParts) do
-            local relative = sourceFrame:ToObjectSpace(part.CFrame)
-            part.CFrame = realHandle.CFrame * transform * relative
-            for _, joint in ipairs(part:GetChildren()) do
-                if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
-                    joint:Destroy()
-                end
+            relativeFrames[part] = sourceFrame:ToObjectSpace(part.CFrame)
+        end
+        for _, object in ipairs(wrapper:GetDescendants()) do
+            if object:IsA("JointInstance") or object:IsA("WeldConstraint") then
+                object:Destroy()
             end
+        end
+        for _, part in ipairs(visualParts) do
+            part.CFrame = realHandle.CFrame * transform * relativeFrames[part]
             local weld = Instance.new("WeldConstraint")
             weld.Name = "VORVisualWeld"
             weld.Part0 = realHandle
