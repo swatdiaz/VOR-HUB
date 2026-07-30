@@ -233,112 +233,6 @@ return function(context)
         gui:SetAttribute("BloxPvpAimTarget", target.Name)
     end
 
-    local function installSilentAimHooks()
-        local environment = type(getgenv) == "function" and getgenv() or _G
-        environment.__VOR_PVP_SILENT_AIM = environment.__VOR_PVP_SILENT_AIM or {}
-        local bridge = environment.__VOR_PVP_SILENT_AIM
-        bridge.Mouse = Mouse
-        bridge.Resolve = function()
-            if not state.Alive or not state.SilentAim then
-                return nil, nil
-            end
-            local target = activeTarget()
-            if not alive(target) or screenDistance(target) > state.AimFov then
-                return nil, nil
-            end
-            local targetModel = character(target)
-            local targetPart = targetModel and (targetModel:FindFirstChild(state.AimPart) or root(target))
-            local position = predictedPosition(target)
-            if targetPart and position then
-                gui:SetAttribute("BloxPvpAimTarget", target.Name)
-                return targetPart, position
-            end
-            return nil, nil
-        end
-        bridge.IsCombatRemote = function(remote)
-            if not remote or (not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction")) then
-                return false
-            end
-            local tool = remote:FindFirstAncestorOfClass("Tool")
-            if not tool then
-                return false
-            end
-            local localCharacter = character(LocalPlayer)
-            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-            if tool.Parent ~= localCharacter and tool.Parent ~= backpack then
-                return false
-            end
-            local remoteName = string.lower(remote.Name)
-            return not string.find(remoteName, "equip", 1, true)
-                and not string.find(remoteName, "state", 1, true)
-                and not string.find(remoteName, "dash", 1, true)
-        end
-
-        if bridge.Installed then
-            gui:SetAttribute("BloxPvpSilentAimHook", "Mouse+ToolRemote")
-            return true
-        end
-        if type(hookmetamethod) ~= "function" or type(newcclosure) ~= "function"
-            or type(getnamecallmethod) ~= "function" then
-            gui:SetAttribute("BloxPvpSilentAimHook", "CameraFallback")
-            return false
-        end
-
-        local oldIndex
-        oldIndex = hookmetamethod(game, "__index", newcclosure(function(object, key)
-            if object == bridge.Mouse and (key == "Hit" or key == "Target") then
-                local part, position
-                if bridge.Resolve then part, position = bridge.Resolve() end
-                if part and position then
-                    return key == "Target" and part or CFrame.new(position)
-                end
-            end
-            return oldIndex(object, key)
-        end))
-
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(remote, ...)
-            local method = getnamecallmethod()
-            if (method == "FireServer" or method == "InvokeServer")
-                and bridge.IsCombatRemote and bridge.IsCombatRemote(remote) then
-                local _, position
-                if bridge.Resolve then _, position = bridge.Resolve() end
-                if position then
-                    local arguments = table.pack(...)
-                    for index = 1, arguments.n do
-                        local value = arguments[index]
-                        if typeof(value) == "Vector3" then
-                            arguments[index] = position
-                        elseif typeof(value) == "CFrame" then
-                            arguments[index] = CFrame.new(position)
-                        elseif type(value) == "table" then
-                            local replacement = table.clone(value)
-                            local changed = false
-                            for key, nested in pairs(replacement) do
-                                if typeof(nested) == "Vector3" then
-                                    replacement[key] = position
-                                    changed = true
-                                elseif typeof(nested) == "CFrame" then
-                                    replacement[key] = CFrame.new(position)
-                                    changed = true
-                                end
-                            end
-                            if changed then
-                                arguments[index] = replacement
-                            end
-                        end
-                    end
-                    gui:SetAttribute("BloxPvpSilentAimRedirectAt", os.clock())
-                    return oldNamecall(remote, table.unpack(arguments, 1, arguments.n))
-                end
-            end
-            return oldNamecall(remote, ...)
-        end))
-        bridge.Installed = true
-        gui:SetAttribute("BloxPvpSilentAimHook", "Mouse+ToolRemote")
-        return true
-    end
-
     local function moveNear(target)
         local localRoot = root(LocalPlayer)
         local targetRoot = root(target)
@@ -544,7 +438,7 @@ return function(context)
     local aim = page:AddSection("Aim Assistance", "Right")
     aim:AddToggle({
         Name = "Silent Aim",
-        Description = "Redirects manual PC and mobile Tool skills toward the predicted target without moving your camera",
+        Description = "Safely tracks the predicted target with the camera; no global metamethod hooks",
         Flag = "blox_pvp_silent_aim",
         Default = false,
         Callback = function(enabled) state.SilentAim = enabled == true end,
@@ -625,16 +519,15 @@ return function(context)
         gui:SetAttribute("BloxPvpAttacking", (state.AutoAttack or state.AutoBounty) and target ~= nil)
     end))
 
-    installSilentAimHooks()
+    -- Never install global __namecall/__index hooks here. Some executors pass
+    -- the hooked self argument differently, corrupting unrelated Blox Fruits
+    -- calls even while Silent Aim is disabled. Camera tracking is isolated and
+    -- leaves the game's remotes, HUD bootstrap, and replication untouched.
+    gui:SetAttribute("BloxPvpSilentAimHook", "CameraFallback")
+    gui:SetAttribute("BloxPvpSilentAimSafety", "NoMetamethodHooks")
     track(gui.Destroying:Connect(function()
         state.Alive = false
-        local environment = type(getgenv) == "function" and getgenv() or _G
-        local bridge = environment.__VOR_PVP_SILENT_AIM
-        if bridge and bridge.Mouse == Mouse then
-            bridge.Resolve = nil
-            bridge.IsCombatRemote = nil
-        end
     end))
     gui:SetAttribute("BloxPvpModule", true)
-    gui:SetAttribute("BloxPvpModuleVersion", "2")
+    gui:SetAttribute("BloxPvpModuleVersion", "3")
 end
