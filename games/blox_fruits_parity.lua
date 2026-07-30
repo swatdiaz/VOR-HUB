@@ -76,6 +76,11 @@ return function(context)
             return true
         end
 
+        local data = LocalPlayer:FindFirstChild("Data")
+        local spawnValue = data and data:FindFirstChild("SpawnPoint")
+        local oldSpawn = spawnValue and tostring(spawnValue.Value) or ""
+        gui:SetAttribute("BloxBypassTeleportStage", "Portal request")
+
         -- Third Sea only accepts requestEntrance for real portals. Try that
         -- cheap path first, then use the death/respawn island warp Solix uses
         -- for arbitrary destinations and verify the server kept the arrival.
@@ -84,7 +89,15 @@ return function(context)
         local portalRoot = helpers.RootPart()
         if portalRoot and (portalRoot.Position - targetCFrame.Position).Magnitude <= 150 then
             portalRoot.CFrame = targetCFrame
-            return true
+            task.wait(0.45)
+            local verifiedRoot = helpers.RootPart()
+            local portalArrived = verifiedRoot ~= nil
+                and (verifiedRoot.Position - targetCFrame.Position).Magnitude <= 180
+            gui:SetAttribute("BloxBypassTeleportArrived", portalArrived)
+            gui:SetAttribute("BloxBypassTeleportStage", portalArrived and "Portal verified" or "Portal snap-back")
+            if portalArrived then
+                return true
+            end
         end
 
         local oldCharacter = helpers.Character()
@@ -93,13 +106,36 @@ return function(context)
         if not oldCharacter or not oldHumanoid or not warpRoot then
             return false
         end
-        for _ = 1, 5 do
+        gui:SetAttribute("BloxBypassTeleportStage", "Replicating destination")
+        for _ = 1, 20 do
             warpRoot.AssemblyLinearVelocity = Vector3.zero
             warpRoot.AssemblyAngularVelocity = Vector3.zero
             warpRoot.CFrame = targetCFrame
             task.wait(0.06)
         end
-        rawInvoke("SetSpawnPoint")
+        local expectedLocation = tostring(LocalPlayer:GetAttribute("CurrentLocation") or "")
+        local spawnCommitted = expectedLocation == "" or expectedLocation == "Default"
+        for _ = 1, 4 do
+            rawInvoke("SetSpawnPoint")
+            task.wait(0.25)
+            local currentSpawn = spawnValue and tostring(spawnValue.Value) or ""
+            if currentSpawn ~= "" and currentSpawn ~= "Default"
+                and (expectedLocation == "" or currentSpawn == expectedLocation) then
+                spawnCommitted = true
+                break
+            end
+            if currentSpawn == oldSpawn and currentSpawn == expectedLocation then
+                spawnCommitted = true
+                break
+            end
+        end
+        if not spawnCommitted then
+            gui:SetAttribute("BloxBypassTeleportStage", "Spawn rejected; using smooth travel")
+            gui:SetAttribute("BloxBypassTeleportArrived", false)
+            return false
+        end
+
+        gui:SetAttribute("BloxBypassTeleportStage", "Respawning at destination")
         pcall(function()
             oldHumanoid.Health = 0
             oldHumanoid:ChangeState(Enum.HumanoidStateType.Dead)
@@ -111,19 +147,27 @@ return function(context)
         until os.clock() >= deadline
             or (helpers.Character() ~= oldCharacter and helpers.RootPart() ~= nil)
 
+        local newCharacter = helpers.Character()
         local newRoot = helpers.RootPart()
-        if not newRoot then
+        local newHumanoid = helpers.Humanoid()
+        if not newCharacter or newCharacter == oldCharacter or not newRoot or not newHumanoid or newHumanoid.Health <= 0 then
+            gui:SetAttribute("BloxBypassTeleportStage", "Respawn timed out; using smooth travel")
             return false
         end
-        for _ = 1, 12 do
+        task.wait(0.55)
+        gui:SetAttribute("BloxBypassTeleportStage", "Confirming server position")
+        for _ = 1, 24 do
             newRoot.AssemblyLinearVelocity = Vector3.zero
             newRoot.AssemblyAngularVelocity = Vector3.zero
             newRoot.CFrame = targetCFrame
-            task.wait(0.08)
+            task.wait(0.06)
         end
         rawInvoke("SetSpawnPoint")
-        local arrived = (newRoot.Position - targetCFrame.Position).Magnitude <= 150
+        task.wait(0.65)
+        local finalRoot = helpers.RootPart()
+        local arrived = finalRoot ~= nil and (finalRoot.Position - targetCFrame.Position).Magnitude <= 180
         gui:SetAttribute("BloxBypassTeleportArrived", arrived)
+        gui:SetAttribute("BloxBypassTeleportStage", arrived and "Server position verified" or "Snap-back detected; using smooth travel")
         return arrived
     end
     sharedState.BypassWarp = bypassWarp

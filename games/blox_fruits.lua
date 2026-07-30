@@ -4460,7 +4460,9 @@ return function(context)
             end
             prepareManualTravel()
             if state.BypassTeleport and type(state.BypassWarp) == "function" then
-                return state.BypassWarp(targetCFrame)
+                if state.BypassWarp(targetCFrame) then
+                    return true
+                end
             end
             return moveTo(targetCFrame)
         end
@@ -4473,7 +4475,9 @@ return function(context)
             end
             prepareManualTravel()
             if state.BypassTeleport and type(state.BypassWarp) == "function" then
-                return state.BypassWarp(target:GetPivot() * CFrame.new(0, 0, -4))
+                if state.BypassWarp(target:GetPivot() * CFrame.new(0, 0, -4)) then
+                    return true
+                end
             end
             return moveTo(target:GetPivot() * CFrame.new(0, 0, -4))
         end

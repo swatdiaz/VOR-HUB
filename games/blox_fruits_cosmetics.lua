@@ -92,10 +92,41 @@ return function(context)
         return equippedTool()
     end
 
+    local function weaponBody(tool)
+        if not tool then
+            return nil
+        end
+        if tool:IsA("BasePart") or tool:FindFirstChildWhichIsA("BasePart", true) then
+            return tool
+        end
+        for _, pointerName in ipairs({
+            "LocalEquippedWeaponPointer", "ServerEquippedWeaponPointer",
+            "LocalUnequippedWeaponPointer", "ServerUnequippedWeaponPointer",
+        }) do
+            for _, pointer in ipairs(tool:GetChildren()) do
+                if pointer.Name == pointerName and pointer:IsA("ObjectValue")
+                    and pointer.Value and pointer.Value.Parent
+                    and pointer.Value:FindFirstChildWhichIsA("BasePart", true) then
+                    return pointer.Value
+                end
+            end
+        end
+        local character = helpers.Character()
+        local equipped = character and character:FindFirstChild("EquippedWeapon")
+        if equipped and equipped:FindFirstChildWhichIsA("BasePart", true) then
+            return equipped
+        end
+        return tool
+    end
+
     local function toolParts(tool)
         local result = {}
-        if tool then
-            for _, object in ipairs(tool:GetDescendants()) do
+        local body = weaponBody(tool)
+        if body then
+            if body:IsA("BasePart") then
+                table.insert(result, body)
+            end
+            for _, object in ipairs(body:GetDescendants()) do
                 if object:IsA("BasePart") then
                     table.insert(result, object)
                 end
@@ -252,8 +283,11 @@ return function(context)
             statusLabel.Text = "Visual swap: No usable combat Tool found"
             return false
         end
+        local realBody = weaponBody(realTool)
         local realParts = toolParts(realTool)
-        local realHandle = realTool:FindFirstChild("Handle") or realParts[1]
+        local realHandle = realBody and (realBody:FindFirstChild("Handle", true)
+            or realBody:FindFirstChild("Main", true)
+            or realBody:FindFirstChild("Blade", true)) or realParts[1]
         if not realHandle then
             statusLabel.Text = "Visual swap: Equipped Tool has no visible handle"
             return false
