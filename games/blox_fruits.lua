@@ -3210,7 +3210,13 @@ return function(context)
             local multiGrabEnabled = state.GatherEnemies or raidGatherEnabled
             local enabled = not raidVoidActive and (
                 multiGrabEnabled
-                or (state.AutoMagnet and (state.AutoFarmLevel or state.AutoBoss or state.AutoRaid))
+                or (state.AutoMagnet and (
+                    state.AutoFarmLevel
+                    or state.AutoBoss
+                    or state.AutoRaid
+                    or state.MobAuraTp
+                    or state.SelectedMobFarm
+                ))
             )
             if not enabled then
                 state.Gathered = 0
@@ -3262,7 +3268,8 @@ return function(context)
             if not multiGrabEnabled then
                 local anchorCandidate = nil
                 for _, candidate in ipairs(candidates) do
-                    if candidate.Enemy == state.ActiveFarmTarget then
+                    if candidate.Enemy == state.ActiveFarmTarget
+                        or candidate.Enemy == state.MobAuraTarget then
                         anchorCandidate = candidate
                         break
                     end
@@ -5083,8 +5090,8 @@ return function(context)
             end,
         })
         FarmSettingsSection:AddToggle({
-            Name = "Auto Magnet Quest Enemies",
-            Description = "Stacks matching quest, boss, or raid enemies at your attack position",
+            Name = "Auto Magnet",
+            Description = "Fixed-anchor stacking for Auto Level, bosses, raids, Mob Aura, and Selected Mob Farm",
             Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
@@ -5093,6 +5100,7 @@ return function(context)
         })
         FarmSettingsSection:AddSlider({
             Name = "Magnet Range",
+            Description = "Maximum distance for matching combat NPCs to join the fixed network-owned stack",
             Flag = "blox_magnet_range",
             Min = 50,
             Max = 1500,
