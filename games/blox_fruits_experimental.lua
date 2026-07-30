@@ -27,6 +27,8 @@ return function(context)
         ObservedCadence = {Sword = nil, Fruit = nil, Melee = nil},
         LastError = nil,
         MaxInFlight = {Sword = 1, Fruit = 3, Melee = 1},
+        RegisteredBusy = false,
+        NextRegistered = "Sword",
         LastUi = 0,
     }
 
@@ -120,11 +122,17 @@ return function(context)
         if runtime.InFlight[category] >= runtime.MaxInFlight[category] then
             return
         end
+        if category ~= "Fruit" and runtime.RegisteredBusy then
+            return
+        end
         local before = healthSnapshot(category == "Fruit" and 3 or 12)
         if next(before) == nil then
             return
         end
         runtime.InFlight[category] += 1
+        if category ~= "Fruit" then
+            runtime.RegisteredBusy = true
+        end
         runtime.Requests[category] += 1
         runtime.LastDispatch[category] = os.clock()
         task.spawn(function()
@@ -147,8 +155,14 @@ return function(context)
             end
             if operationOk and sent then
                 runtime.SentTargets[category] += math.max(tonumber(count) or 1, 1)
+                if category ~= "Fruit" then
+                    runtime.RegisteredBusy = false
+                end
                 measureDamage(category, before)
                 return
+            end
+            if category ~= "Fruit" then
+                runtime.RegisteredBusy = false
             end
             runtime.InFlight[category] = math.max(runtime.InFlight[category] - 1, 0)
             local failure = operationOk and message or sent
@@ -215,7 +229,6 @@ return function(context)
                 runtime.SentTargets,
                 runtime.DamageWindows,
                 runtime.DamagedTargets,
-                runtime.InFlight,
             }) do
                 bucket.Sword = 0
                 bucket.Fruit = 0
@@ -234,9 +247,23 @@ return function(context)
         end
         api.EnsureBuso()
         local now = os.clock()
-        for _, category in ipairs({"Sword", "Fruit", "Melee"}) do
-            if categoryEnabled(category)
-                and now - runtime.LastDispatch[category] >= runtime.Requested[category] then
+        if categoryEnabled("Fruit")
+            and now - runtime.LastDispatch.Fruit >= runtime.Requested.Fruit then
+            dispatchCategory("Fruit")
+        end
+        local swordReady = categoryEnabled("Sword")
+            and now - runtime.LastDispatch.Sword >= runtime.Requested.Sword
+        local meleeReady = categoryEnabled("Melee")
+            and now - runtime.LastDispatch.Melee >= runtime.Requested.Melee
+        if not runtime.RegisteredBusy and (swordReady or meleeReady) then
+            local category = runtime.NextRegistered
+            if category == "Sword" and not swordReady then
+                category = "Melee"
+            elseif category == "Melee" and not meleeReady then
+                category = "Sword"
+            end
+            if (category == "Sword" and swordReady) or (category == "Melee" and meleeReady) then
+                runtime.NextRegistered = category == "Sword" and "Melee" or "Sword"
                 dispatchCategory(category)
             end
         end
