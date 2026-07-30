@@ -326,6 +326,7 @@ return function(context)
             StoreStatus = "Waiting for a physical fruit",
             SelectedLocation = "None",
             SelectedNPC = "None",
+            BypassTeleport = false,
             Noclip = false,
             InfiniteEnergy = false,
             WalkOnWater = true,
@@ -4457,6 +4458,22 @@ return function(context)
                 targetCFrame += Vector3.new(0, 8, 0)
             end
             prepareManualTravel()
+            if state.BypassTeleport then
+                local bypassOk = pcall(function()
+                    -- Blox Fruits accepts entrance requests from any distance.
+                    -- The final local placement handles destinations without an
+                    -- entrance and avoids leaving the player at a marker in air.
+                    invoke("requestEntrance", targetCFrame.Position)
+                    task.wait(0.35)
+                    local root = rootPart()
+                    if root then
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                        root.CFrame = targetCFrame
+                    end
+                end)
+                return bypassOk
+            end
             return moveTo(targetCFrame)
         end
 
@@ -4467,6 +4484,16 @@ return function(context)
                 return false
             end
             prepareManualTravel()
+            if state.BypassTeleport then
+                local root = rootPart()
+                if root then
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    root.CFrame = target:GetPivot() * CFrame.new(0, 0, -4)
+                    return true
+                end
+                return false
+            end
             return moveTo(target:GetPivot() * CFrame.new(0, 0, -4))
         end
 
@@ -7460,6 +7487,16 @@ return function(context)
                 end
             end,
         })
+        TravelSection:AddToggle({
+            Name = "Bypass TP / Instant Travel",
+            Description = "Uses the game's entrance path and a final instant placement instead of tweening",
+            Flag = "blox_bypass_teleport",
+            Default = false,
+            Callback = function(enabled)
+                state.BypassTeleport = enabled == true
+                gui:SetAttribute("BloxBypassTeleport", state.BypassTeleport)
+            end,
+        })
         CosmeticsSection:AddToggle({
             Name = "VOR Hub Name Mask",
             Description = "Replace your overhead display name with VOR Hub on this client",
@@ -7529,7 +7566,48 @@ return function(context)
         end))
         end)()
 
-        setStatus("Native Blox Fruits functions ready", true)
+        if type(context.LoadModule) ~= "function" or type(context.RunBuilder) ~= "function" then
+            error("Blox Fruits parity loader is unavailable")
+        end
+        state.ParityLoaded, state.ParityBuilder = context.LoadModule("games/blox_fruits_parity.lua")
+        if not state.ParityLoaded then
+            error("Blox Fruits parity compile failed: " .. tostring(state.ParityBuilder))
+        end
+        state.ParityOk, state.ParityError = context.RunBuilder(
+            "games/blox_fruits_parity.lua",
+            state.ParityBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                COLORS = COLORS,
+                Pages = {
+                    Farming = FarmingPage,
+                    Combat = CombatPage,
+                    Mastery = MasteryPage,
+                    Shop = ShopPage,
+                    Sea = SeaPage,
+                    Player = PlayerPage,
+                },
+                State = state,
+                Remotes = {CommF = CommF, CommE = CommE, Redeem = Redeem},
+                Helpers = {
+                    Invoke = invoke,
+                    Character = character,
+                    RootPart = rootPart,
+                    Humanoid = humanoid,
+                    TeleportToNpc = teleportToNpc,
+                    TeleportToLocation = teleportToLocation,
+                    PrepareManualTravel = prepareManualTravel,
+                },
+            }
+        )
+        state.ParityBuilder = nil
+        if not state.ParityOk then
+            error("Blox Fruits parity builder failed: " .. tostring(state.ParityError))
+        end
+
+        setStatus("Native Blox Fruits functions and Solix parity ready", true)
         refreshBusoStatus()
         questLabel.Text = (function(quest)
             if quest then

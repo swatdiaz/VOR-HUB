@@ -16,6 +16,7 @@ $required = @(
     "games/mypark.lua",
     "games/anime_expeditions.lua",
     "games/blox_fruits.lua",
+    "games/blox_fruits_parity.lua",
     "games/blox_fruits_dungeons.lua"
 )
 $compileFiles = $required + @(
