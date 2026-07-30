@@ -277,9 +277,51 @@ return function(context)
                 rawInvoke("CakePrinceSpawner")
             end
         end)
-        if not farm({"Cake Prince", "Dough King"}, nil, nil, 28) then
-            farm({"Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker"}, nil, nil, 22)
+        local root = api.RootPart()
+        local bossLoaded = false
+        local enemies = workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, enemy in ipairs(enemies:GetChildren()) do
+                local lower = string.lower(enemy.Name)
+                local body = enemy:FindFirstChildOfClass("Humanoid")
+                if body and body.Health > 0 and (
+                    string.find(lower, "cake prince", 1, true)
+                    or string.find(lower, "dough king", 1, true)
+                ) then
+                    bossLoaded = true
+                    break
+                end
+            end
         end
+        if bossLoaded and root and root.Position.Y < 3500 then
+            local map = workspace:FindFirstChild("Map")
+            local cakeLoaf = map and map:FindFirstChild("CakeLoaf")
+            local mirror = cakeLoaf and cakeLoaf:FindFirstChild("BigMirror")
+            local portal = mirror and mirror:FindFirstChild("Main")
+            if portal and portal:IsA("BasePart") then
+                api.Stop()
+                local distance = (root.Position - portal.Position).Magnitude
+                setStatus("Entering Cake Prince portal", string.format("Portal distance: %.0f", distance))
+                gui:SetAttribute("BloxCakePrincePortalDistance", distance)
+                gui:SetAttribute("BloxCakePrinceRoute", "Portal")
+                if distance <= 10 and firetouchinterest then
+                    pcall(firetouchinterest, root, portal, 0)
+                    pcall(firetouchinterest, root, portal, 1)
+                else
+                    api.MoveTo(portal.CFrame)
+                end
+                return
+            end
+            setStatus("Waiting for Cake Prince portal", "BigMirror.Main is not loaded yet")
+            return
+        end
+        if bossLoaded then
+            gui:SetAttribute("BloxCakePrinceRoute", "Boss room")
+            farm({"Cake Prince", "Dough King"}, nil, nil, 28)
+            return
+        end
+        gui:SetAttribute("BloxCakePrinceRoute", ready and "Opening portal" or "Farming portal requirement")
+        farm({"Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker"}, nil, nil, 22)
     end
 
     local function stepYama()
