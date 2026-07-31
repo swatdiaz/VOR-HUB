@@ -378,7 +378,11 @@ $beeSwarmNativeLoop = (
     $beeSwarmText -match 'LocalCollect\.StartCollection' -and
     $beeSwarmText -match 'Hives\.ButtonEffect' -and
     $beeSwarmText -match 'ConstructHiveCellFromEgg' -and
-    $beeSwarmText -match 'PlayerPurchase' -and
+    $beeSwarmText -match 'ItemPackageEvent' -and
+    $beeSwarmText -match 'EquippedAccessories' -and
+    $beeSwarmText -match 'pcall\(LocalCollect\.Run\)' -and
+    $beeSwarmText -match 'local function currentHivePhase\(\)' -and
+    $beeSwarmText -match 'state\.Phase\s*=\s*"Stopping honey maker"' -and
     $beeSwarmText -match 'ToyActivator\.ButtonEffect' -and
     $beeSwarmText -match 'NPCActivator\.ButtonEffect'
 )
@@ -391,6 +395,9 @@ $beeSwarmPages = (
 )
 $beeSwarmCreditedSafety = (
     $beeSwarmText -match 'Moves through nearby field tokens so the server credits the pickup' -and
+    $beeSwarmText -match 'Name\s*=\s*"Under-Field Farming"' -and
+    $beeSwarmText -match 'UnderFieldDepth\s*=\s*3\.5' -and
+    $beeSwarmText -match 'BeeSwarmUnderField' -and
     $beeSwarmText -notmatch 'hookmetamethod|hookfunction|sethiddenproperty' -and
     $beeSwarmText -notmatch 'Pollen\s*=\s*math\.huge|Honey\s*=\s*math\.huge'
 )

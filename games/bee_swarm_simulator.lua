@@ -29,6 +29,7 @@ return function(context)
     local NPCActivator = require(ReplicatedStorage.Activatables:WaitForChild("NPCs"))
     local ToyActivator = require(ReplicatedStorage.Activatables:WaitForChild("Toys"))
     local HoneycombTools = require(ReplicatedStorage:WaitForChild("HoneycombTools"))
+    local ItemPackages = require(ReplicatedStorage:WaitForChild("ItemPackages"))
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local FarmingPage = addHomeCategory("Farming", 1, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Overnight)
@@ -66,7 +67,7 @@ return function(context)
         "Blue Field Booster", "Red Field Booster", "Wealth Clock",
     }
     local COLLECTOR_ORDER = {
-        "Scooper", "Rake", "Magnet", "Vacuum", "Super-Scooper", "Pulsar",
+        "Scooper", "Rake", "Clippers", "Magnet", "Vacuum", "Super-Scooper", "Pulsar",
         "Electro-Magnet", "Scissors", "Honey Dipper", "Bubble Wand", "Scythe",
         "Golden Rake", "Spark Staff", "Porcelain Dipper",
     }
@@ -91,6 +92,8 @@ return function(context)
         AutoToy = false,
         AntiAfk = true,
         NoClip = true,
+        UnderField = false,
+        UnderFieldDepth = 3.5,
         Field = "Sunflower Field",
         Pattern = "Wide Circle",
         QuestGiver = "Black Bear",
@@ -218,7 +221,7 @@ return function(context)
         state.Traveling = true
         state.Target = label or "Position"
         state.Phase = "Traveling"
-        if state.NoClip then
+        if state.NoClip or state.UnderField then
             setTravelCollision(character, false)
         end
         local tween = TweenService:Create(
@@ -258,7 +261,8 @@ return function(context)
             end
         end
         state.Traveling = false
-        if state.NoClip then
+        local keepUnderFieldCollision = state.UnderField and label == state.Field
+        if (state.NoClip or state.UnderField) and not keepUnderFieldCollision then
             setTravelCollision(character, true)
         end
         return root.Parent ~= nil and (root.Position - goalCFrame.Position).Magnitude <= 12,
@@ -276,7 +280,9 @@ return function(context)
         end
         local radiusX = math.max(4, zone.Size.X * 0.5 * state.FieldRadius)
         local radiusZ = math.max(4, zone.Size.Z * 0.5 * state.FieldRadius)
-        local y = zone.Size.Y * 0.5 + 3.2
+        local y = state.UnderField
+            and (-zone.Size.Y * 0.5 - state.UnderFieldDepth)
+            or (zone.Size.Y * 0.5 + 3.2)
         local angle = step * 0.72
         local localPoint
         if state.Pattern == "Zigzag" then
@@ -400,6 +406,10 @@ return function(context)
 
     local function beginCollection()
         if state.Collecting then
+            -- A manual mouse release can stop Bee Swarm's private collection
+            -- loop without changing VOR's state. Run is safe to pulse because
+            -- the native module enforces the equipped collector cooldown.
+            pcall(LocalCollect.Run)
             return true
         end
         local ok, err = pcall(LocalCollect.StartCollection)
@@ -455,13 +465,23 @@ return function(context)
         return best
     end
 
-    local function collectToken(token)
+    local function collectToken(token, zone)
         local position = tokenPosition(token)
         if not position then
             return false
         end
         state.Phase = "Collecting token"
-        local ok = travelTo(CFrame.new(position + Vector3.new(0, 2.2, 0)), "Token")
+        local goal = position + Vector3.new(0, 2.2, 0)
+        local label = "Token"
+        if state.UnderField and zone then
+            goal = Vector3.new(
+                position.X,
+                zone.Position.Y - zone.Size.Y * 0.5 - state.UnderFieldDepth,
+                position.Z
+            )
+            label = state.Field
+        end
+        local ok = travelTo(CFrame.new(goal), label)
         local _, _, root = characterParts()
         if ok and root and token.Parent and type(firetouchinterest) == "function" then
             local part = token:IsA("BasePart") and token or token:FindFirstChildWhichIsA("BasePart", true)
@@ -483,6 +503,13 @@ return function(context)
         return ok and result ~= false, result
     end
 
+    local function currentHivePhase()
+        local reference = LocalPlayer:FindFirstChild("Honeycomb")
+        local honeycomb = reference and reference.Value
+        local phase = honeycomb and honeycomb:FindFirstChild("Phase")
+        return phase and tostring(phase.Value) or nil
+    end
+
     local function convertPollen()
         stopCollection()
         local hive = ownedHive()
@@ -501,17 +528,39 @@ return function(context)
             end
         end
         state.Phase = "Converting pollen"
-        local ok, err = pcall(Hives.ButtonEffect, LocalPlayer, hive)
-        if not ok then
-            return false, err
+        local phase = currentHivePhase()
+        if phase == nil or phase == "Idle" then
+            local ok, err = pcall(Hives.ButtonEffect, LocalPlayer, hive)
+            if not ok then
+                return false, err
+            end
         end
         state.ConversionStarted = true
         local deadline = os.clock() + 120
+        local previousPollen = coreStat("Pollen", 0)
+        local lastDecrease = os.clock()
         while state.Alive and (state.FullOP or state.AutoFarm) and coreStat("Pollen", 0) > 0 and os.clock() < deadline do
+            local pollen = coreStat("Pollen", 0)
+            if pollen < previousPollen then
+                previousPollen = pollen
+                lastDecrease = os.clock()
+            elseif os.clock() - lastDecrease >= 3 and currentHivePhase() == "Idle" then
+                pcall(Hives.ButtonEffect, LocalPlayer, hive)
+                lastDecrease = os.clock()
+            end
             task.wait(0.35)
         end
+        local converted = coreStat("Pollen", 0) <= 0
+        if converted and currentHivePhase() ~= nil and currentHivePhase() ~= "Idle" then
+            state.Phase = "Stopping honey maker"
+            pcall(Hives.ButtonEffect, LocalPlayer, hive)
+            local stopDeadline = os.clock() + 4
+            while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < stopDeadline do
+                task.wait(0.15)
+            end
+        end
         state.ConversionStarted = false
-        return coreStat("Pollen", 0) <= 0, "Conversion timed out"
+        return converted, "Conversion timed out"
     end
 
     local function findNPC(name)
@@ -569,6 +618,10 @@ return function(context)
         if not toy then
             return false, name .. " is unavailable"
         end
+        local text, _, disabled = ToyActivator.ButtonText(LocalPlayer, toy)
+        if disabled then
+            return false, tostring(text or (name .. " is not ready"))
+        end
         local platform = toy:FindFirstChild("Platform", true)
             or toy:FindFirstChild("Button", true)
             or toy:FindFirstChildWhichIsA("BasePart", true)
@@ -592,18 +645,44 @@ return function(context)
         return 0
     end
 
-    local function buyNext(order, equipped)
+    local function equippedPackageType(cached, category)
+        if category == "Collector" then
+            return tostring(cached.EquippedCollector or "Scooper")
+        end
+        local accessories = cached.EquippedAccessories or {}
+        return tostring(accessories.Container or cached.EquippedBackpack or "Pouch")
+    end
+
+    local function buyNext(category, order, equipped)
         local start = math.max(1, itemIndex(order, equipped) + 1)
         for index = start, #order do
             local item = order[index]
-            local ok = pcall(Events.ClientCall, "PlayerPurchase", item)
-            task.wait(0.2)
+            local package = {Category = category, Type = item}
+            local ok, purchased = pcall(Events.ClientCall, "ItemPackageEvent", "Purchase", package)
+            if ok and purchased then
+                pcall(ClientStatCache.Update, ClientStatCache)
+                task.wait(0.25)
+            end
             local cached = stats()
-            local changed = tostring(cached.EquippedCollector or "") == item
-                or tostring(cached.EquippedBackpack or "") == item
+            local hasItem = false
+            pcall(function()
+                hasItem = ItemPackages.PlayerHas(package, cached) == true
+            end)
+            if hasItem then
+                local equipOk, equippedNow = pcall(Events.ClientCall, "ItemPackageEvent", "Equip", package)
+                if equipOk and equippedNow then
+                    package.Mute = false
+                    pcall(ItemPackages.Equip, package, ClientStatCache:Get())
+                    task.wait(0.15)
+                end
+            end
+            local changed = equippedPackageType(stats(), category) == item
             if ok and changed then
                 state.LastUpgrade = os.clock()
                 return true, item
+            end
+            if not purchased and not hasItem then
+                break
             end
         end
         state.LastUpgrade = os.clock()
@@ -612,12 +691,12 @@ return function(context)
 
     local function buyCollector()
         local cached = stats()
-        return buyNext(COLLECTOR_ORDER, tostring(cached.EquippedCollector or "Scooper"))
+        return buyNext("Collector", COLLECTOR_ORDER, equippedPackageType(cached, "Collector"))
     end
 
     local function buyBackpack()
         local cached = stats()
-        return buyNext(BACKPACK_ORDER, tostring(cached.EquippedBackpack or "Pouch"))
+        return buyNext("Accessory", BACKPACK_ORDER, equippedPackageType(cached, "Accessory"))
     end
 
     local function farmStep(step)
@@ -628,7 +707,7 @@ return function(context)
         state.Target = state.Field
         local token = nearestToken(zone)
         if token then
-            collectToken(token)
+            collectToken(token, zone)
         else
             local point = fieldPoint(zone, step)
             if point then
@@ -905,6 +984,30 @@ return function(context)
         end,
     })
     SafetySection:AddToggle({
+        Name = "Under-Field Farming",
+        Description = "Keeps the character below flower tiles while native ToolCollect continues crediting pollen",
+        Flag = "bee_under_field_farming",
+        Default = false,
+        Callback = function(enabled)
+            state.UnderField = enabled
+            if not enabled then
+                setTravelCollision(LocalPlayer.Character, true)
+            end
+        end,
+    })
+    SafetySection:AddSlider({
+        Name = "Under-Field Depth",
+        Flag = "bee_under_field_depth",
+        Min = 2,
+        Max = 6,
+        Step = 0.5,
+        Default = 3.5,
+        Suffix = " studs",
+        Callback = function(value)
+            state.UnderFieldDepth = tonumber(value) or 3.5
+        end,
+    })
+    SafetySection:AddToggle({
         Name = "Anti AFK",
         Flag = "bee_anti_afk",
         Default = true,
@@ -920,6 +1023,7 @@ return function(context)
             state.AutoQuest = false
             state.AutoToy = false
             stopCollection()
+            setTravelCollision(LocalPlayer.Character, true)
             state.Phase = "Stopped"
             notify("Bee Swarm", "All Bee Swarm automation stopped")
         end,
@@ -983,6 +1087,7 @@ return function(context)
                 end
             else
                 stopCollection()
+                setTravelCollision(LocalPlayer.Character, true)
                 if state.Phase:find("Farming", 1, true) or state.Phase == "Traveling" then
                     state.Phase = "Idle"
                 end
@@ -1050,8 +1155,8 @@ return function(context)
             local hive = ownedHive()
             honeyLabel.Text = "Honey: " .. formatNumber(honey)
             pollenLabel.Text = "Pollen: " .. formatNumber(pollen) .. " / " .. formatNumber(capacity)
-            equipmentLabel.Text = "Collector: " .. tostring(cached.EquippedCollector or "None")
-                .. " | Backpack: " .. tostring(cached.EquippedBackpack or "None")
+            equipmentLabel.Text = "Collector: " .. equippedPackageType(cached, "Collector")
+                .. " | Backpack: " .. equippedPackageType(cached, "Accessory")
             hiveLabel.Text = "Hive: " .. (hive and "Claimed" or "Unclaimed")
             rateLabel.Text = "Rates: " .. formatNumber(state.PollenRate) .. " pollen/min | "
                 .. formatNumber(state.HoneyRate) .. " honey/min"
@@ -1069,6 +1174,8 @@ return function(context)
                     gui:SetAttribute("BeeSwarmCapacity", capacity)
                     gui:SetAttribute("BeeSwarmHiveClaimed", hive ~= nil)
                     gui:SetAttribute("BeeSwarmCollecting", state.Collecting)
+                    gui:SetAttribute("BeeSwarmUnderField", state.UnderField)
+                    gui:SetAttribute("BeeSwarmUnderFieldDepth", state.UnderFieldDepth)
                     gui:SetAttribute("BeeSwarmLastError", state.LastError)
                 end)
             end
