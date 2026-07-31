@@ -1005,6 +1005,10 @@ return function(context)
         return phase and tostring(phase.Value) or nil
     end
 
+    local function toggleHoneyMaking()
+        return pcall(Events.ClientCall, "PlayerHiveCommand", "ToggleHoneyMaking")
+    end
+
     local function convertPollen()
         stopCollection()
         local hive = ownedHive()
@@ -1022,12 +1026,37 @@ return function(context)
                 return false, err
             end
         end
+        clearUnderFieldHold()
+        local character, humanoid, root = characterParts()
+        setTravelCollision(character, true)
+        if root then
+            root.Anchored = false
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+        if humanoid then
+            humanoid.Sit = false
+            humanoid.PlatformStand = false
+            pcall(humanoid.ChangeState, humanoid, Enum.HumanoidStateType.GettingUp)
+        end
         state.Phase = "Converting pollen"
         local phase = currentHivePhase()
         if phase == nil or phase == "Idle" then
-            local ok, err = pcall(Hives.ButtonEffect, LocalPlayer, hive)
+            local beforeStart = coreStat("Pollen", 0)
+            local ok, err = toggleHoneyMaking()
             if not ok then
                 return false, err
+            end
+            local startDeadline = os.clock() + 3
+            while state.Alive
+                and (currentHivePhase() == nil or currentHivePhase() == "Idle")
+                and coreStat("Pollen", 0) >= beforeStart
+                and os.clock() < startDeadline do
+                task.wait(0.1)
+            end
+            if (currentHivePhase() == nil or currentHivePhase() == "Idle")
+                and coreStat("Pollen", 0) >= beforeStart then
+                return false, "Hive reached, but Make Honey was not accepted"
             end
         end
         state.ConversionStarted = true
@@ -1045,14 +1074,14 @@ return function(context)
             elseif os.clock() - lastDecrease >= 10 then
                 local stalledPhase = currentHivePhase()
                 if stalledPhase ~= nil and stalledPhase ~= "Idle" then
-                    pcall(Hives.ButtonEffect, LocalPlayer, hive)
+                    toggleHoneyMaking()
                     local idleDeadline = os.clock() + 3
                     while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < idleDeadline do
                         task.wait(0.15)
                     end
                 end
                 if currentHivePhase() == nil or currentHivePhase() == "Idle" then
-                    pcall(Hives.ButtonEffect, LocalPlayer, hive)
+                    toggleHoneyMaking()
                 end
                 previousPollen = coreStat("Pollen", 0)
                 lastDecrease = os.clock()
@@ -1066,7 +1095,7 @@ return function(context)
             else
                 state.Phase = "Stopping interrupted conversion"
             end
-            pcall(Hives.ButtonEffect, LocalPlayer, hive)
+            toggleHoneyMaking()
             local stopDeadline = os.clock() + 4
             while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < stopDeadline do
                 task.wait(0.15)
