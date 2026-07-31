@@ -275,7 +275,9 @@ $mineMountainPages = (
     $mineMountainText -match 'No fake local-only transparency toggle is included' -and
     $mineMountainText -match 'Name\s*=\s*"Stealth Session \(Solo Server\)"' -and
     $mineMountainText -match 'VORMountainResumeSoloSession' -and
-    $mineMountainText -match 'Players\.PlayerAdded:Connect'
+    $mineMountainText -match 'Name\s*=\s*"Under-Crystal Mining"' -and
+    $mineMountainText -match 'VORMountainResumeUnderCrystalMining' -and
+    $mineMountainText -match 'local function repairNearbyPromptRange\(prompt, part, root\)'
 )
 $mineMountainIndependentPurchases = (
     $mineMountainText -match 'local independentAutoBuy\s*=\s*state\.AutoPickaxe' -and

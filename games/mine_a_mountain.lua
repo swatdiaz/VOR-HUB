@@ -76,6 +76,7 @@ return function(context)
         TravelMode = "Tween",
         TravelSpeed = 240,
         FarmOffset = 4,
+        UnderCrystalMining = environment.VORMountainResumeUnderCrystalMining == true,
         SellPercent = 92,
         CashReserve = 0,
         Target = nil,
@@ -95,7 +96,6 @@ return function(context)
         LastGodspeedCredited = 0,
         HighTierHunt = environment.VORMountainResumeHighTierHunt == true,
         SoloSession = environment.VORMountainResumeSoloSession == true,
-        LastSoloHopAttempt = -math.huge,
         HopBusy = false,
         HopMissingScans = 0,
         HopCountdownDuration = 15,
@@ -541,6 +541,22 @@ return function(context)
         return false
     end
 
+    local function repairNearbyPromptRange(prompt, part, root)
+        local range = prompt and tonumber(prompt.MaxActivationDistance) or 0
+        if range > 0 or not (prompt and part and root) then
+            return range
+        end
+        local distance = (part.Position - root.Position).Magnitude
+        if distance > 14 then
+            return 0
+        end
+        local repaired = math.max(12, distance + 2)
+        local ok = pcall(function()
+            prompt.MaxActivationDistance = repaired
+        end)
+        return ok and repaired or 0
+    end
+
     local function isCrystalTool(object)
         return object
             and object:IsA("Tool")
@@ -795,7 +811,7 @@ return function(context)
     end
 
     local function setTravelCollision(character, enabled)
-        if not character or (enabled and not state.NoClipTravel) then
+        if not character or (enabled and not state.NoClipTravel and not state.UnderCrystalMining) then
             return
         end
         for _, part in ipairs(character:GetDescendants()) do
@@ -816,12 +832,17 @@ return function(context)
         end
     end
 
-    local function travelTo(position)
+    local function travelTo(position, prompt)
         local character, humanoid, root = characterParts()
         if not (character and humanoid and root) then
             return false, "character unavailable"
         end
-        local goalPosition = position + Vector3.new(0, state.FarmOffset, 0)
+        local requestedOffset = math.abs(state.FarmOffset)
+        local promptLimit = prompt and tonumber(prompt.MaxActivationDistance)
+        local safeOffset = promptLimit and math.min(requestedOffset, math.max(1.5, promptLimit - 1))
+            or requestedOffset
+        local verticalOffset = state.UnderCrystalMining and -safeOffset or safeOffset
+        local goalPosition = position + Vector3.new(0, verticalOffset, 0)
         local distance = (root.Position - goalPosition).Magnitude
         state.Phase = string.format("Traveling (%.0f studs)", distance)
         setTravelCollision(character, true)
@@ -853,7 +874,9 @@ return function(context)
             end
         end)
 
-        setTravelCollision(character, false)
+        if not state.UnderCrystalMining then
+            setTravelCollision(character, false)
+        end
         if not ok then
             return false, err
         end
@@ -968,13 +991,14 @@ return function(context)
                     and prompt
                     and prompt.Enabled
                     and not isInvalidCrystal(crystal, part, prompt)
-                    and prompt.MaxActivationDistance > 0
                     and weight > 0
                     and crystal:GetAttribute("Collected") ~= true
                     and (not failedUntil or failedUntil <= now) then
                     local distance = (part.Position - root.Position).Magnitude
+                    local promptRange = repairNearbyPromptRange(prompt, part, root)
                     if distance <= state.GodspeedRadius
-                        and distance <= prompt.MaxActivationDistance + 0.5 then
+                        and promptRange > 0
+                        and distance <= promptRange + 0.5 then
                         table.insert(candidates, {
                             Crystal = crystal,
                             Prompt = prompt,
@@ -1064,7 +1088,7 @@ return function(context)
         state.TargetName = string.format("%s | T%d | $%s", target.Name, target.Tier, tostring(math.floor(target.Value)))
         equipBestPickaxe()
         local beforeWeight, beforeCount = cargo()
-        local moved, moveError = travelTo(target.Part.Position)
+        local moved, moveError = travelTo(target.Part.Position, target.Prompt)
         if not moved then
             return false, moveError
         end
@@ -1073,11 +1097,15 @@ return function(context)
         end
         task.wait(0.12)
         local prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or target.Prompt
+        local _, _, promptRoot = characterParts()
+        repairNearbyPromptRange(prompt, target.Part, promptRoot)
         local promptDeadline = os.clock() + 1.25
         while prompt
             and prompt.Parent
             and (not prompt.Enabled or prompt.MaxActivationDistance <= 0)
             and os.clock() < promptDeadline do
+            local _, _, currentRoot = characterParts()
+            repairNearbyPromptRange(prompt, target.Part, currentRoot)
             task.wait(0.06)
         end
         if not prompt or not prompt.Parent or not prompt.Enabled or prompt.MaxActivationDistance <= 0 then
@@ -1234,6 +1262,7 @@ return function(context)
             "e.VORMountainResumeHopMythic = false",
             "e.VORMountainResumeHighTierHunt = " .. tostring(state.HighTierHunt),
             "e.VORMountainResumeSoloSession = " .. tostring(state.SoloSession),
+            "e.VORMountainResumeUnderCrystalMining = " .. tostring(state.UnderCrystalMining),
             "e.VORMountainVisitedServers = {" .. table.concat(visitedEntries, ",") .. "}",
             "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
         }, "\n")
@@ -2038,16 +2067,25 @@ return function(context)
     VisibilitySection:AddLabel("The game must expose a replicated hidden state before other players can truly stop rendering you.")
     VisibilitySection:AddToggle({
         Name = "Stealth Session (Solo Server)",
-        Description = "Uses the emptiest public server and leaves again if another player joins",
+        Description = "When the high-tier pool is empty, the normal hop chooses the emptiest fresh public server",
         Flag = "mam_solo_session",
         Default = state.SoloSession,
         Callback = function(enabled)
             state.SoloSession = enabled
             environment.VORMountainResumeSoloSession = enabled
-            if enabled and #Players:GetPlayers() > 1 then
-                state.LastSoloHopAttempt = os.clock()
-                notify("Stealth Session", "Other players detected. Moving to the emptiest fresh server.", 4)
-                task.spawn(hopToFreshServer, "stealth session player guard")
+        end,
+    })
+    VisibilitySection:AddToggle({
+        Name = "Under-Crystal Mining",
+        Description = "Approaches beneath each crystal inside prompt range; Crystal Offset controls the depth",
+        Flag = "mam_under_crystal_mining",
+        Default = state.UnderCrystalMining,
+        Callback = function(enabled)
+            state.UnderCrystalMining = enabled
+            environment.VORMountainResumeUnderCrystalMining = enabled
+            if not enabled then
+                local character = LocalPlayer.Character
+                setTravelCollision(character, false)
             end
         end,
     })
@@ -2129,31 +2167,6 @@ return function(context)
         end
     end))
 
-    track(Players.PlayerAdded:Connect(function(player)
-        if player ~= LocalPlayer and state.SoloSession then
-            state.LastSoloHopAttempt = os.clock()
-            notify("Stealth Session", player.DisplayName .. " joined. Leaving before they can watch the farm.", 4)
-            task.delay(1, function()
-                if state.Alive and state.SoloSession then
-                    hopToFreshServer("another player entered the stealth session")
-                end
-            end)
-        end
-    end))
-
-    task.spawn(function()
-        while state.Alive do
-            if state.SoloSession
-                and #Players:GetPlayers() > 1
-                and not state.HopBusy
-                and os.clock() - state.LastSoloHopAttempt >= 15 then
-                state.LastSoloHopAttempt = os.clock()
-                task.spawn(hopToFreshServer, "stealth session population guard")
-            end
-            task.wait(3)
-        end
-    end)
-
     track(TeleportService.TeleportInitFailed:Connect(function(player, _, message)
         if player ~= LocalPlayer or not state.HopBusy then
             return
@@ -2230,6 +2243,9 @@ return function(context)
             else
                 state.Target = nil
                 state.TargetName = "None"
+                if state.UnderCrystalMining then
+                    setTravelCollision(LocalPlayer.Character, false)
+                end
                 if state.Phase:find("Traveling", 1, true) or state.Phase:find("Mining", 1, true) then
                     state.Phase = "Idle"
                 end
@@ -2534,6 +2550,7 @@ return function(context)
             gui:SetAttribute("MineAMountainHopCountdownActive", state.HopCountdownEndsAt ~= nil)
             gui:SetAttribute("MineAMountainHopCountdownRemaining", state.HopCountdownRemaining)
             gui:SetAttribute("MineAMountainSoloSession", state.SoloSession)
+            gui:SetAttribute("MineAMountainUnderCrystalMining", state.UnderCrystalMining)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)
             gui:SetAttribute("MineAMountainStreamingExpanded", state.StreamingExpanded)
