@@ -49,6 +49,8 @@ return function(context)
         ShotTravel = 0,
         LastShotOffset = nil,
         LastShotMeter = "Vertical",
+        PendingReleaseOffset = nil,
+        PendingReleaseMeter = nil,
         LastFeedback = "Waiting",
         PerfectOffsets = {
             -- Captured from a manual Perfect Release in Learn PB.
@@ -619,6 +621,8 @@ return function(context)
         state.ShotStartOffset = typeof(offset) == "Vector2" and offset or nil
         state.ShotDirection = nil
         state.ShotTravel = 0
+        state.PendingReleaseOffset = nil
+        state.PendingReleaseMeter = nil
         state.ReleasedThisShot = false
     end
 
@@ -674,6 +678,8 @@ return function(context)
                 and (state.AutoGreen or state.ForceNextGreen) then
                 state.ReleasedThisShot = true
                 state.ForceNextGreen = false
+                state.PendingReleaseOffset = offset
+                state.PendingReleaseMeter = state.MeterName
                 if releaseShoot() then
                     state.LastRelease = string.format(
                         "%s at (%.5f, %.5f)",
@@ -704,7 +710,9 @@ return function(context)
         end
         local character = resolveCharacter()
         local offset = character and character:GetAttribute("meterOffset")
-        if typeof(offset) == "Vector2" then
+        if typeof(offset) == "Vector2" and not state.PendingReleaseOffset then
+            state.PendingReleaseOffset = offset
+            state.PendingReleaseMeter = state.LastShotMeter
             state.LastShotOffset = offset
         end
     end))
@@ -734,13 +742,18 @@ return function(context)
                 timingName,
                 math.round(tonumber(contest) or 0)
             )
-            if index == 5 and typeof(state.LastShotOffset) == "Vector2" then
-                state.PerfectOffsets[state.LastShotMeter] = state.LastShotOffset
-                meterReleaseLabel.Text = string.format(
-                    "Calibrated %s: %.8f",
-                    state.LastShotMeter,
-                    state.LastShotOffset.Y
-                )
+            if index == 5 and typeof(state.PendingReleaseOffset) == "Vector2" then
+                local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
+                if not state.ReleasedThisShot then
+                    state.PerfectOffsets[learnedMeter] = state.PendingReleaseOffset
+                end
+                meterReleaseLabel.Text = state.ReleasedThisShot
+                    and string.format("Perfect confirmed: %s", state.LastRelease)
+                    or string.format(
+                        "Calibrated %s: %.8f",
+                        learnedMeter,
+                        state.PendingReleaseOffset.Y
+                    )
                 meterReleaseLabel.TextColor3 = COLORS.success
             end
         end))
