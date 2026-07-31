@@ -56,8 +56,6 @@ return function(context)
         AutoPickaxe = false,
         AutoBackpack = false,
         AutoPlotCapacity = false,
-        AutoPlacePlot = false,
-        PlotPlaceBatchSize = 10,
         AutoRewards = false,
         AntiAfk = true,
         FreezeGuard = true,
@@ -85,8 +83,6 @@ return function(context)
         LastFarmCycle = 0,
         LastAutoPurchase = 0,
         LastGodspeedCredited = 0,
-        LastPlotPlaced = 0,
-        PlotBusy = false,
         ConsecutiveFailures = 0,
         PurchaseBusy = false,
         FailedTargets = setmetatable({}, {__mode = "k"}),
@@ -1002,147 +998,6 @@ return function(context)
         return false
     end
 
-    local function plotCrystalTools()
-        local tools = {}
-        local function scan(container)
-            if not container then
-                return
-            end
-            for _, tool in ipairs(container:GetChildren()) do
-                if tool:IsA("Tool")
-                    and tool:GetAttribute("Tier") ~= nil
-                    and tool:GetAttribute("WeightKg") ~= nil
-                    and tool:GetAttribute("MeshTemplate") ~= nil then
-                    table.insert(tools, tool)
-                end
-            end
-        end
-        scan(LocalPlayer:FindFirstChildOfClass("Backpack"))
-        scan(LocalPlayer.Character)
-        table.sort(tools, function(a, b)
-            local tierA = tonumber(a:GetAttribute("Tier")) or 0
-            local tierB = tonumber(b:GetAttribute("Tier")) or 0
-            if tierA == tierB then
-                return (tonumber(a:GetAttribute("Value")) or 0)
-                    > (tonumber(b:GetAttribute("Value")) or 0)
-            end
-            return tierA > tierB
-        end)
-        return tools
-    end
-
-    local function plotGridPositions(region, placedFolder)
-        local occupied = {}
-        if placedFolder then
-            for _, model in ipairs(placedFolder:GetChildren()) do
-                local handle = model:FindFirstChild("Handle")
-                    or model:FindFirstChildWhichIsA("BasePart")
-                if handle then
-                    table.insert(occupied, handle.Position)
-                end
-            end
-        end
-        local positions = {}
-        local halfX = region.Size.X * 0.5
-        local halfZ = region.Size.Z * 0.5
-        for x = -halfX + 6, halfX - 6, 10 do
-            for z = -halfZ + 6, halfZ - 6, 10 do
-                local worldPosition = region.CFrame:PointToWorldSpace(
-                    Vector3.new(x, -region.Size.Y * 0.5, z)
-                )
-                local clear = true
-                for _, otherPosition in ipairs(occupied) do
-                    local delta = worldPosition - otherPosition
-                    if Vector2.new(delta.X, delta.Z).Magnitude < 8 then
-                        clear = false
-                        break
-                    end
-                end
-                if clear then
-                    table.insert(positions, worldPosition)
-                end
-            end
-        end
-        return positions
-    end
-
-    local function placeBestPlotCrystals(manual)
-        if state.PlotBusy then
-            return false
-        end
-        state.PlotBusy = true
-        local placedThisPass = 0
-        local ok, err = xpcall(function()
-            local plot = ownedPlot()
-            local region = plot and plot:FindFirstChild("Region")
-            local placedFolder = plot and plot:FindFirstChild("PlacedCrystals")
-            if not (plot and region and region:IsA("BasePart") and placedFolder) then
-                error("owned plot is unavailable")
-            end
-
-            local capacityValue = tonumber(statValue("PlotCapacity", 0)) or 0
-            local availableSlots = math.max(0, capacityValue - #placedFolder:GetChildren())
-            local tools = plotCrystalTools()
-            if availableSlots <= 0 or #tools == 0 then
-                return
-            end
-
-            state.Phase = "Returning to plot"
-            Remotes.GoHome:FireServer("plot")
-            local travelDeadline = os.clock() + 3
-            repeat
-                task.wait(0.1)
-                local _, _, root = characterParts()
-                if root and (root.Position - region.Position).Magnitude <= 60 then
-                    break
-                end
-            until os.clock() >= travelDeadline
-
-            local positions = plotGridPositions(region, placedFolder)
-            local limit = math.min(
-                state.PlotPlaceBatchSize,
-                availableSlots,
-                #tools,
-                #positions
-            )
-            local _, humanoid = characterParts()
-            for index = 1, limit do
-                local tool = tools[index]
-                local position = positions[index]
-                if humanoid and tool and tool.Parent then
-                    humanoid:EquipTool(tool)
-                    task.wait(0.08)
-                    local beforePlaced = #placedFolder:GetChildren()
-                    state.Phase = string.format("Placing plot crystal %d/%d", index, limit)
-                    Remotes.PlotPlaceRequest:FireServer(tool.Name, position, 0, tool)
-                    local placeDeadline = os.clock() + 1.25
-                    repeat
-                        task.wait(0.05)
-                    until #placedFolder:GetChildren() > beforePlaced
-                        or not tool.Parent
-                        or os.clock() >= placeDeadline
-                    if #placedFolder:GetChildren() > beforePlaced or not tool.Parent then
-                        placedThisPass += 1
-                    end
-                end
-            end
-            equipBestPickaxe()
-        end, function(message)
-            return debug.traceback(tostring(message), 2)
-        end)
-        state.PlotBusy = false
-        state.LastPlotPlaced = placedThisPass
-        if not ok then
-            state.LastError = "Plot placement error: " .. tostring(err)
-        elseif placedThisPass > 0 then
-            state.LastError = "None"
-        end
-        if manual then
-            notify("Plot Luck", string.format("Placed %d crystal(s).", placedThisPass))
-        end
-        return ok and placedThisPass > 0
-    end
-
     local function runPurchases()
         if state.PurchaseBusy then
             return false
@@ -1496,44 +1351,13 @@ return function(context)
             state.AutoPlotCapacity = enabled
         end,
     })
-    PlotSection:AddToggle({
-        Name = "Auto Place Best Crystals",
-        Description = "Places highest-tier backpack crystals on your plot to raise Plot Luck",
-        Flag = "mam_auto_place_plot",
-        Default = false,
-        Callback = function(enabled)
-            state.AutoPlacePlot = enabled
-        end,
-    })
-    PlotSection:AddSlider({
-        Name = "Plot Placement Batch",
-        Flag = "mam_plot_place_batch",
-        Min = 1,
-        Max = 25,
-        Step = 1,
-        Default = 10,
-        Suffix = " crystals",
-        Callback = function(value)
-            state.PlotPlaceBatchSize = math.clamp(
-                math.floor(tonumber(value) or 10),
-                1,
-                25
-            )
-        end,
-    })
     PlotSection:AddButton({
         Name = "Upgrade Plot Once",
         Callback = function()
             task.spawn(upgradePlotCapacity, true)
         end,
     })
-    PlotSection:AddButton({
-        Name = "Place Best Crystals Now",
-        Callback = function()
-            task.spawn(placeBestPlotCrystals, true)
-        end,
-    })
-    PlotSection:AddLabel("More and better placed crystals increase the server Plot Luck stat.")
+    PlotSection:AddLabel("The game server prices and credits every additional plot slot.")
 
     StoreSection:AddButton({
         Name = "Buy Best Affordable Pickaxe",
@@ -1717,13 +1541,6 @@ return function(context)
                 local shouldSell = (state.Master or state.AutoSell)
                     and weight > 0
                     and (cap < math.huge and weight >= cap * (state.SellPercent / 100))
-                local plot = state.AutoPlacePlot and ownedPlot() or nil
-                local placedFolder = plot and plot:FindFirstChild("PlacedCrystals")
-                local plotCapacity = tonumber(statValue("PlotCapacity", 0)) or 0
-                local shouldPlace = state.AutoPlacePlot
-                    and weight > 0
-                    and placedFolder ~= nil
-                    and #placedFolder:GetChildren() < plotCapacity
 
                 if recovering then
                     state.Phase = string.format(
@@ -1743,8 +1560,6 @@ return function(context)
                     else
                         emergencyReviveAtBase()
                     end
-                elseif shouldPlace then
-                    placeBestPlotCrystals(false)
                 elseif shouldSell then
                     if sellCargo(false) then
                         runPurchases()
@@ -1810,14 +1625,6 @@ return function(context)
         while state.Alive do
             if state.GodspeedPickaxe then
                 setGodspeedPickaxe(true)
-            end
-            if state.AutoPlacePlot
-                and not (state.Master or state.AutoFarm)
-                and not state.PlotBusy then
-                local weight = cargo()
-                if weight > 0 then
-                    placeBestPlotCrystals(false)
-                end
             end
             task.wait(0.5)
         end
@@ -1929,7 +1736,6 @@ return function(context)
             gui:SetAttribute("MineAMountainGodspeed", state.GodspeedMining)
             gui:SetAttribute("MineAMountainGodspeedCredited", state.LastGodspeedCredited)
             gui:SetAttribute("MineAMountainGodspeedPickaxe", state.GodspeedPickaxe)
-            gui:SetAttribute("MineAMountainLastPlotPlaced", state.LastPlotPlaced)
             gui:SetAttribute("MineAMountainPlotCapacity", tonumber(statValue("PlotCapacity", 0)) or 0)
             gui:SetAttribute("MineAMountainPlotLuck", tonumber(statValue("PlotLuck", 0)) or 0)
             gui:SetAttribute("MineAMountainAntiRagdoll", state.AntiRagdoll)

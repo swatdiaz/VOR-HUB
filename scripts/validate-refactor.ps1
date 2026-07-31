@@ -293,10 +293,9 @@ $mineMountainPickaxeSpeed = (
 $mineMountainPlotLuck = (
     $mineMountainText -match 'Name\s*=\s*"Auto Upgrade Plot Slots"' -and
     $mineMountainText -match 'Remotes\.UpgradePlotCapacity:FireServer\(\)' -and
-    $mineMountainText -match 'Name\s*=\s*"Auto Place Best Crystals"' -and
-    $mineMountainText -match 'local function placeBestPlotCrystals\(manual\)' -and
-    $mineMountainText -match 'Remotes\.PlotPlaceRequest:FireServer\(tool\.Name,\s*position,\s*0,\s*tool\)' -and
-    $mineMountainText -match 'PlotLuck'
+    $mineMountainText -match 'local function plotUpgradePrice\(\)' -and
+    $mineMountainText -match 'state\.AutoPlotCapacity' -and
+    $mineMountainText -notmatch 'Auto Place Best Crystals|PlotPlaceRequest'
 )
 $mineMountainMovementSafety = (
     $mineMountainText -match 'Name\s*=\s*"Farm Float"' -and
