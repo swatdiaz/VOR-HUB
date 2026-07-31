@@ -839,7 +839,8 @@ return function(context)
         end
         local requestedOffset = math.abs(state.FarmOffset)
         local promptLimit = prompt and tonumber(prompt.MaxActivationDistance)
-        local safeOffset = promptLimit and math.min(requestedOffset, math.max(1.5, promptLimit - 1))
+        local safeOffset = promptLimit and promptLimit > 1
+            and math.min(requestedOffset, math.max(1.5, promptLimit - 1))
             or requestedOffset
         local verticalOffset = state.UnderCrystalMining and -safeOffset or safeOffset
         local goalPosition = position + Vector3.new(0, verticalOffset, 0)
