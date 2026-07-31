@@ -1644,7 +1644,10 @@ return function(context)
                             and (state.FullOP or state.AutoBuyBasicEgg)
                             and findStarterCell() then
                             local bought, buyMessage = buyBasicEgg()
-                            if not bought and buyMessage ~= "No unlocked empty hive cell" then
+                            if not bought
+                                and buyMessage ~= "No unlocked empty hive cell"
+                                and buyMessage ~= "Purchase was not accepted"
+                                and buyMessage ~= "Basic Egg purchase was not credited" then
                                 setError(buyMessage)
                             end
                             eggs = stats().Eggs or {}
