@@ -154,6 +154,7 @@ return function(context)
         OriginalCollision = setmetatable({}, {__mode = "k"}),
         UnderMover = nil,
         UnderRoot = nil,
+        UnderWasAnchored = false,
     }
 
     local phaseLabel = AdapterSection:AddLabel("Phase: Initializing")
@@ -243,6 +244,11 @@ return function(context)
         if state.UnderMover then
             state.UnderMover:Destroy()
         end
+        if state.UnderRoot and state.UnderRoot.Parent then
+            state.UnderRoot.Anchored = state.UnderWasAnchored
+            state.UnderRoot.AssemblyLinearVelocity = Vector3.zero
+            state.UnderRoot.AssemblyAngularVelocity = Vector3.zero
+        end
         local _, _, root = characterParts()
         if root then
             for _, child in ipairs(root:GetChildren()) do
@@ -253,6 +259,7 @@ return function(context)
         end
         state.UnderMover = nil
         state.UnderRoot = nil
+        state.UnderWasAnchored = false
     end
 
     local function holdUnderFieldHeight(root, worldY)
@@ -264,18 +271,13 @@ return function(context)
             clearUnderFieldHold()
             return
         end
-        if state.UnderRoot ~= root or not state.UnderMover or not state.UnderMover.Parent then
-            clearUnderFieldHold()
-            local mover = Instance.new("BodyPosition")
-            mover.Name = "VORBeeUnderFieldHeight"
-            mover.MaxForce = Vector3.new(0, 1000000000, 0)
-            mover.P = 7500
-            mover.D = 1000
-            mover.Parent = root
-            state.UnderMover = mover
-            state.UnderRoot = root
-        end
-        state.UnderMover.Position = Vector3.new(root.Position.X, worldY, root.Position.Z)
+        clearUnderFieldHold()
+        state.UnderRoot = root
+        state.UnderWasAnchored = root.Anchored
+        root.CFrame = CFrame.new(root.Position.X, worldY, root.Position.Z) * root.CFrame.Rotation
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.Anchored = true
     end
 
     local function travelTo(goal, label, settleOnArrival)
@@ -1608,7 +1610,9 @@ return function(context)
     track(RunService.Heartbeat:Connect(function()
         if state.Traveling then
             local _, _, root = characterParts()
-            if state.UnderMover or (root and root:FindFirstChild("VORBeeUnderFieldHeight")) then
+            if state.UnderMover
+                or state.UnderRoot
+                or (root and root:FindFirstChild("VORBeeUnderFieldHeight")) then
                 clearUnderFieldHold()
             end
         end
