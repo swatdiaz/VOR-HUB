@@ -961,8 +961,13 @@ return function(context)
                 local weight = cargo()
                 local cap = capacity()
                 local freezing = LocalPlayer:GetAttribute("IsFreezing") == true
-                local exposure = tonumber(LocalPlayer:GetAttribute("FreezeExposure")) or 0
-                local mustEscape = state.FreezeGuard and (freezing or exposure >= 0.88)
+                local currentAir = tonumber(statValue("CurrentAir", 0)) or 0
+                local airCapacity = math.max(1, tonumber(statValue("AirCapacity", 1)) or 1)
+                -- FreezeExposure rises while the player recovers at base, so it
+                -- is telemetry, not a direct danger percentage. CurrentAir and
+                -- the server's IsFreezing state are the credited safety signals.
+                local mustEscape = state.FreezeGuard
+                    and (freezing or currentAir <= math.max(1, airCapacity * 0.12))
                 local shouldSell = (state.Master or state.AutoSell)
                     and weight > 0
                     and (cap < math.huge and weight >= cap * (state.SellPercent / 100))
