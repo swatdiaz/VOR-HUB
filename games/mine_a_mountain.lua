@@ -240,7 +240,7 @@ return function(context)
     end
 
     local function setTravelCollision(character, enabled)
-        if not character or not state.NoClipTravel then
+        if not character or (enabled and not state.NoClipTravel) then
             return
         end
         for _, part in ipairs(character:GetDescendants()) do
@@ -389,6 +389,17 @@ return function(context)
         end
         task.wait(0.12)
         local prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or target.Prompt
+        local promptDeadline = os.clock() + 1.25
+        while prompt
+            and prompt.Parent
+            and (not prompt.Enabled or prompt.MaxActivationDistance <= 0)
+            and os.clock() < promptDeadline do
+            task.wait(0.06)
+        end
+        if not prompt or not prompt.Parent or not prompt.Enabled or prompt.MaxActivationDistance <= 0 then
+            state.FailedTargets[target.Crystal] = os.clock() + 6
+            return false, "crystal did not become server-visible"
+        end
         state.Phase = "Mining " .. target.Name
         local activated, promptError = activatePrompt(prompt)
         if not activated then
@@ -483,6 +494,7 @@ return function(context)
             local price = tonumber(item.price) or 0
             local owned = isOwned(category, item.id)
             if not item.adminOnly
+                and (not unownedOnly or price > 0)
                 and (not affordableOnly or price <= available)
                 and (not unownedOnly or not owned) then
                 local stats = item.stats or {}
