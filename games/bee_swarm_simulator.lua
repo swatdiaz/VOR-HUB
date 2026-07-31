@@ -57,6 +57,11 @@ return function(context)
         "Strawberry Field", "Bamboo Field", "Spider Field", "Pineapple Patch", "Pumpkin Patch", "Cactus Field",
         "Rose Field", "Pine Tree Forest", "Stump Field", "Mountain Top Field", "Coconut Field", "Pepper Patch",
     }
+    local QUEST_COLOR_FIELDS = {
+        Red = "Mushroom Field",
+        Blue = "Blue Flower Field",
+        White = "Sunflower Field",
+    }
     local QUEST_GIVERS = {
         "Black Bear", "Brown Bear", "Mother Bear", "Panda Bear", "Science Bear",
         "Polar Bear", "Riley Bee", "Bucko Bee", "Honey Bee", "Onett",
@@ -342,6 +347,12 @@ return function(context)
                     local taskProgress = progress[index]
                     local incomplete = not taskProgress or (tonumber(taskProgress[1]) or 0) < 1
                     local zoneName = type(taskData.Zone) == "string" and taskData.Zone or nil
+                    if not zoneName and type(taskData.Color) == "string" then
+                        zoneName = QUEST_COLOR_FIELDS[taskData.Color]
+                    end
+                    if not zoneName and taskData.Type == "Collect Pollen" then
+                        zoneName = state.Field
+                    end
                     if incomplete and zoneName and findField(zoneName) then
                         return zoneName, activeData.Name, taskProgress
                     end
