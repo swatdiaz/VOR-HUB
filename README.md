@@ -5,7 +5,7 @@ GitHub-backed source for VOR Hub.
 ## Audited immutable loader (recommended)
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/70e41a23b72212584b1f6075dae69e9299171168/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/29121aa1a9e66ac82b28e80d8c55de365753a080/loader.lua"))()
 ```
 
 This entrypoint and the hub release it loads are both commit-pinned. Future
@@ -19,7 +19,7 @@ admin permission can update the original VOR Hub repository.
 
 - `loader.lua` - small immutable game router; it compiles only the detected game module
 - `core/` - shared luxury UI, settings, profiles, access gate, and utilities
-- `games/` - isolated Revive, MyPark, Anime Expeditions, Bid for Anime, Blox Fruits, and Dungeon builders
+- `games/` - isolated Revive, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Blox Fruits, and Dungeon builders
 - `VOR_HUB.lua` - compatibility bootstrap pinned to the audited loader
 - `scripts/validate-refactor.ps1` - Luau/register/flag/controller validation
 - `update-github.ps1` - validates, creates the module and loader commits, updates the bootstrap, then pushes
