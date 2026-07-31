@@ -621,7 +621,7 @@ return function(context)
         local previousPollen = coreStat("Pollen", 0)
         local lastDecrease = os.clock()
         while state.Alive
-            and (state.FullOP or (state.AutoFarm and state.AutoConvert))
+            and (state.FullOP or (state.AutoFarm and (state.AutoConvert or state.AutoQuest)))
             and coreStat("Pollen", 0) > 0
             and os.clock() < deadline do
             local pollen = coreStat("Pollen", 0)
@@ -658,7 +658,7 @@ return function(context)
         if converted then
             return true
         end
-        if not state.AutoConvert and not state.FullOP then
+        if not state.AutoConvert and not state.AutoQuest and not state.FullOP then
             return false, "Conversion stopped"
         end
         return false, "Conversion timed out"
@@ -1183,12 +1183,19 @@ return function(context)
                 end
                 local pollen = coreStat("Pollen", 0)
                 local capacity = math.max(1, coreStat("Capacity", 1))
-                if state.AutoConvert and pollen >= capacity * (state.ConvertAt / 100) then
+                local convertForFarm = state.AutoConvert and pollen >= capacity * (state.ConvertAt / 100)
+                local convertForQuest = (state.FullOP or state.AutoQuest) and pollen >= capacity
+                if convertForFarm or convertForQuest then
                     local ok, message = convertPollen()
                     if not ok then
                         setError(message)
                         task.wait(0.5)
                     end
+                elseif pollen >= capacity then
+                    stopCollection()
+                    state.Phase = "Backpack full"
+                    state.Target = "Enable Auto Convert Honey or Auto Complete Quests"
+                    task.wait(0.5)
                 else
                     step += 1
                     local ok, message = farmStep(step)
