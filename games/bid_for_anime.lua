@@ -386,7 +386,9 @@ return function(context)
             -- The server intentionally treats the first request as a
             -- confirmation prompt. Run the matching second request in a
             -- separate yieldable task so both UI buttons and auto-sell work.
-            task.wait(0.4)
+            -- The server also rate-limits immediate duplicate requests. The
+            -- native UI's human double-click naturally clears that debounce.
+            task.wait(1.2)
             local confirmed, confirmResult = fire(endpoints.SellAll, rarity)
             state.SellBusy = false
             if confirmed then
