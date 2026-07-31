@@ -1340,11 +1340,6 @@ return function(context)
                 selectedFilter = state.SelectedMobName
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
-            elseif state.AutoMagnet and state.CurrentEnemyName then
-                -- Auto Magnet owns one active NPC name at a time. Keep the
-                -- attack queue on that same-name pile instead of letting a
-                -- naturally nearby mob from another group enter the batch.
-                selectedFilter = state.CurrentEnemyName
             end
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
@@ -2138,16 +2133,16 @@ return function(context)
                 -- Grab is off. Fruit independently covers its nearest three.
                 attackTargets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
                 target = attackTargets[1] or target
-            elseif (state.AutoMagnet or state.GatherEnemies or (
+            elseif (state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid
                 and LocalPlayer:GetAttribute("IslandRaiding") == true
             )) and #targets > 1 then
                 attackTargets = {}
-                -- Solix's live credited pattern is a two-rig native window,
-                -- even when its UI advertises a larger maximum. Rotate pairs
-                -- through the same-name Magnet pile instead of hitting only
-                -- one NPC per cycle or sending an oversized rejected batch.
+                -- Explicit Multi Grab and raids use the bundled two-rig window.
+                -- Auto Magnet deliberately stays out of this branch: normal
+                -- Aura rotates its selected target through the dragged pile,
+                -- so Magnet works whether Double Attack is on or off.
                 local multiLimit = math.min(#targets, MULTI_ATTACK_TARGET_LIMIT)
                 for offset = 0, multiLimit - 1 do
                     local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
@@ -3550,10 +3545,11 @@ return function(context)
                 return
             end
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
-            -- One farm target supplies the name and fixed pile anchor. Every
-            -- matching NPC acquired inside Magnet Range joins the same attack
-            -- batch; other names wait for their own target cycle.
-            local targetName = raidGatherEnabled and nil
+            -- Mob Aura supplies the anchor target while Auto Magnet drags every
+            -- living NPC inside its configured range into that target's pile.
+            -- The normal Aura cursor then rotates damage through the pile; it
+            -- does not depend on Double Attack or a same-name filter.
+            local targetName = (raidGatherEnabled or (state.AutoMagnet and state.MobAuraTp)) and nil
                 or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
             local candidates = {}
             local candidateSet = {}
@@ -3565,6 +3561,18 @@ return function(context)
                         and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
                 )
                 local matchesTarget = not targetName or enemyMatches(enemy, targetName)
+                if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
+                    matchesTarget = false
+                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
+                    for expected in pairs(state.ThirdSeaFarmNames) do
+                        if normalized == expected
+                            or string.find(normalized, expected, 1, true)
+                            or string.find(expected, normalized, 1, true) then
+                            matchesTarget = true
+                            break
+                        end
+                    end
+                end
                 local captured = state.AutoMagnet and state.GatherOriginalStates[enemy] ~= nil
                 if enemyRoot and modelAlive(enemy) and (distance <= gatherRange or captured) and insideRaid then
                     if matchesTarget then
@@ -5496,7 +5504,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Auto Magnet captures matching farm targets inside 500, keeps captured piles locked, and multi-hits each same-name group.")
+        ExploitSection:AddLabel("Mob Aura anchors the target while Auto Magnet drags every nearby NPC into its pile; normal Aura rotates damage through them.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle

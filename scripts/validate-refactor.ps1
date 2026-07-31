@@ -154,11 +154,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.11"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.12"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.11 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.12 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -188,19 +188,19 @@ if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $magnetMovementDecoupl
     throw "Auto Magnet must retain a stable 250-stud enemy pull without taking ownership of character movement"
 }
 
-$sameNameMultiKill = $bloxText -match 'local targetName\s*=\s*raidGatherEnabled and nil'
+$mobAuraCrossTypeGather = $bloxText -match 'local targetName\s*=\s*\(raidGatherEnabled or \(state\.AutoMagnet and state\.MobAuraTp\)\) and nil'
 $stickyMagnetCapture = $bloxText -match 'local captured\s*=\s*state\.AutoMagnet and state\.GatherOriginalStates\[enemy\] ~= nil'
 $idleCaptureRetention = $bloxText -match 'state\.AutoMagnet and not farmMagnetActive and not multiGrabEnabled'
-if (-not ($sameNameMultiKill -and $stickyMagnetCapture -and $idleCaptureRetention)) {
-    throw "Auto Magnet must retain acquired same-name piles while using 500 only as the capture-entry radius"
+if (-not ($mobAuraCrossTypeGather -and $stickyMagnetCapture -and $idleCaptureRetention)) {
+    throw "Mob Aura Magnet must drag every in-range NPC into the target pile while retaining captured enemies"
 }
 
-$autoMagnetAuraFilter = $bloxText -match '(?s)elseif state\.AutoMagnet and state\.CurrentEnemyName then.*?selectedFilter = state\.CurrentEnemyName'
-$autoMagnetPairBatch = $bloxText -match 'elseif \(state\.AutoMagnet or state\.GatherEnemies or \('
+$autoMagnetAuraFilterRemoved = $bloxText -notmatch 'elseif state\.AutoMagnet and state\.CurrentEnemyName then'
+$autoMagnetPairBatchRemoved = $bloxText -notmatch 'elseif \(state\.AutoMagnet or state\.GatherEnemies or \('
 $creditedPairLimit = $bloxText -match 'MULTI_ATTACK_TARGET_LIMIT\s*=\s*2'
-$thirdSeaCrossNameOverrideRemoved = $bloxText -notmatch 'if state\.ThirdSeaFarmActive and next\(state\.ThirdSeaFarmNames\)'
-if (-not ($autoMagnetAuraFilter -and $autoMagnetPairBatch -and $creditedPairLimit -and $thirdSeaCrossNameOverrideRemoved)) {
-    throw "Auto Magnet must attack rotating credited pairs from only the active same-name pile"
+$thirdSeaConfiguredGroupGather = $bloxText -match 'if state\.ThirdSeaFarmActive and next\(state\.ThirdSeaFarmNames\)'
+if (-not ($autoMagnetAuraFilterRemoved -and $autoMagnetPairBatchRemoved -and $creditedPairLimit -and $thirdSeaConfiguredGroupGather)) {
+    throw "Auto Magnet must leave normal Aura target rotation independent from Double Attack"
 }
 
 $mobAuraTweenTravel = $bloxText -match 'moveTo\(CFrame\.lookAt\(goalPosition, goalPosition \+ facing\)\)'
@@ -223,7 +223,7 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.11)"
+Write-Host "Visible semantic version: PASS (3.2.12)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
@@ -231,5 +231,5 @@ Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
-Write-Host "Solix Magnet capture retention: PASS (same-name piles, sticky after entry)"
-Write-Host "Solix Magnet multi-hit: PASS (active-name rotating credited pairs)"
+Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
+Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
