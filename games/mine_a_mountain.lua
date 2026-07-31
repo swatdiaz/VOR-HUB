@@ -58,6 +58,7 @@ return function(context)
         WalkSpeed = 24,
         TargetMode = "Best Value",
         MinimumTier = 1,
+        MaximumTier = 0,
         TravelMode = "Tween",
         TravelSpeed = 240,
         FarmOffset = 4,
@@ -326,6 +327,10 @@ return function(context)
         local room = capacity() - carried
         local now = os.clock()
         local candidates = {}
+        local _, pickaxePower = bestPickaxe()
+        local efficientMaximum = state.MaximumTier > 0
+            and state.MaximumTier
+            or math.clamp(math.floor(pickaxePower + 0.6), 1, 11)
 
         for _, folder in ipairs(crystalRoots()) do
             for _, crystal in ipairs(folder:GetChildren()) do
@@ -339,6 +344,7 @@ return function(context)
                     and prompt
                     and prompt.Enabled
                     and tier >= state.MinimumTier
+                    and tier <= efficientMaximum
                     and weight > 0
                     and weight <= room + 0.001
                     and crystal:GetAttribute("Collected") ~= true
@@ -775,6 +781,16 @@ return function(context)
         Default = "All",
         Callback = function(value)
             state.MinimumTier = tierNames[value] or 1
+        end,
+    })
+    TargetSection:AddDropdown({
+        Name = "Maximum Crystal Tier",
+        Description = "Auto avoids high-HP rocks that waste time with the current pickaxe",
+        Flag = "mam_maximum_tier",
+        Options = {"Auto", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine", "Empyrean", "Zenith", "Infinity", "Ultima"},
+        Default = "Auto",
+        Callback = function(value)
+            state.MaximumTier = value == "Auto" and 0 or (tierNames[value] or 0)
         end,
     })
     TargetSection:AddDropdown({
