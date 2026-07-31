@@ -400,7 +400,7 @@ $beeSwarmPages = (
 $beeSwarmCreditedSafety = (
     $beeSwarmText -match 'Moves through nearby field tokens so the server credits the pickup' -and
     $beeSwarmText -match 'Name\s*=\s*"Under-Field Farming"' -and
-    $beeSwarmText -match 'UnderFieldDepth\s*=\s*3' -and
+    $beeSwarmText -match 'UnderFieldDepth\s*=\s*2' -and
     $beeSwarmText -match 'VORBeeUnderFieldHeight' -and
     $beeSwarmText -match 'BeeSwarmUnderField' -and
     $beeSwarmText -notmatch 'hookmetamethod|hookfunction|sethiddenproperty' -and

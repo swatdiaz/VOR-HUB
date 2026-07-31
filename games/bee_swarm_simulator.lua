@@ -117,7 +117,7 @@ return function(context)
         AntiAfkPulseCount = 0,
         NoClip = true,
         UnderField = false,
-        UnderFieldDepth = 3,
+        UnderFieldDepth = 2,
         Field = "Sunflower Field",
         ActiveField = "Sunflower Field",
         ActiveQuest = "None",
@@ -142,6 +142,7 @@ return function(context)
         LastUpgrade = 0,
         LastSprinkler = 0,
         LastHatch = 0,
+        LastCollectorPulse = 0,
         LastHiveSlot = 0,
         LastBadge = 0,
         LastFeed = 0,
@@ -340,6 +341,13 @@ return function(context)
         end
         if connection then
             connection:Disconnect()
+        end
+        if not state.Alive then
+            if state.TravelSerial == travelSerial then
+                state.Traveling = false
+            end
+            clearUnderFieldHold()
+            return false, "Adapter stopped"
         end
         if root.Parent and (root.Position - goalCFrame.Position).Magnitude > 12 then
             for _ = 1, 3 do
@@ -772,16 +780,33 @@ return function(context)
     end
 
     local function beginCollection()
+        local function pulseCollectorInput()
+            if os.clock() - state.LastCollectorPulse < 0.18 then
+                return
+            end
+            state.LastCollectorPulse = os.clock()
+            pcall(function()
+                local camera = workspace.CurrentCamera
+                local viewport = camera and camera.ViewportSize or Vector2.new(800, 600)
+                local point = Vector2.new(viewport.X * 0.5, viewport.Y * 0.5)
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(point, camera and camera.CFrame or CFrame.identity)
+                task.wait(0.035)
+                VirtualUser:Button1Up(point, camera and camera.CFrame or CFrame.identity)
+            end)
+        end
         if state.Collecting then
             -- A manual mouse release can stop Bee Swarm's private collection
             -- loop without changing VOR's state. Run is safe to pulse because
             -- the native module enforces the equipped collector cooldown.
             pcall(LocalCollect.Run)
+            pulseCollectorInput()
             return true
         end
         local ok, err = pcall(LocalCollect.StartCollection)
         if ok then
             state.Collecting = true
+            pulseCollectorInput()
             return true
         end
         setError("Collector start: " .. tostring(err))
@@ -1564,13 +1589,13 @@ return function(context)
     SafetySection:AddSlider({
         Name = "Under-Field Depth",
         Flag = "bee_under_field_depth",
-        Min = 3,
-        Max = 6,
+        Min = 1.5,
+        Max = 2.5,
         Step = 0.5,
-        Default = 3,
+        Default = 2,
         Suffix = " studs",
         Callback = function(value)
-            state.UnderFieldDepth = math.clamp(tonumber(value) or 3, 3, 6)
+            state.UnderFieldDepth = math.clamp(tonumber(value) or 2, 1.5, 2.5)
         end,
     })
     SafetySection:AddToggle({
