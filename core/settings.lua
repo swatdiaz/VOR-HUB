@@ -38,6 +38,7 @@ return function(runtime)
             PlaceIds = {
                 [85576197307056] = true,
                 [80681221431821] = true,
+                [106120159518740] = true,
             },
             Module = "games/practical_basketball.lua",
         },
@@ -102,7 +103,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.4.0",
+        Version = "3.4.1",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",

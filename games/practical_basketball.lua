@@ -16,20 +16,13 @@ return function(context)
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
 
-    local okVirtualInput, VirtualInputManager = pcall(function()
-        return game:GetService("VirtualInputManager")
-    end)
-    if not okVirtualInput then
-        VirtualInputManager = nil
-    end
-
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-    local ShootingPage = addHomeCategory("🎯 Shooting", 1, CATEGORY_DECALS.Shooting)
-    local OffensePage = addHomeCategory("🏀 Offense", 2, CATEGORY_DECALS.Player)
-    local DefensePage = addHomeCategory("🛡️ Defense", 3, CATEGORY_DECALS.Combat)
-    local DribblePage = addHomeCategory("💨 Dribble", 4, CATEGORY_DECALS.Dribble)
-    local VisualsPage = addHomeCategory("👁️ Visuals", 5, CATEGORY_DECALS.Visuals)
-    selectHomeCategory("🎯 Shooting")
+    local ShootingPage = addHomeCategory("Shooting", 1, CATEGORY_DECALS.Shooting)
+    local OffensePage = addHomeCategory("Offense", 2, CATEGORY_DECALS.Player)
+    local DefensePage = addHomeCategory("Defense", 3, CATEGORY_DECALS.Combat)
+    local DribblePage = addHomeCategory("Dribble", 4, CATEGORY_DECALS.Dribble)
+    local VisualsPage = addHomeCategory("Visuals", 5, CATEGORY_DECALS.Visuals)
+    selectHomeCategory("Shooting")
 
     local AutoGreenSection = ShootingPage:AddSection("Auto Green", "Left")
     local MeterSection = ShootingPage:AddSection("Live Meter", "Right")
@@ -47,14 +40,20 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
-        ReleaseTarget = 0.94,
-        ReleaseLead = 0,
         ReleasedThisShot = false,
         WasMeterActive = false,
+        WasServerReleased = true,
         ShotToken = nil,
         ShotStartOffset = nil,
-        ShotPeakTravel = 0,
-        MeterProgress = 0,
+        ShotDirection = nil,
+        ShotTravel = 0,
+        LastShotOffset = nil,
+        LastShotMeter = "Vertical",
+        LastFeedback = "Waiting",
+        PerfectOffsets = {
+            -- Captured from a manual Perfect Release in Learn PB.
+            Vertical = Vector2.new(0, -1.31517029),
+        },
         MeterName = "None",
         LastRelease = "Waiting",
 
@@ -221,7 +220,7 @@ return function(context)
             if holder then
                 for _, child in ipairs(holder:GetChildren()) do
                     if child:IsA("BillboardGui") and child.Name:match("Meter$")
-                        and (child:GetAttribute("Active") == true or child.Enabled) then
+                        and child:GetAttribute("Active") == true then
                         return child
                     end
                 end
@@ -231,17 +230,9 @@ return function(context)
     end
 
     local function releaseShoot()
-        local released = fireRemote("Shoot", {Shoot = false})
-        if VirtualInputManager then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-            end)
-        elseif type(keyrelease) == "function" then
-            pcall(keyrelease, 0x45)
-            pcall(keyrelease, 0x20)
-        end
-        return released
+        -- Never simulate key-up here. The tutorial keyboard component owns the
+        -- physical E state; forcing it up can leave the character pose stuck.
+        return fireRemote("Shoot", {Shoot = false})
     end
 
     local function setSprintHeld(held)
@@ -316,30 +307,17 @@ return function(context)
             meterReleaseLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
         end,
     })
-    AutoGreenSection:AddSlider({
-        Name = "Release Target",
-        Description = "Uses the live meter travel, not a hardcoded hold time",
-        Flag = "practical_basketball_release_target",
-        Min = 70,
-        Max = 100,
-        Step = 1,
-        Default = 94,
-        Suffix = "%",
+    AutoGreenSection:AddInput({
+        Name = "Vertical Perfect Offset",
+        Description = "Exact Learn PB Perfect Release offset; updates automatically after a manual perfect",
+        Flag = "practical_basketball_vertical_perfect_offset",
+        Placeholder = "-1.31517029",
+        Default = "-1.31517029",
         Callback = function(value)
-            state.ReleaseTarget = math.clamp((tonumber(value) or 94) / 100, 0.70, 1)
-        end,
-    })
-    AutoGreenSection:AddSlider({
-        Name = "Release Lead",
-        Description = "Positive values release slightly before the selected target",
-        Flag = "practical_basketball_release_lead",
-        Min = 0,
-        Max = 12,
-        Step = 1,
-        Default = 0,
-        Suffix = "%",
-        Callback = function(value)
-            state.ReleaseLead = math.clamp((tonumber(value) or 0) / 100, 0, 0.12)
+            local parsed = tonumber(value)
+            if parsed then
+                state.PerfectOffsets.Vertical = Vector2.new(0, parsed)
+            end
         end,
     })
     AutoGreenSection:AddButton({
@@ -352,7 +330,8 @@ return function(context)
             meterReleaseLabel.TextColor3 = COLORS.success
         end,
     })
-    AutoGreenSection:AddLabel("Supports Bat, Hoop, Roblox, Rocket, Vertical, and Funnel meters.")
+    AutoGreenSection:AddLabel("Safe release: no hooks, no VirtualInputManager, and no forced E key-up.")
+    AutoGreenSection:AddLabel("A manual Perfect Release teaches VOR the exact offset for that meter style.")
 
     MovementSection:AddToggle({
         Name = "Auto Sprint",
@@ -630,43 +609,78 @@ return function(context)
         end
     end))
 
+    local function shootInputHeld()
+        return UserInputService:IsKeyDown(Enum.KeyCode.E)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Space)
+    end
+
     local function resetShot(offset, token)
         state.ShotToken = token
         state.ShotStartOffset = typeof(offset) == "Vector2" and offset or nil
-        state.ShotPeakTravel = 0
-        state.MeterProgress = 0
+        state.ShotDirection = nil
+        state.ShotTravel = 0
         state.ReleasedThisShot = false
     end
 
     local function updateShooting(character)
         local meter = findActiveMeter(character)
-        local meterActive = meter ~= nil and meter:GetAttribute("Active") ~= false
+        local meterActive = meter ~= nil
         local offset = character and character:GetAttribute("meterOffset")
         local token = character and character:GetAttribute("ShotStartTime")
+        local serverReleased = character and character:GetAttribute("ReleasedShot")
+        local action = character and tostring(character:GetAttribute("Action") or "") or ""
 
         if token ~= state.ShotToken or (meterActive and not state.WasMeterActive) then
             resetShot(offset, token)
         end
         state.WasMeterActive = meterActive
-        state.MeterName = meter and meter.Name:gsub("Meter$", "") or "None"
+        if meter then
+            state.MeterName = meter.Name:gsub("Meter$", "")
+            state.LastShotMeter = state.MeterName
+        elseif not meterActive then
+            state.MeterName = "None"
+        end
 
         if meterActive and typeof(offset) == "Vector2" then
             if not state.ShotStartOffset then
                 state.ShotStartOffset = offset
             end
-            local travel = (offset - state.ShotStartOffset).Magnitude
-            state.ShotPeakTravel = math.max(state.ShotPeakTravel, travel)
-            local predictedTravel = math.max(state.ShotStartOffset.Magnitude * 2, 0.001)
-            state.MeterProgress = math.clamp(travel / predictedTravel, 0, 1.25)
+            state.LastShotOffset = offset
+            local delta = offset - state.ShotStartOffset
+            if delta.Magnitude > 0.00001 and not state.ShotDirection then
+                state.ShotDirection = delta.Unit
+            end
+            if state.ShotDirection then
+                state.ShotTravel = delta:Dot(state.ShotDirection)
+            end
 
-            local releaseAt = math.max(0.55, state.ReleaseTarget - state.ReleaseLead)
-            if state.MeterProgress >= releaseAt
+            local target = state.PerfectOffsets[state.MeterName]
+            if not target and state.ShotDirection then
+                target = state.ShotStartOffset + state.ShotDirection * 0.11655831
+            end
+            local reachedTarget = false
+            if target and state.ShotDirection then
+                local targetTravel = (target - state.ShotStartOffset):Dot(state.ShotDirection)
+                reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
+            elseif target then
+                reachedTarget = (offset - target).Magnitude <= 0.002
+            end
+
+            if reachedTarget
                 and not state.ReleasedThisShot
+                and serverReleased == false
+                and action == "Shooting"
+                and shootInputHeld()
                 and (state.AutoGreen or state.ForceNextGreen) then
                 state.ReleasedThisShot = true
                 state.ForceNextGreen = false
                 if releaseShoot() then
-                    state.LastRelease = string.format("%s at %.1f%%", state.MeterName, state.MeterProgress * 100)
+                    state.LastRelease = string.format(
+                        "%s at (%.5f, %.5f)",
+                        state.MeterName,
+                        offset.X,
+                        offset.Y
+                    )
                     meterReleaseLabel.Text = "Release: " .. state.LastRelease
                     meterReleaseLabel.TextColor3 = COLORS.success
                 else
@@ -675,9 +689,61 @@ return function(context)
                     meterReleaseLabel.TextColor3 = COLORS.error
                 end
             end
-        elseif not meterActive then
-            state.MeterProgress = 0
         end
+
+        if state.WasServerReleased == false and serverReleased == true
+            and typeof(offset) == "Vector2" then
+            state.LastShotOffset = offset
+        end
+        state.WasServerReleased = serverReleased ~= false
+    end
+
+    track(UserInputService.InputEnded:Connect(function(input)
+        if input.KeyCode ~= Enum.KeyCode.E and input.KeyCode ~= Enum.KeyCode.Space then
+            return
+        end
+        local character = resolveCharacter()
+        local offset = character and character:GetAttribute("meterOffset")
+        if typeof(offset) == "Vector2" then
+            state.LastShotOffset = offset
+        end
+    end))
+
+    local interfaceRemotes = remoteRoot and remoteRoot:FindFirstChild("InterfaceService")
+    local showFeedbackRemote = interfaceRemotes and interfaceRemotes:FindFirstChild("ShowFeedback")
+    if showFeedbackRemote and showFeedbackRemote:IsA("RemoteEvent") then
+        local timingNames = {
+            "Very Early",
+            "Early",
+            "Slightly Early",
+            "Good",
+            "Perfect",
+            "Slightly Late",
+            "Late",
+            "Very Late",
+        }
+        track(showFeedbackRemote.OnClientEvent:Connect(function(feedbackCharacter, contest, timingIndex)
+            local character = resolveCharacter()
+            if feedbackCharacter ~= character then
+                return
+            end
+            local index = tonumber(timingIndex)
+            local timingName = timingNames[index] or "Unknown"
+            state.LastFeedback = string.format(
+                "%s Release | %d%% Contested",
+                timingName,
+                math.round(tonumber(contest) or 0)
+            )
+            if index == 5 and typeof(state.LastShotOffset) == "Vector2" then
+                state.PerfectOffsets[state.LastShotMeter] = state.LastShotOffset
+                meterReleaseLabel.Text = string.format(
+                    "Calibrated %s: %.8f",
+                    state.LastShotMeter,
+                    state.LastShotOffset.Y
+                )
+                meterReleaseLabel.TextColor3 = COLORS.success
+            end
+        end))
     end
 
     local function updateAutomation(character, now)
@@ -765,10 +831,16 @@ return function(context)
         local hasBall = character and character:GetAttribute("Basketball") == true
         meterNameLabel.Text = "Meter: " .. state.MeterName
         meterNameLabel.TextColor3 = state.MeterName ~= "None" and COLORS.success or COLORS.muted
-        meterProgressLabel.Text = string.format("Charge: %.1f%% | Target: %.0f%%",
-            state.MeterProgress * 100,
-            math.max(0.55, state.ReleaseTarget - state.ReleaseLead) * 100)
-        meterStateLabel.Text = "Shot state: " .. action
+        local meterOffset = character and character:GetAttribute("meterOffset")
+        local targetOffset = state.PerfectOffsets[state.LastShotMeter]
+        meterProgressLabel.Text = typeof(meterOffset) == "Vector2"
+            and string.format(
+                "Offset Y: %.8f | Perfect: %s",
+                meterOffset.Y,
+                targetOffset and string.format("%.8f", targetOffset.Y) or "learning"
+            )
+            or "Offset: Waiting"
+        meterStateLabel.Text = "Shot state: " .. action .. " | " .. state.LastFeedback
         playerStatusLabel.Text = string.format("Player: %s | Stamina: %.0f", action, stamina)
         ballStatusLabel.Text = ball
             and string.format("Active ball: %.1f studs", ballDistance)
@@ -785,8 +857,12 @@ return function(context)
 
         pcall(function()
             gui:SetAttribute("PracticalBasketballMeter", state.MeterName)
-            gui:SetAttribute("PracticalBasketballMeterProgress", state.MeterProgress)
+            gui:SetAttribute(
+                "PracticalBasketballMeterOffset",
+                character and character:GetAttribute("meterOffset")
+            )
             gui:SetAttribute("PracticalBasketballLastRelease", state.LastRelease)
+            gui:SetAttribute("PracticalBasketballLastFeedback", state.LastFeedback)
             gui:SetAttribute("PracticalBasketballAction", action)
             gui:SetAttribute("PracticalBasketballHasBall", hasBall)
         end)
@@ -812,7 +888,6 @@ return function(context)
         setSprintHeld(false)
         setGuardHeld(false)
         setScreenHeld(false)
-        releaseShoot()
         if workspace.CurrentCamera then
             workspace.CurrentCamera.FieldOfView = originalFov
         end

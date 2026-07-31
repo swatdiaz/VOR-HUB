@@ -249,10 +249,21 @@ if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and
 }
 
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
-$practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?games/practical_basketball\.lua'
+$practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?106120159518740.*?games/practical_basketball\.lua'
 $practicalBasketballCharacter = $practicalBasketballText -match 'workspace:FindFirstChild\("Characters"\)'
 $practicalBasketballAero = $practicalBasketballText -match 'AeroRemoteServices' -and $practicalBasketballText -match 'InputService'
 $practicalBasketballBallTag = $practicalBasketballText -match 'GetTagged\("Basketballs"\)'
+$practicalBasketballSafeRelease = (
+    $practicalBasketballText -notmatch 'GetService\("VirtualInputManager"\)|SendKeyEvent|keyrelease' -and
+    $practicalBasketballText -notmatch 'hookmetamethod|hookfunction' -and
+    $practicalBasketballText -match 'child:GetAttribute\("Active"\)\s*==\s*true' -and
+    $practicalBasketballText -match 'serverReleased\s*==\s*false' -and
+    $practicalBasketballText -match 'shootInputHeld\(\)'
+)
+$practicalBasketballRailIcons = (
+    $uiText -match 'Offense\s*=\s*utf8\.char\(0x1F3C0\)' -and
+    $uiText -match 'Defense\s*=\s*utf8\.char\(0x1F6E1,\s*0xFE0F\)'
+)
 $practicalBasketballPages = (
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Shooting"' -and
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Offense"' -and
@@ -260,7 +271,7 @@ $practicalBasketballPages = (
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Dribble"' -and
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Visuals"'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballPages)) {
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -283,4 +294,4 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
-Write-Host "Practical Basketball support: PASS (native Aero character, inputs, meters, and ball tag)"
+Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"

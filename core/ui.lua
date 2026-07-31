@@ -653,6 +653,8 @@ return function(context)
     }
 
     local iconMap = {
+        Offense = utf8.char(0x1F3C0),
+        Defense = utf8.char(0x1F6E1, 0xFE0F),
         Home = "🏠",
         Farming = "🌾",
         Combat = "⚔️",
