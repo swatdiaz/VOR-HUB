@@ -92,6 +92,14 @@ return function(context)
         HopBusy = false,
         HopMissingScans = 0,
         HopStartedAt = os.clock(),
+        LastCrystalGrowthAt = os.clock(),
+        LastObservedCrystalTotal = 0,
+        GenerationReady = false,
+        StreamingStableFor = 0,
+        StreamingExpanded = false,
+        StreamingRadius = 0,
+        OriginalStreamingTarget = nil,
+        OriginalStreamingMinimum = nil,
         HopStatus = "Watching crystal inventory",
         LegendaryCount = 0,
         MythicCount = 0,
@@ -130,6 +138,59 @@ return function(context)
         Infinity = 10,
         Ultima = 11,
     }
+
+    local function expandMountainStreaming()
+        if type(gethiddenproperty) ~= "function"
+            or type(sethiddenproperty) ~= "function" then
+            return false
+        end
+        if state.OriginalStreamingTarget == nil then
+            pcall(function()
+                state.OriginalStreamingTarget = gethiddenproperty(
+                    workspace,
+                    "StreamingTargetRadius"
+                )
+                state.OriginalStreamingMinimum = gethiddenproperty(
+                    workspace,
+                    "StreamingMinRadius"
+                )
+            end)
+        end
+
+        local mountainRadius = tonumber(workspace:GetAttribute("MountainRadius")) or 800
+        local desiredTarget = math.max(4096, math.ceil(mountainRadius * 3))
+        local desiredMinimum = math.min(desiredTarget, math.max(2048, math.ceil(mountainRadius * 1.5)))
+        local targetOk = pcall(
+            sethiddenproperty,
+            workspace,
+            "StreamingTargetRadius",
+            desiredTarget
+        )
+        local minimumOk = pcall(
+            sethiddenproperty,
+            workspace,
+            "StreamingMinRadius",
+            desiredMinimum
+        )
+        state.StreamingExpanded = targetOk and minimumOk
+        state.StreamingRadius = state.StreamingExpanded and desiredTarget or 0
+
+        if state.StreamingExpanded then
+            task.spawn(function()
+                local center = Vector3.new(
+                    tonumber(workspace:GetAttribute("MountainCenterX")) or 0,
+                    tonumber(workspace:GetAttribute("MountainActualPeakY")) or 0,
+                    tonumber(workspace:GetAttribute("MountainCenterZ")) or 0
+                )
+                pcall(function()
+                    LocalPlayer:RequestStreamAroundAsync(center, 15)
+                end)
+            end)
+        end
+        return state.StreamingExpanded
+    end
+
+    expandMountainStreaming()
 
     local ShopCatalog
     pcall(function()
@@ -1398,6 +1459,7 @@ return function(context)
         end,
     })
 
+    TargetSection:AddLabel("Auto Mine Search: Entire mountain (expanded streaming radius)")
     TargetSection:AddDropdown({
         Name = "Target Priority",
         Flag = "mam_target_priority",
@@ -1803,6 +1865,18 @@ return function(context)
             local legendary, mythic, total, rootCount = rareCrystalCounts()
             state.LegendaryCount = legendary
             state.MythicCount = mythic
+            local now = os.clock()
+            if total > state.LastObservedCrystalTotal then
+                state.LastCrystalGrowthAt = now
+            end
+            state.LastObservedCrystalTotal = total
+            state.StreamingStableFor = now - state.LastCrystalGrowthAt
+            state.GenerationReady = workspace:GetAttribute("MountainGenerating") == false
+                and workspace:GetAttribute("GroundStrataBaked") == true
+                and rootCount > 0
+                and state.StreamingStableFor >= 15
+                and (state.StreamingExpanded
+                    or now - state.HopStartedAt >= 30)
             if enabled and not state.HopBusy then
                 local missing = {}
                 if state.HopNoLegendary and legendary == 0 then
@@ -1812,8 +1886,7 @@ return function(context)
                     table.insert(missing, "no Mythic")
                 end
 
-                local replicationReady = rootCount > 0
-                    and os.clock() - state.HopStartedAt >= 8
+                local replicationReady = state.GenerationReady
                 if replicationReady and #missing > 0 then
                     state.HopMissingScans += 1
                     state.HopStatus = string.format(
@@ -1827,7 +1900,18 @@ return function(context)
                 else
                     state.HopMissingScans = 0
                     if not replicationReady then
-                        state.HopStatus = "Waiting for mountain replication"
+                        if workspace:GetAttribute("MountainGenerating") == true
+                            or workspace:GetAttribute("GroundStrataBaked") ~= true then
+                            state.HopStatus = "Waiting for mountain generation"
+                        elseif not state.StreamingExpanded
+                            and now - state.HopStartedAt < 30 then
+                            state.HopStatus = "Waiting for full mountain stream"
+                        else
+                            state.HopStatus = string.format(
+                                "Loading full mountain (%.0f/15s stable)",
+                                math.min(15, state.StreamingStableFor)
+                            )
+                        end
                     else
                         state.HopStatus = string.format(
                             "Watching %d crystal(s)",
@@ -1995,6 +2079,10 @@ return function(context)
             gui:SetAttribute("MineAMountainHopNoLegendary", state.HopNoLegendary)
             gui:SetAttribute("MineAMountainHopNoMythic", state.HopNoMythic)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
+            gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
+            gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)
+            gui:SetAttribute("MineAMountainStreamingExpanded", state.StreamingExpanded)
+            gui:SetAttribute("MineAMountainStreamingRadius", state.StreamingRadius)
             gui:SetAttribute("MineAMountainTeleportResumeQueued", state.TeleportResumeQueued)
             gui:SetAttribute("MineAMountainTeleportQueueMethod", state.TeleportQueueMethod)
             gui:SetAttribute("MineAMountainPlotCapacity", tonumber(statValue("PlotCapacity", 0)) or 0)
@@ -2034,6 +2122,24 @@ return function(context)
             state.FloatMover:Destroy()
             state.FloatMover = nil
             state.FloatRoot = nil
+        end
+        if type(sethiddenproperty) == "function" then
+            if state.OriginalStreamingMinimum ~= nil then
+                pcall(
+                    sethiddenproperty,
+                    workspace,
+                    "StreamingMinRadius",
+                    state.OriginalStreamingMinimum
+                )
+            end
+            if state.OriginalStreamingTarget ~= nil then
+                pcall(
+                    sethiddenproperty,
+                    workspace,
+                    "StreamingTargetRadius",
+                    state.OriginalStreamingTarget
+                )
+            end
         end
         setGodspeedPickaxe(false)
         targetHighlight:Destroy()

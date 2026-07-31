@@ -313,6 +313,12 @@ $mineMountainRareHop = (
     $mineMountainText -match 'Name\s*=\s*"Hop When No Legendary"' -and
     $mineMountainText -match 'Name\s*=\s*"Hop When No Mythic"' -and
     $mineMountainText -match 'local function rareCrystalCounts\(\)' -and
+    $mineMountainText -match 'workspace:GetAttribute\("MountainGenerating"\)\s*==\s*false' -and
+    $mineMountainText -match 'workspace:GetAttribute\("GroundStrataBaked"\)\s*==\s*true' -and
+    $mineMountainText -match '"StreamingTargetRadius",\s*\r?\n\s*desiredTarget' -and
+    $mineMountainText -match '"StreamingMinRadius",\s*\r?\n\s*desiredMinimum' -and
+    $mineMountainText -match 'LocalPlayer:RequestStreamAroundAsync\(center,\s*15\)' -and
+    $mineMountainText -match 'state\.StreamingStableFor\s*>=\s*15' -and
     $mineMountainText -match 'state\.HopMissingScans\s*>=\s*3' -and
     $mineMountainText -match 'local function queueMountainResume\(\)' -and
     $mineMountainText -match 'VORMountainResumeHopLegendary' -and
