@@ -30,6 +30,7 @@ return function(context)
     local ShopPage = addHomeCategory("Shop", 3, CATEGORY_DECALS.Player)
     local RewardsPage = addHomeCategory("Rewards", 4, CATEGORY_DECALS.Overnight)
     local StatusPage = addHomeCategory("Status", 5, CATEGORY_DECALS.Visuals)
+    local FundamentalsPage = addHomeCategory("Fundamentals", 6, CATEGORY_DECALS.Player)
     selectHomeCategory("Farming")
 
     local MainFarmSection = FarmingPage:AddSection("OP Mining Loop", "Left")
@@ -42,7 +43,8 @@ return function(context)
     local StoreSection = ShopPage:AddSection("Equipment Shop", "Left")
     local TravelSection = ShopPage:AddSection("Travel", "Right")
     local RewardSection = RewardsPage:AddSection("Reward Claims", "Left")
-    local SafetySection = RewardsPage:AddSection("Safety & Session", "Right")
+    local SafetySection = FundamentalsPage:AddSection("Character Fundamentals", "Left")
+    local VisibilitySection = FundamentalsPage:AddSection("Visibility Research", "Right")
     local StatsSection = StatusPage:AddSection("Live Player Stats", "Left")
     local AdapterSection = StatusPage:AddSection("Adapter State", "Right")
 
@@ -94,6 +96,13 @@ return function(context)
         HighTierHunt = environment.VORMountainResumeHighTierHunt == true,
         HopBusy = false,
         HopMissingScans = 0,
+        HopCountdownDuration = 15,
+        HopCountdownEndsAt = nil,
+        HopCountdownRemaining = 0,
+        HopCountdownFrame = nil,
+        HopCountdownTimerLabel = nil,
+        HopCountdownMessageLabel = nil,
+        HopCountdownBar = nil,
         HopStartedAt = os.clock(),
         LastCrystalGrowthAt = os.clock(),
         LastObservedCrystalTotal = 0,
@@ -217,6 +226,205 @@ return function(context)
 
     local function notify(title, message, duration)
         Window:Notify(title, tostring(message), duration or 4)
+    end
+
+    local function addCorner(instance, radius)
+        local object = Instance.new("UICorner")
+        object.CornerRadius = UDim.new(0, radius or 10)
+        object.Parent = instance
+        return object
+    end
+
+    local function addStroke(instance, color, thickness, transparency)
+        local object = Instance.new("UIStroke")
+        object.Color = color
+        object.Thickness = thickness or 1
+        object.Transparency = transparency or 0
+        object.Parent = instance
+        return object
+    end
+
+    local function hopCountdownLabel(parent, text, size, position, color, textSize, font)
+        local object = Instance.new("TextLabel")
+        object.BackgroundTransparency = 1
+        object.BorderSizePixel = 0
+        object.Size = size
+        object.Position = position
+        object.Font = font or Enum.Font.GothamMedium
+        object.Text = text
+        object.TextColor3 = color
+        object.TextSize = textSize
+        object.TextXAlignment = Enum.TextXAlignment.Left
+        object.TextYAlignment = Enum.TextYAlignment.Center
+        object.ZIndex = 1203
+        object.Parent = parent
+        return object
+    end
+
+    local function ensureHopCountdown()
+        if state.HopCountdownFrame and state.HopCountdownFrame.Parent then
+            return state.HopCountdownFrame
+        end
+
+        local frame = Instance.new("Frame")
+        frame.Name = "VORMountainHopCountdown"
+        frame.AnchorPoint = Vector2.new(0.5, 0)
+        frame.Position = UDim2.new(0.5, 0, 0, -130)
+        frame.Size = UDim2.fromOffset(430, 108)
+        frame.BackgroundColor3 = COLORS.surfaceRaised
+        frame.BorderSizePixel = 0
+        frame.ZIndex = 1200
+        frame.Parent = gui
+        addCorner(frame, 14)
+        addStroke(frame, COLORS.accentBright, 1.4, 0.12)
+
+        local gradient = Instance.new("UIGradient")
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, COLORS.surfaceRaised),
+            ColorSequenceKeypoint.new(1, COLORS.surface),
+        })
+        gradient.Rotation = 12
+        gradient.Parent = frame
+
+        local accent = Instance.new("Frame")
+        accent.Name = "Accent"
+        accent.Size = UDim2.new(0, 5, 1, -18)
+        accent.Position = UDim2.fromOffset(0, 9)
+        accent.BackgroundColor3 = COLORS.accentBright
+        accent.BorderSizePixel = 0
+        accent.ZIndex = 1202
+        accent.Parent = frame
+        addCorner(accent, 4)
+
+        local iconPlate = Instance.new("Frame")
+        iconPlate.Name = "IconPlate"
+        iconPlate.Size = UDim2.fromOffset(54, 54)
+        iconPlate.Position = UDim2.fromOffset(18, 16)
+        iconPlate.BackgroundColor3 = COLORS.accent
+        iconPlate.BackgroundTransparency = 0.76
+        iconPlate.BorderSizePixel = 0
+        iconPlate.ZIndex = 1202
+        iconPlate.Parent = frame
+        addCorner(iconPlate, 12)
+        addStroke(iconPlate, COLORS.accentBright, 1, 0.45)
+
+        local icon = hopCountdownLabel(
+            iconPlate,
+            utf8.char(0x26A1),
+            UDim2.fromScale(1, 1),
+            UDim2.fromOffset(0, 0),
+            COLORS.accentBright,
+            27,
+            Enum.Font.GothamBold
+        )
+        icon.TextXAlignment = Enum.TextXAlignment.Center
+
+        hopCountdownLabel(
+            frame,
+            "HIGH-TIER SWEEP COMPLETE",
+            UDim2.fromOffset(270, 22),
+            UDim2.fromOffset(86, 12),
+            COLORS.accentBright,
+            13,
+            Enum.Font.GothamBold
+        )
+        state.HopCountdownMessageLabel = hopCountdownLabel(
+            frame,
+            "Rescanning Legendary through Ultima...",
+            UDim2.fromOffset(280, 32),
+            UDim2.fromOffset(86, 34),
+            COLORS.muted,
+            11,
+            Enum.Font.GothamMedium
+        )
+        state.HopCountdownMessageLabel.TextWrapped = true
+
+        state.HopCountdownTimerLabel = hopCountdownLabel(
+            frame,
+            "15s",
+            UDim2.fromOffset(62, 42),
+            UDim2.new(1, -76, 0, 22),
+            COLORS.warning,
+            24,
+            Enum.Font.GothamBold
+        )
+        state.HopCountdownTimerLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+        local barTrack = Instance.new("Frame")
+        barTrack.Name = "CountdownTrack"
+        barTrack.Size = UDim2.new(1, -36, 0, 5)
+        barTrack.Position = UDim2.new(0, 18, 1, -17)
+        barTrack.BackgroundColor3 = COLORS.surface
+        barTrack.BackgroundTransparency = 0.12
+        barTrack.BorderSizePixel = 0
+        barTrack.ZIndex = 1202
+        barTrack.Parent = frame
+        addCorner(barTrack, 4)
+
+        local bar = Instance.new("Frame")
+        bar.Name = "CountdownFill"
+        bar.Size = UDim2.fromScale(1, 1)
+        bar.BackgroundColor3 = COLORS.accentBright
+        bar.BorderSizePixel = 0
+        bar.ZIndex = 1203
+        bar.Parent = barTrack
+        addCorner(bar, 4)
+        local barGradient = Instance.new("UIGradient")
+        barGradient.Color = ColorSequence.new(COLORS.accentBright, COLORS.warning)
+        barGradient.Parent = bar
+
+        state.HopCountdownFrame = frame
+        state.HopCountdownBar = bar
+        TweenService:Create(
+            frame,
+            TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            {Position = UDim2.new(0.5, 0, 0, 22)}
+        ):Play()
+        return frame
+    end
+
+    local function updateHopCountdown(remaining)
+        ensureHopCountdown()
+        local seconds = math.max(0, math.ceil(remaining))
+        state.HopCountdownRemaining = seconds
+        if state.HopCountdownTimerLabel then
+            state.HopCountdownTimerLabel.Text = string.format("%02ds", seconds)
+        end
+        if state.HopCountdownMessageLabel then
+            state.HopCountdownMessageLabel.Text = "Rescanning Legendary through Ultima. A new crystal cancels this hop."
+        end
+        if state.HopCountdownBar then
+            local ratio = math.clamp(remaining / state.HopCountdownDuration, 0, 1)
+            TweenService:Create(
+                state.HopCountdownBar,
+                TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Size = UDim2.new(ratio, 0, 1, 0)}
+            ):Play()
+        end
+    end
+
+    local function closeHopCountdown()
+        state.HopCountdownEndsAt = nil
+        state.HopCountdownRemaining = 0
+        state.HopCountdownTimerLabel = nil
+        state.HopCountdownMessageLabel = nil
+        state.HopCountdownBar = nil
+        local frame = state.HopCountdownFrame
+        state.HopCountdownFrame = nil
+        if not (frame and frame.Parent) then
+            return
+        end
+        local animation = TweenService:Create(
+            frame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Position = UDim2.new(0.5, 0, 0, -130), BackgroundTransparency = 1}
+        )
+        animation.Completed:Once(function()
+            if frame.Parent then
+                frame:Destroy()
+            end
+        end)
+        animation:Play()
     end
 
     local function realStats()
@@ -1078,6 +1286,7 @@ return function(context)
             return
         end
         state.HopBusy = true
+        closeHopCountdown()
         state.HopStatus = "Selling cargo before server hop"
         local _, count = cargo()
         if count > 0 then
@@ -1546,6 +1755,9 @@ return function(context)
         Callback = function(enabled)
             state.HighTierHunt = enabled
             state.HopMissingScans = 0
+            if not enabled then
+                closeHopCountdown()
+            end
             environment.VORMountainResumeHopLegendary = false
             environment.VORMountainResumeHopMythic = false
             environment.VORMountainResumeHighTierHunt = enabled
@@ -1792,6 +2004,10 @@ return function(context)
     })
     RewardSection:AddLabel("Group and tutorial rewards are still validated by the game server.")
 
+    VisibilitySection:AddLabel("Server invisibility: unavailable in the current game build.")
+    VisibilitySection:AddLabel("No fake local-only transparency toggle is included.")
+    VisibilitySection:AddLabel("The game must expose a replicated hidden state before other players can truly stop rendering you.")
+
     SafetySection:AddToggle({
         Name = "Freeze Guard",
         Description = "Returns to safety before the exposure bar finishes murdering you",
@@ -1979,16 +2195,33 @@ return function(context)
             if enabled and not state.HopBusy then
                 local replicationReady = state.GenerationReady
                 if replicationReady and highTierTotal == 0 then
-                    state.HopMissingScans += 1
+                    if not state.HopCountdownEndsAt then
+                        state.HopCountdownEndsAt = now + state.HopCountdownDuration
+                    end
+                    local remaining = math.max(0, state.HopCountdownEndsAt - now)
+                    updateHopCountdown(remaining)
                     state.HopStatus = string.format(
-                        "All high tiers gone (%d/3 checks)",
-                        state.HopMissingScans
+                        "No high tiers detected - rescanning before hop (%ds)",
+                        math.max(0, math.ceil(remaining))
                     )
-                    if state.HopMissingScans >= 3 then
-                        task.spawn(hopToFreshServer, "all high tiers gone")
+                    if remaining <= 0 then
+                        local _, finalHighTierTotal = rareCrystalCounts()
+                        if finalHighTierTotal == 0 then
+                            closeHopCountdown()
+                            task.spawn(hopToFreshServer, "all high tiers gone after 15-second rescan")
+                        else
+                            closeHopCountdown()
+                            state.HopStatus = string.format(
+                                "Hop canceled - %d new high-tier crystal(s)",
+                                finalHighTierTotal
+                            )
+                        end
                     end
                 else
                     state.HopMissingScans = 0
+                    if state.HopCountdownEndsAt or state.HopCountdownFrame then
+                        closeHopCountdown()
+                    end
                     if not replicationReady then
                         if mountainGenerating ~= false
                             or groundStrataBaked == false then
@@ -2012,6 +2245,9 @@ return function(context)
                 end
             elseif not enabled then
                 state.HopMissingScans = 0
+                if state.HopCountdownEndsAt or state.HopCountdownFrame then
+                    closeHopCountdown()
+                end
                 state.HopStatus = "High-tier hunt and hop disabled"
             end
             task.wait(1)
@@ -2221,6 +2457,8 @@ return function(context)
             gui:SetAttribute("MineAMountainBuriedCrystalCount", state.BuriedCrystalCount)
             gui:SetAttribute("MineAMountainFloorRecoveries", state.FloorRecoveries)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
+            gui:SetAttribute("MineAMountainHopCountdownActive", state.HopCountdownEndsAt ~= nil)
+            gui:SetAttribute("MineAMountainHopCountdownRemaining", state.HopCountdownRemaining)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)
             gui:SetAttribute("MineAMountainStreamingExpanded", state.StreamingExpanded)
@@ -2238,6 +2476,7 @@ return function(context)
 
     track(gui.Destroying:Connect(function()
         state.Alive = false
+        closeHopCountdown()
         RunService:UnbindFromRenderStep(speedBindName)
         local character, humanoid = characterParts()
         setTravelCollision(character, false)

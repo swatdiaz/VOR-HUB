@@ -269,7 +269,10 @@ $mineMountainPages = (
     $mineMountainText -match 'addHomeCategory\("Upgrades"' -and
     $mineMountainText -match 'addHomeCategory\("Shop"' -and
     $mineMountainText -match 'addHomeCategory\("Rewards"' -and
-    $mineMountainText -match 'addHomeCategory\("Status"'
+    $mineMountainText -match 'addHomeCategory\("Status"' -and
+    $mineMountainText -match 'addHomeCategory\("Fundamentals"' -and
+    $mineMountainText -match 'FundamentalsPage:AddSection\("Character Fundamentals"' -and
+    $mineMountainText -match 'No fake local-only transparency toggle is included'
 )
 $mineMountainIndependentPurchases = (
     $mineMountainText -match 'local independentAutoBuy\s*=\s*state\.AutoPickaxe' -and
@@ -344,7 +347,12 @@ $mineMountainRareHop = (
     $mineMountainText -match 'LocalPlayer:RequestStreamAroundAsync\(center,\s*15\)' -and
     $mineMountainText -match 'state\.StreamingStableFor\s*>=\s*15' -and
     $mineMountainText -match 'replicationReady\s*and\s*highTierTotal\s*==\s*0' -and
-    $mineMountainText -match 'state\.HopMissingScans\s*>=\s*3' -and
+    $mineMountainText -match 'HopCountdownDuration\s*=\s*15' -and
+    $mineMountainText -match 'local function ensureHopCountdown\(\)' -and
+    $mineMountainText -match 'local function updateHopCountdown\(remaining\)' -and
+    $mineMountainText -match 'local function closeHopCountdown\(\)' -and
+    $mineMountainText -match 'finalHighTierTotal\s*==\s*0' -and
+    $mineMountainText -match 'MineAMountainHopCountdownRemaining' -and
     $mineMountainText -match 'local function queueMountainResume\(\)' -and
     $mineMountainText -match 'VORMountainResumeHighTierHunt' -and
     $mineMountainText -match 'TeleportService:TeleportToPlaceInstance\(game\.PlaceId,\s*selected\.id,\s*LocalPlayer\)'
