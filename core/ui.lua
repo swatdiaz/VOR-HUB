@@ -656,7 +656,10 @@ return function(context)
         Offense = utf8.char(0x1F3C0),
         Defense = utf8.char(0x1F6E1, 0xFE0F),
         Home = "🏠",
-        Farming = "🌾",
+        Farming = utf8.char(0x1F33E),
+        Quests = utf8.char(0x1F4DC),
+        Progression = utf8.char(0x2B06, 0xFE0F),
+        Utilities = utf8.char(0x1F9F0),
         Combat = "⚔️",
         Mastery = "⭐",
         Shop = "🛒",
@@ -681,7 +684,7 @@ return function(context)
         Economy = "💰",
         Upgrades = "⬆️",
         Rewards = "🎁",
-        Status = "📊",
+        Status = utf8.char(0x1F4CA),
     }
 
     local function setProfileState(text, color)
@@ -2422,6 +2425,8 @@ return function(context)
         local launchOrder
         if SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key == "MineAMountain" then
             launchOrder = {"Farming", "Upgrades", "Shop", "Rewards", "Status"}
+        elseif SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key == "BeeSwarm" then
+            launchOrder = {"Farming", "Quests", "Progression", "Utilities", "Status"}
         elseif self.Pages.Shooting then
             launchOrder = {"Shooting", "Offense", "Defense", "Dribble", "Visuals"}
         else

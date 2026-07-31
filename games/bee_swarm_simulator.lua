@@ -246,6 +246,17 @@ return function(context)
         if connection then
             connection:Disconnect()
         end
+        if root.Parent and (root.Position - goalCFrame.Position).Magnitude > 12 then
+            for _ = 1, 3 do
+                character:PivotTo(goalCFrame)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.12)
+                if (root.Position - goalCFrame.Position).Magnitude <= 12 then
+                    break
+                end
+            end
+        end
         state.Traveling = false
         if state.NoClip then
             setTravelCollision(character, true)

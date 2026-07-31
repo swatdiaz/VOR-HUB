@@ -244,7 +244,7 @@ $bidAnimeNavigationIcons = (
     $uiText -match '(?m)^\s*Economy\s*=\s*"[^"]+"' -and
     $uiText -match '(?m)^\s*Upgrades\s*=\s*"[^"]+"' -and
     $uiText -match '(?m)^\s*Rewards\s*=\s*"[^"]+"' -and
-    $uiText -match '(?m)^\s*Status\s*=\s*"[^"]+"'
+    $uiText -match '(?m)^\s*Status\s*=\s*("[^"]+"|utf8\.char\(0x1F4CA\))'
 )
 if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and $bidAnimeAdminKitAbsent -and $bidAnimeNavigationIcons)) {
     throw "Bid for Anime routing, auction payload, auto-farm, or AdminKit exclusion contract failed"
@@ -394,7 +394,15 @@ $beeSwarmCreditedSafety = (
     $beeSwarmText -notmatch 'hookmetamethod|hookfunction|sethiddenproperty' -and
     $beeSwarmText -notmatch 'Pollen\s*=\s*math\.huge|Honey\s*=\s*math\.huge'
 )
-if (-not ($beeSwarmRouted -and $beeSwarmNativeLoop -and $beeSwarmPages -and $beeSwarmCreditedSafety)) {
+$beeSwarmNavigation = (
+    $uiText -match 'Quests\s*=\s*utf8\.char\(0x1F4DC\)' -and
+    $uiText -match 'Progression\s*=\s*utf8\.char\(0x2B06,\s*0xFE0F\)' -and
+    $uiText -match 'Utilities\s*=\s*utf8\.char\(0x1F9F0\)' -and
+    $uiText -match 'Status\s*=\s*utf8\.char\(0x1F4CA\)' -and
+    $uiText -match 'ActiveGame\.Key\s*==\s*"BeeSwarm"' -and
+    $uiText -match '\{"Farming",\s*"Quests",\s*"Progression",\s*"Utilities",\s*"Status"\}'
+)
+if (-not ($beeSwarmRouted -and $beeSwarmNativeLoop -and $beeSwarmPages -and $beeSwarmCreditedSafety -and $beeSwarmNavigation)) {
     throw "Bee Swarm routing, credited farming loop, navigation, or safety contract failed"
 }
 
