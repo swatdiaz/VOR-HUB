@@ -1684,7 +1684,7 @@ return function(context)
         while state.Alive do
             local now = os.clock()
             if (state.FullOP or state.AutoQuest)
-                and now - state.LastQuest >= 45
+                and now - state.LastQuest >= 8
                 and not state.Traveling
                 and not state.ConversionStarted
                 and questDialogueNeeded() then
