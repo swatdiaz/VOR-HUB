@@ -518,7 +518,9 @@ return function(context)
         end
         local radiusX = math.max(4, zone.Size.X * 0.5 * state.FieldRadius)
         local radiusZ = math.max(4, zone.Size.Z * 0.5 * state.FieldRadius)
-        local y = zone.Size.Y * 0.5 + 3.2
+        -- Root height that actually overlaps the field's touch volume. Higher
+        -- offsets can look fine while CurrentZone never changes.
+        local y = zone.Size.Y * 0.5 + 2
         local angle = step * 0.72
         local localPoint
         if state.Pattern == "Zigzag" then
@@ -547,7 +549,7 @@ return function(context)
         end
         local surfacePoint = Vector3.new(
             targetPoint.X,
-            zone.Position.Y + zone.Size.Y * 0.5 + 3.2,
+            zone.Position.Y + zone.Size.Y * 0.5 + 1.9,
             targetPoint.Z
         )
         local reached, err = travelTo(CFrame.new(surfacePoint), "Entering " .. fieldName, true)
