@@ -400,14 +400,13 @@ return function(context)
             state.FailedTargets[target.Crystal] = os.clock() + 6
             return false, "crystal did not become server-visible"
         end
-        state.Phase = "Mining " .. target.Name
-        local activated, promptError = activatePrompt(prompt)
-        if not activated then
-            return false, promptError
-        end
-
-        local deadline = os.clock() + 1.5
-        while state.Alive and os.clock() < deadline do
+        local deadline = os.clock() + 18
+        local hit = 0
+        while state.Alive
+            and (state.Master or state.AutoFarm)
+            and os.clock() < deadline
+            and target.Crystal.Parent
+            and target.Crystal:GetAttribute("Value") ~= nil do
             local nextWeight, nextCount = cargo()
             if nextCount > beforeCount
                 or nextWeight > beforeWeight + 0.001
@@ -417,7 +416,37 @@ return function(context)
                 state.LastError = "None"
                 return true
             end
-            task.wait(0.08)
+
+            prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or prompt
+            local readyDeadline = os.clock() + 1.5
+            while prompt
+                and prompt.Parent
+                and (not prompt.Enabled or prompt.MaxActivationDistance <= 0)
+                and os.clock() < readyDeadline do
+                task.wait(0.05)
+            end
+            if not prompt or not prompt.Parent then
+                break
+            end
+            if prompt.Enabled and prompt.MaxActivationDistance > 0 then
+                hit += 1
+                state.Phase = string.format("Mining %s (hit %d)", target.Name, hit)
+                local activated, promptError = activatePrompt(prompt)
+                if not activated then
+                    return false, promptError
+                end
+            end
+            task.wait(0.12)
+        end
+
+        local nextWeight, nextCount = cargo()
+        if nextCount > beforeCount
+            or nextWeight > beforeWeight + 0.001
+            or not target.Crystal.Parent
+            or target.Crystal:GetAttribute("Value") == nil then
+            state.ConsecutiveFailures = 0
+            state.LastError = "None"
+            return true
         end
         state.FailedTargets[target.Crystal] = os.clock() + 4
         state.ConsecutiveFailures += 1
@@ -972,14 +1001,13 @@ return function(context)
             if farmEnabled then
                 local weight = cargo()
                 local cap = capacity()
-                local freezing = LocalPlayer:GetAttribute("IsFreezing") == true
                 local currentAir = tonumber(statValue("CurrentAir", 0)) or 0
                 local airCapacity = math.max(1, tonumber(statValue("AirCapacity", 1)) or 1)
-                -- FreezeExposure rises while the player recovers at base, so it
-                -- is telemetry, not a direct danger percentage. CurrentAir and
-                -- the server's IsFreezing state are the credited safety signals.
+                -- FreezeExposure rises while the player recovers at base and
+                -- IsFreezing only means the cold zone is active. CurrentAir is
+                -- the server-replicated danger signal that actually counts down.
                 local mustEscape = state.FreezeGuard
-                    and (freezing or currentAir <= math.max(1, airCapacity * 0.12))
+                    and currentAir <= math.max(1, airCapacity * 0.12)
                 local shouldSell = (state.Master or state.AutoSell)
                     and weight > 0
                     and (cap < math.huge and weight >= cap * (state.SellPercent / 100))
