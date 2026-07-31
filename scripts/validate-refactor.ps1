@@ -276,6 +276,28 @@ $mineMountainIndependentPurchases = (
     $mineMountainText -match 'os\.clock\(\)\s*-\s*state\.LastAutoPurchase\s*>=\s*1\.25' -and
     $mineMountainText -match 'PurchaseBusy'
 )
+$mineMountainGodspeed = (
+    $mineMountainText -match 'Name\s*=\s*"Godspeed Multi-Mine"' -and
+    $mineMountainText -match 'local function nearbyGodspeedPrompts\(\)' -and
+    $mineMountainText -match 'local function runGodspeedBatch\(\)' -and
+    $mineMountainText -match 'task\.spawn\(function\(\)\s*\r?\n\s*local ok = activatePrompt\(candidate\.Prompt\)' -and
+    $mineMountainText -match 'Godspeed credited %d/%d crystals' -and
+    $mineMountainText -match 'reservedWeight \+ candidate\.Weight <= room'
+)
+$mineMountainPickaxeSpeed = (
+    $mineMountainText -match 'Name\s*=\s*"Godspeed Pickaxe"' -and
+    $mineMountainText -match 'local function setGodspeedPickaxe\(enabled\)' -and
+    $mineMountainText -match 'tool:SetAttribute\("NoSwingCooldown",\s*true\)' -and
+    $mineMountainText -match 'setGodspeedPickaxe\(false\)'
+)
+$mineMountainPlotLuck = (
+    $mineMountainText -match 'Name\s*=\s*"Auto Upgrade Plot Slots"' -and
+    $mineMountainText -match 'Remotes\.UpgradePlotCapacity:FireServer\(\)' -and
+    $mineMountainText -match 'Name\s*=\s*"Auto Place Best Crystals"' -and
+    $mineMountainText -match 'local function placeBestPlotCrystals\(manual\)' -and
+    $mineMountainText -match 'Remotes\.PlotPlaceRequest:FireServer\(tool\.Name,\s*position,\s*0,\s*tool\)' -and
+    $mineMountainText -match 'PlotLuck'
+)
 $mineMountainMovementSafety = (
     $mineMountainText -match 'Name\s*=\s*"Farm Float"' -and
     $mineMountainText -match 'VORMountainHeightHold' -and
@@ -288,8 +310,8 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
 )
 $mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
-if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainMovementSafety -and $mineMountainAdminAbsent)) {
-    throw "Mine a Mountain routing, credited loop, progression, independent purchases, movement safety, navigation, or admin-remote exclusion contract failed"
+if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainGodspeed -and $mineMountainPickaxeSpeed -and $mineMountainPlotLuck -and $mineMountainMovementSafety -and $mineMountainAdminAbsent)) {
+    throw "Mine a Mountain routing, credited loop, Godspeed batching, pickaxe speed, plot luck, progression, purchases, movement safety, navigation, or admin-remote exclusion contract failed"
 }
 
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
@@ -381,7 +403,7 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
-Write-Host "Mine a Mountain support: PASS (credited mining/selling, independent purchases, movement safety, efficient tiering, no admin remotes)"
+Write-Host "Mine a Mountain support: PASS (Godspeed mining/pickaxe, plot luck automation, purchases, movement safety, no admin remotes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
