@@ -413,6 +413,13 @@ return function(context)
             and os.clock() < deadline
             and target.Crystal.Parent
             and target.Crystal:GetAttribute("Value") ~= nil do
+            local currentAir = tonumber(statValue("CurrentAir", 0)) or 0
+            local airCapacity = math.max(1, tonumber(statValue("AirCapacity", 1)) or 1)
+            if state.FreezeGuard
+                and LocalPlayer:GetAttribute("IsFreezing") == true
+                and currentAir <= math.max(1, airCapacity * 0.12) then
+                return false, "freeze guard interrupted mining"
+            end
             local nextWeight, nextCount = cargo()
             if nextCount > beforeCount
                 or nextWeight > beforeWeight + 0.001
@@ -687,6 +694,30 @@ return function(context)
     local function goHome(mode)
         Remotes.GoHome:FireServer(mode)
         state.Phase = "Travel request: " .. tostring(mode)
+    end
+
+    local function emergencyReviveAtBase()
+        local _, humanoid = characterParts()
+        state.Phase = "Emergency cold reset"
+        if humanoid and humanoid.Health > 0 then
+            humanoid.Health = 0
+            task.wait(0.15)
+        end
+        if Remotes:FindFirstChild("ReviveBase") then
+            Remotes.ReviveBase:FireServer()
+        end
+        local deadline = os.clock() + 6
+        repeat
+            task.wait(0.15)
+            local _, nextHumanoid = characterParts()
+            if nextHumanoid and nextHumanoid.Health > 0
+                and LocalPlayer:GetAttribute("IsFreezing") ~= true then
+                state.LastError = "None"
+                return true
+            end
+        until os.clock() >= deadline
+        state.LastError = "base revive was not credited"
+        return false
     end
 
     local targetHighlight = Instance.new("Highlight")
@@ -1036,18 +1067,30 @@ return function(context)
                 local mustEscape = state.FreezeGuard
                     and LocalPlayer:GetAttribute("IsFreezing") == true
                     and currentAir <= math.max(1, airCapacity * 0.12)
+                local recovering = state.FreezeGuard
+                    and LocalPlayer:GetAttribute("IsFreezing") ~= true
+                    and currentAir < airCapacity * 0.85
                 local shouldSell = (state.Master or state.AutoSell)
                     and weight > 0
                     and (cap < math.huge and weight >= cap * (state.SellPercent / 100))
 
-                if mustEscape then
+                if recovering then
+                    state.Phase = string.format(
+                        "Recovering warmth (%d/%d)",
+                        math.floor(currentAir),
+                        math.floor(airCapacity)
+                    )
+                    task.wait(0.5)
+                elseif mustEscape then
                     state.Phase = "Freeze guard returning"
                     if weight > 0 then
-                        sellCargo(false)
-                        runPurchases()
+                        if sellCargo(false) then
+                            runPurchases()
+                        else
+                            emergencyReviveAtBase()
+                        end
                     else
-                        goHome("sell")
-                        task.wait(0.8)
+                        emergencyReviveAtBase()
                     end
                 elseif shouldSell then
                     if sellCargo(false) then
