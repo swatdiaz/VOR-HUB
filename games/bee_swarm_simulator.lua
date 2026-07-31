@@ -1197,6 +1197,14 @@ return function(context)
         if not toy then
             return false, name .. " is unavailable"
         end
+        local cooldownValue = toy:FindFirstChild("Cooldown")
+        local cooldown = cooldownValue and tonumber(cooldownValue.Value) or 0
+        local lastUse = tonumber((stats().ToyTimes or {})[name]) or 0
+        local remaining = math.max(0, lastUse + cooldown - os.time())
+        if remaining > 0 then
+            state.LastToy = os.clock()
+            return false, name .. " is cooling down for " .. tostring(math.ceil(remaining)) .. "s"
+        end
         local platform = toy:FindFirstChild("Platform", true)
             or toy:FindFirstChild("Button", true)
             or toy:FindFirstChildWhichIsA("BasePart", true)
