@@ -240,12 +240,77 @@ return function(context)
         return character, humanoid, root
     end
 
+    local BELOW_MOUNTAIN_MARGIN = 8
+
     local function isBelowMountainMap(part)
         if not part then
             return false
         end
         local baseY = tonumber(workspace:GetAttribute("MountainBaseY"))
-        return baseY ~= nil and part.Position.Y < baseY - 16
+        return baseY ~= nil and part.Position.Y < baseY - BELOW_MOUNTAIN_MARGIN
+    end
+
+    local function crystalTargetPartAndPrompt(crystal)
+        if not crystal then
+            return nil, nil
+        end
+
+        local prompt = crystal:IsA("ProximityPrompt")
+            and crystal
+            or crystal:FindFirstChildWhichIsA("ProximityPrompt", true)
+        local promptPart
+        local cursor = prompt and prompt.Parent
+        while cursor and cursor ~= crystal.Parent do
+            if cursor:IsA("BasePart") then
+                promptPart = cursor
+                break
+            end
+            if cursor == crystal then
+                break
+            end
+            cursor = cursor.Parent
+        end
+
+        local part = promptPart
+            or (crystal:IsA("BasePart") and crystal)
+            or (crystal:IsA("Model") and crystal.PrimaryPart)
+            or crystal:FindFirstChildWhichIsA("BasePart", true)
+        return part, prompt
+    end
+
+    local function isInvalidCrystal(crystal, part, prompt)
+        if not crystal or state.InvalidTargets[crystal] then
+            return true
+        end
+
+        local promptPart
+        local cursor = prompt and prompt.Parent
+        while cursor and cursor ~= crystal.Parent do
+            if cursor:IsA("BasePart") then
+                promptPart = cursor
+                break
+            end
+            if cursor == crystal then
+                break
+            end
+            cursor = cursor.Parent
+        end
+
+        if isBelowMountainMap(promptPart or part)
+            or (promptPart and part ~= promptPart and isBelowMountainMap(part)) then
+            return true
+        end
+
+        if crystal:IsA("Model") then
+            local ok, boundsCFrame, boundsSize = pcall(crystal.GetBoundingBox, crystal)
+            local baseY = tonumber(workspace:GetAttribute("MountainBaseY"))
+            if ok and baseY
+                and boundsCFrame.Position.Y + boundsSize.Y * 0.5 < baseY - BELOW_MOUNTAIN_MARGIN then
+                return true
+            end
+        end
+
+        return false
     end
 
     local function isCrystalTool(object)
@@ -603,8 +668,7 @@ return function(context)
 
         for _, folder in ipairs(crystalRoots()) do
             for _, crystal in ipairs(folder:GetChildren()) do
-                local part = crystal:IsA("BasePart") and crystal or crystal:FindFirstChildWhichIsA("BasePart")
-                local prompt = crystal:FindFirstChildWhichIsA("ProximityPrompt", true)
+                local part, prompt = crystalTargetPartAndPrompt(crystal)
                 local tier = tonumber(crystal:GetAttribute("Tier") or (part and part:GetAttribute("Tier"))) or 0
                 local weight = tonumber(crystal:GetAttribute("WeightKg") or (part and part:GetAttribute("WeightKg"))) or 0
                 local value = tonumber(crystal:GetAttribute("Value") or (part and part:GetAttribute("Value"))) or 0
@@ -612,8 +676,7 @@ return function(context)
                 if part
                     and prompt
                     and prompt.Enabled
-                    and not isBelowMountainMap(part)
-                    and not state.InvalidTargets[crystal]
+                    and not isInvalidCrystal(crystal, part, prompt)
                     and tier >= minimumTier
                     and tier <= efficientMaximum
                     and weight > 0
@@ -663,8 +726,7 @@ return function(context)
         local now = os.clock()
         for _, folder in ipairs(crystalRoots()) do
             for _, crystal in ipairs(folder:GetChildren()) do
-                local part = crystal:IsA("BasePart") and crystal or crystal:FindFirstChildWhichIsA("BasePart")
-                local prompt = crystal:FindFirstChildWhichIsA("ProximityPrompt", true)
+                local part, prompt = crystalTargetPartAndPrompt(crystal)
                 local weight = tonumber(
                     crystal:GetAttribute("WeightKg")
                         or (part and part:GetAttribute("WeightKg"))
@@ -677,8 +739,7 @@ return function(context)
                 if part
                     and prompt
                     and prompt.Enabled
-                    and not isBelowMountainMap(part)
-                    and not state.InvalidTargets[crystal]
+                    and not isInvalidCrystal(crystal, part, prompt)
                     and prompt.MaxActivationDistance > 0
                     and weight > 0
                     and crystal:GetAttribute("Collected") ~= true
@@ -962,9 +1023,7 @@ return function(context)
         local roots = crystalRoots()
         for _, folder in ipairs(roots) do
             for _, crystal in ipairs(folder:GetChildren()) do
-                local part = crystal:IsA("BasePart")
-                    and crystal
-                    or crystal:FindFirstChildWhichIsA("BasePart")
+                local part, prompt = crystalTargetPartAndPrompt(crystal)
                 local tier = tonumber(
                     crystal:GetAttribute("Tier")
                         or (part and part:GetAttribute("Tier"))
@@ -973,12 +1032,14 @@ return function(context)
                     and crystal:GetAttribute("Value") ~= nil
                     and part ~= nil
                 if available then
-                    total += 1
-                    if isBelowMountainMap(part) or state.InvalidTargets[crystal] then
+                    if isInvalidCrystal(crystal, part, prompt) then
                         buried += 1
-                    elseif highTierNames[tier] then
-                        counts[tier] = (counts[tier] or 0) + 1
-                        highTierTotal += 1
+                    else
+                        total += 1
+                        if highTierNames[tier] then
+                            counts[tier] = (counts[tier] or 0) + 1
+                            highTierTotal += 1
+                        end
                     end
                 end
             end
@@ -1907,8 +1968,10 @@ return function(context)
             end
             state.LastObservedCrystalTotal = total
             state.StreamingStableFor = now - state.LastCrystalGrowthAt
-            state.GenerationReady = workspace:GetAttribute("MountainGenerating") == false
-                and workspace:GetAttribute("GroundStrataBaked") == true
+            local mountainGenerating = workspace:GetAttribute("MountainGenerating")
+            local groundStrataBaked = workspace:GetAttribute("GroundStrataBaked")
+            state.GenerationReady = mountainGenerating == false
+                and groundStrataBaked ~= false
                 and rootCount > 0
                 and state.StreamingStableFor >= 15
                 and (state.StreamingExpanded
@@ -1927,8 +1990,8 @@ return function(context)
                 else
                     state.HopMissingScans = 0
                     if not replicationReady then
-                        if workspace:GetAttribute("MountainGenerating") == true
-                            or workspace:GetAttribute("GroundStrataBaked") ~= true then
+                        if mountainGenerating ~= false
+                            or groundStrataBaked == false then
                             state.HopStatus = "Waiting for mountain generation"
                         elseif not state.StreamingExpanded
                             and now - state.HopStartedAt < 30 then

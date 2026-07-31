@@ -310,9 +310,12 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
 )
 $mineMountainBuriedCrystalGuard = (
+    $mineMountainText -match 'local BELOW_MOUNTAIN_MARGIN\s*=\s*8' -and
     $mineMountainText -match 'local function isBelowMountainMap\(part\)' -and
-    $mineMountainText -match 'part\.Position\.Y\s*<\s*baseY\s*-\s*16' -and
-    ([regex]::Matches($mineMountainText, 'and not isBelowMountainMap\(part\)').Count -ge 2) -and
+    $mineMountainText -match 'local function crystalTargetPartAndPrompt\(crystal\)' -and
+    $mineMountainText -match 'local function isInvalidCrystal\(crystal, part, prompt\)' -and
+    ([regex]::Matches($mineMountainText, 'not isInvalidCrystal\(crystal, part, prompt\)').Count -ge 2) -and
+    $mineMountainText -match 'if isInvalidCrystal\(crystal, part, prompt\) then' -and
     $mineMountainText -match 'root\.Position\.Y\s*<\s*baseY\s*-\s*8' -and
     $mineMountainText -match 'now\s*-\s*state\.LastFloorRecoveryAt\s*>=\s*0\.25' -and
     $mineMountainText -match 'humanoid\.FloorMaterial\s*~=\s*Enum\.Material\.Air' -and
@@ -334,8 +337,8 @@ $mineMountainRareHop = (
     $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Legendary' -and
     $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Ultima' -and
     $mineMountainText -match 'local function rareCrystalCounts\(\)' -and
-    $mineMountainText -match 'workspace:GetAttribute\("MountainGenerating"\)\s*==\s*false' -and
-    $mineMountainText -match 'workspace:GetAttribute\("GroundStrataBaked"\)\s*==\s*true' -and
+    $mineMountainText -match 'mountainGenerating\s*==\s*false' -and
+    $mineMountainText -match 'groundStrataBaked\s*~=\s*false' -and
     $mineMountainText -match '"StreamingTargetRadius",\s*\r?\n\s*desiredTarget' -and
     $mineMountainText -match '"StreamingMinRadius",\s*\r?\n\s*desiredMinimum' -and
     $mineMountainText -match 'LocalPlayer:RequestStreamAroundAsync\(center,\s*15\)' -and
