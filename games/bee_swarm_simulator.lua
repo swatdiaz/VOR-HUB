@@ -99,6 +99,8 @@ return function(context)
         AutoHiveSlot = false,
         AutoBadgeRewards = true,
         AutoFeedTreats = false,
+        AutoFeedSelected = false,
+        AutoRoyalJelly = false,
         HatchEgg = "Basic",
         FeedItem = "Treat",
         FeedAmount = 10,
@@ -1393,6 +1395,15 @@ return function(context)
             state.AutoFeedTreats = enabled
         end,
     })
+    BeeItemSection:AddToggle({
+        Name = "Auto Feed Selected Bee Food",
+        Description = "Repeats the selected Treat, Seed, or Fruit in the chosen batch size",
+        Flag = "bee_auto_feed_selected",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoFeedSelected = enabled
+        end,
+    })
     BeeItemSection:AddButton({
         Name = "Feed Selected Item Now",
         Callback = function()
@@ -1416,6 +1427,15 @@ return function(context)
                     setError(message)
                 end
             end)
+        end,
+    })
+    BeeItemSection:AddToggle({
+        Name = "Auto Use Royal Jelly",
+        Description = "Destructive: repeatedly rerolls the lowest-level bee until disabled or Jelly runs out",
+        Flag = "bee_auto_royal_jelly",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoRoyalJelly = enabled
         end,
     })
 
@@ -1723,7 +1743,19 @@ return function(context)
                 and ownedHive() then
                 buyHiveSlot()
             end
-            if (state.FullOP or state.AutoFeedTreats)
+            if state.AutoRoyalJelly
+                and now - state.LastFeed >= 10
+                and not state.Traveling
+                and ownedHive()
+                and (tonumber((stats().Eggs or {}).RoyalJelly) or 0) > 0 then
+                feedSelectedItem("RoyalJelly", 1)
+            elseif state.AutoFeedSelected
+                and now - state.LastFeed >= 10
+                and not state.Traveling
+                and ownedHive()
+                and (tonumber((stats().Eggs or {})[state.FeedItem]) or 0) > 0 then
+                feedSelectedItem(state.FeedItem, state.FeedAmount)
+            elseif (state.FullOP or state.AutoFeedTreats)
                 and now - state.LastFeed >= 10
                 and not state.Traveling
                 and ownedHive()
