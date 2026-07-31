@@ -54,6 +54,8 @@ return function(context)
         AntiAfk = true,
         FreezeGuard = true,
         NoClipTravel = true,
+        FarmFloat = true,
+        AntiRagdoll = true,
         WalkSpeedEnabled = false,
         WalkSpeed = 24,
         TargetMode = "Best Value",
@@ -73,10 +75,15 @@ return function(context)
         LastReward = 0,
         LastStatus = 0,
         LastFarmCycle = 0,
+        LastAutoPurchase = 0,
         ConsecutiveFailures = 0,
+        PurchaseBusy = false,
         FailedTargets = setmetatable({}, {__mode = "k"}),
         OriginalCollision = setmetatable({}, {__mode = "k"}),
         OriginalWalkSpeed = nil,
+        OriginalFallingDownEnabled = nil,
+        OriginalRagdollEnabled = nil,
+        StateCharacter = nil,
     }
 
     local tierNames = {
@@ -97,6 +104,10 @@ return function(context)
     local ShopCatalog
     pcall(function()
         ShopCatalog = require(ReplicatedStorage.Modules.Shop.ShopCatalog)
+    end)
+    local RagdollSystem
+    pcall(function()
+        RagdollSystem = require(ReplicatedStorage.RagdollSystemPackage.RagdollSystem)
     end)
 
     local function notify(title, message, duration)
@@ -238,6 +249,102 @@ return function(context)
             prompt:InputHoldEnd()
         end)
         return ok, err
+    end
+
+    local floatPlatform = Instance.new("Part")
+    floatPlatform.Name = "VORMountainFarmFloat"
+    floatPlatform.Size = Vector3.new(10, 0.45, 10)
+    floatPlatform.Anchored = true
+    floatPlatform.Transparency = 1
+    floatPlatform.CanCollide = false
+    floatPlatform.CanTouch = false
+    floatPlatform.CanQuery = false
+    floatPlatform.CastShadow = false
+    floatPlatform.CFrame = CFrame.new(0, -10000, 0)
+    floatPlatform.Parent = workspace
+
+    local function configureRagdollStates(character, humanoid)
+        if state.StateCharacter ~= character then
+            state.StateCharacter = character
+            state.OriginalFallingDownEnabled = nil
+            state.OriginalRagdollEnabled = nil
+            state.OriginalWalkSpeed = humanoid and humanoid.WalkSpeed or nil
+        end
+        if not humanoid then
+            return
+        end
+        if state.OriginalFallingDownEnabled == nil then
+            pcall(function()
+                state.OriginalFallingDownEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.FallingDown)
+            end)
+        end
+        if state.OriginalRagdollEnabled == nil then
+            pcall(function()
+                state.OriginalRagdollEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.Ragdoll)
+            end)
+        end
+        if state.AntiRagdoll then
+            pcall(function()
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            end)
+        end
+    end
+
+    local function clearActiveRagdoll(character, humanoid)
+        if not state.AntiRagdoll or not (character and humanoid) then
+            return
+        end
+        configureRagdollStates(character, humanoid)
+        local ragdoll
+        if RagdollSystem and type(RagdollSystem.getLocalRagdoll) == "function" then
+            pcall(function()
+                ragdoll = RagdollSystem:getLocalRagdoll()
+            end)
+        end
+        local active = character:GetAttribute("Ragdolled") == true
+            or (ragdoll and ragdoll:isRagdolled())
+        if not active then
+            return
+        end
+        pcall(function()
+            if ragdoll and ragdoll:isRagdolled() then
+                ragdoll:deactivateRagdollPhysics()
+            end
+        end)
+        pcall(function()
+            character:SetAttribute("Ragdolled", false)
+        end)
+        pcall(function()
+            if RagdollSystem and RagdollSystem.Remotes and RagdollSystem.Remotes.DeactivateRagdoll then
+                RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
+            end
+        end)
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        task.defer(function()
+            if humanoid.Parent then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end)
+    end
+
+    local function updateFarmFloat(character, humanoid, root)
+        local enabled = state.FarmFloat
+            and (state.Master or state.AutoFarm)
+            and character ~= nil
+            and humanoid ~= nil
+            and root ~= nil
+            and humanoid.Health > 0
+        floatPlatform.CanCollide = enabled
+        if not enabled then
+            floatPlatform.CFrame = CFrame.new(0, -10000, 0)
+            return
+        end
+        floatPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 3.25, root.Position.Z)
+        local velocity = root.AssemblyLinearVelocity
+        if velocity.Y < 0 then
+            root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+        end
     end
 
     local function setTravelCollision(character, enabled)
@@ -658,20 +765,34 @@ return function(context)
     end
 
     local function runPurchases()
-        if state.Master or state.AutoPickaxe then
-            buyBestEquipment("Pickaxes", false)
+        if state.PurchaseBusy then
+            return false
         end
-        if state.Master or state.AutoBackpack then
-            buyBestEquipment("Backpacks", false)
+        state.PurchaseBusy = true
+        local ok, err = xpcall(function()
+            if state.Master or state.AutoPickaxe then
+                buyBestEquipment("Pickaxes", false)
+            end
+            if state.Master or state.AutoBackpack then
+                buyBestEquipment("Backpacks", false)
+            end
+            if state.Master or state.AutoWarmth then
+                buyStatUpgrade("Air", false)
+            end
+            if state.Master or state.AutoWeight then
+                buyStatUpgrade("Weight", false)
+            end
+            equipBestOwned("Pickaxes")
+            equipBestOwned("Backpacks")
+        end, function(message)
+            return debug.traceback(tostring(message), 2)
+        end)
+        state.PurchaseBusy = false
+        state.LastAutoPurchase = os.clock()
+        if not ok then
+            state.LastError = "Auto purchase error: " .. tostring(err)
         end
-        if state.Master or state.AutoWarmth then
-            buyStatUpgrade("Air", false)
-        end
-        if state.Master or state.AutoWeight then
-            buyStatUpgrade("Weight", false)
-        end
-        equipBestOwned("Pickaxes")
-        equipBestOwned("Backpacks")
+        return ok
     end
 
     local function claimRewards(manual)
@@ -989,6 +1110,13 @@ return function(context)
         Default = false,
         Callback = function(enabled)
             state.WalkSpeedEnabled = enabled
+            if not enabled then
+                local _, humanoid = characterParts()
+                if humanoid and state.OriginalWalkSpeed then
+                    humanoid.WalkSpeed = state.OriginalWalkSpeed
+                end
+                state.OriginalWalkSpeed = nil
+            end
         end,
     })
     TravelSection:AddSlider({
@@ -1026,6 +1154,48 @@ return function(context)
         Default = true,
         Callback = function(enabled)
             state.FreezeGuard = enabled
+        end,
+    })
+    SafetySection:AddToggle({
+        Name = "Farm Float",
+        Description = "Keeps an invisible floor under you while mining so slopes cannot drop you",
+        Flag = "mam_farm_float",
+        Default = true,
+        Callback = function(enabled)
+            state.FarmFloat = enabled
+            if not enabled then
+                floatPlatform.CanCollide = false
+                floatPlatform.CFrame = CFrame.new(0, -10000, 0)
+            end
+        end,
+    })
+    SafetySection:AddToggle({
+        Name = "Anti Ragdoll",
+        Description = "Immediately cancels fall ragdoll during the mining loop",
+        Flag = "mam_anti_ragdoll",
+        Default = true,
+        Callback = function(enabled)
+            state.AntiRagdoll = enabled
+            local character, humanoid = characterParts()
+            if enabled then
+                configureRagdollStates(character, humanoid)
+                clearActiveRagdoll(character, humanoid)
+            elseif humanoid then
+                pcall(function()
+                    if state.OriginalFallingDownEnabled ~= nil then
+                        humanoid:SetStateEnabled(
+                            Enum.HumanoidStateType.FallingDown,
+                            state.OriginalFallingDownEnabled
+                        )
+                    end
+                    if state.OriginalRagdollEnabled ~= nil then
+                        humanoid:SetStateEnabled(
+                            Enum.HumanoidStateType.Ragdoll,
+                            state.OriginalRagdollEnabled
+                        )
+                    end
+                end)
+            end
         end,
     })
     SafetySection:AddToggle({
@@ -1137,11 +1307,54 @@ return function(context)
         end
     end)
 
+    task.spawn(function()
+        while state.Alive do
+            local independentAutoBuy = state.AutoPickaxe
+                or state.AutoBackpack
+                or state.AutoWarmth
+                or state.AutoWeight
+            if independentAutoBuy
+                and not state.PurchaseBusy
+                and os.clock() - state.LastAutoPurchase >= 1.25 then
+                runPurchases()
+            end
+            task.wait(0.25)
+        end
+    end)
+
+    local speedBindName = "VORMountainSpeedLock_" .. tostring(LocalPlayer.UserId)
+    RunService:BindToRenderStep(speedBindName, Enum.RenderPriority.Last.Value, function()
+        if not state.Alive or not state.WalkSpeedEnabled then
+            return
+        end
+        local _, humanoid, root = characterParts()
+        if not (humanoid and root and humanoid.Health > 0) then
+            return
+        end
+        if state.OriginalWalkSpeed == nil then
+            state.OriginalWalkSpeed = humanoid.WalkSpeed
+        end
+        humanoid.WalkSpeed = state.WalkSpeed
+        local direction = humanoid.MoveDirection
+        local currentState = humanoid:GetState()
+        if direction.Magnitude > 0.05
+            and currentState ~= Enum.HumanoidStateType.Physics
+            and currentState ~= Enum.HumanoidStateType.FallingDown
+            and currentState ~= Enum.HumanoidStateType.Dead then
+            local velocity = root.AssemblyLinearVelocity
+            local horizontal = direction.Unit * state.WalkSpeed
+            root.AssemblyLinearVelocity = Vector3.new(horizontal.X, velocity.Y, horizontal.Z)
+        end
+    end)
+
     track(RunService.Heartbeat:Connect(function()
         if not state.Alive then
             return
         end
-        local _, humanoid = characterParts()
+        local character, humanoid, root = characterParts()
+        configureRagdollStates(character, humanoid)
+        clearActiveRagdoll(character, humanoid)
+        updateFarmFloat(character, humanoid, root)
         if humanoid then
             if state.OriginalWalkSpeed == nil then
                 state.OriginalWalkSpeed = humanoid.WalkSpeed
@@ -1205,15 +1418,44 @@ return function(context)
             gui:SetAttribute("MineAMountainCargoValue", heldValue)
             gui:SetAttribute("MineAMountainCapacity", cap)
             gui:SetAttribute("MineAMountainLastError", state.LastError)
+            gui:SetAttribute("MineAMountainAutoPurchaseActive", state.AutoPickaxe
+                or state.AutoBackpack
+                or state.AutoWarmth
+                or state.AutoWeight)
+            gui:SetAttribute("MineAMountainPurchaseBusy", state.PurchaseBusy)
+            gui:SetAttribute("MineAMountainLastAutoPurchase", state.LastAutoPurchase)
+            gui:SetAttribute("MineAMountainAntiRagdoll", state.AntiRagdoll)
+            gui:SetAttribute("MineAMountainFarmFloat", floatPlatform.CanCollide)
+            gui:SetAttribute("MineAMountainWalkSpeedLock", state.WalkSpeedEnabled)
         end)
     end))
 
     track(gui.Destroying:Connect(function()
         state.Alive = false
+        RunService:UnbindFromRenderStep(speedBindName)
         local character, humanoid = characterParts()
         setTravelCollision(character, false)
-        if humanoid and state.OriginalWalkSpeed then
-            humanoid.WalkSpeed = state.OriginalWalkSpeed
+        if humanoid then
+            if state.OriginalWalkSpeed then
+                humanoid.WalkSpeed = state.OriginalWalkSpeed
+            end
+            pcall(function()
+                if state.OriginalFallingDownEnabled ~= nil then
+                    humanoid:SetStateEnabled(
+                        Enum.HumanoidStateType.FallingDown,
+                        state.OriginalFallingDownEnabled
+                    )
+                end
+                if state.OriginalRagdollEnabled ~= nil then
+                    humanoid:SetStateEnabled(
+                        Enum.HumanoidStateType.Ragdoll,
+                        state.OriginalRagdollEnabled
+                    )
+                end
+            end)
+        end
+        if floatPlatform then
+            floatPlatform:Destroy()
         end
         targetHighlight:Destroy()
     end))

@@ -271,9 +271,22 @@ $mineMountainPages = (
     $mineMountainText -match 'addHomeCategory\("Rewards"' -and
     $mineMountainText -match 'addHomeCategory\("Status"'
 )
+$mineMountainIndependentPurchases = (
+    $mineMountainText -match 'local independentAutoBuy\s*=\s*state\.AutoPickaxe' -and
+    $mineMountainText -match 'os\.clock\(\)\s*-\s*state\.LastAutoPurchase\s*>=\s*1\.25' -and
+    $mineMountainText -match 'PurchaseBusy'
+)
+$mineMountainMovementSafety = (
+    $mineMountainText -match 'Name\s*=\s*"Farm Float"' -and
+    $mineMountainText -match 'VORMountainFarmFloat' -and
+    $mineMountainText -match 'Name\s*=\s*"Anti Ragdoll"' -and
+    $mineMountainText -match 'DeactivateRagdoll:FireServer\(\)' -and
+    $mineMountainText -match 'BindToRenderStep\(speedBindName,\s*Enum\.RenderPriority\.Last\.Value' -and
+    $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
+)
 $mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
-if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainAdminAbsent)) {
-    throw "Mine a Mountain routing, credited loop, progression, navigation, or admin-remote exclusion contract failed"
+if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainMovementSafety -and $mineMountainAdminAbsent)) {
+    throw "Mine a Mountain routing, credited loop, progression, independent purchases, movement safety, navigation, or admin-remote exclusion contract failed"
 }
 
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
@@ -365,7 +378,7 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
-Write-Host "Mine a Mountain support: PASS (credited mining/selling, efficient tiering, upgrade-only spending, no admin remotes)"
+Write-Host "Mine a Mountain support: PASS (credited mining/selling, independent purchases, movement safety, efficient tiering, no admin remotes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
