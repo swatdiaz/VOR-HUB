@@ -93,7 +93,7 @@ return function(context)
         AntiAfk = true,
         NoClip = true,
         UnderField = false,
-        UnderFieldDepth = 3.5,
+        UnderFieldDepth = 3,
         Field = "Sunflower Field",
         Pattern = "Wide Circle",
         QuestGiver = "Black Bear",
@@ -121,6 +121,8 @@ return function(context)
         HoneyRate = 0,
         PollenRate = 0,
         OriginalCollision = setmetatable({}, {__mode = "k"}),
+        UnderMover = nil,
+        UnderRoot = nil,
     }
 
     local phaseLabel = AdapterSection:AddLabel("Phase: Initializing")
@@ -204,6 +206,33 @@ return function(context)
         end
     end
 
+    local function clearUnderFieldHold()
+        if state.UnderMover then
+            state.UnderMover:Destroy()
+        end
+        state.UnderMover = nil
+        state.UnderRoot = nil
+    end
+
+    local function holdUnderFieldHeight(root, worldY)
+        if not root then
+            clearUnderFieldHold()
+            return
+        end
+        if state.UnderRoot ~= root or not state.UnderMover or not state.UnderMover.Parent then
+            clearUnderFieldHold()
+            local mover = Instance.new("BodyPosition")
+            mover.Name = "VORBeeUnderFieldHeight"
+            mover.MaxForce = Vector3.new(0, 1000000000, 0)
+            mover.P = 7500
+            mover.D = 1000
+            mover.Parent = root
+            state.UnderMover = mover
+            state.UnderRoot = root
+        end
+        state.UnderMover.Position = Vector3.new(root.Position.X, worldY, root.Position.Z)
+    end
+
     local function travelTo(goal, label)
         local waitDeadline = os.clock() + 15
         while state.Alive and state.Traveling and os.clock() < waitDeadline do
@@ -218,11 +247,17 @@ return function(context)
         end
         local goalCFrame = typeof(goal) == "CFrame" and goal or CFrame.new(goal)
         local distance = (root.Position - goalCFrame.Position).Magnitude
+        local keepUnderFieldCollision = state.UnderField and label == state.Field
         state.Traveling = true
         state.Target = label or "Position"
         state.Phase = "Traveling"
         if state.NoClip or state.UnderField then
             setTravelCollision(character, false)
+        end
+        if keepUnderFieldCollision then
+            holdUnderFieldHeight(root, goalCFrame.Position.Y)
+        else
+            clearUnderFieldHold()
         end
         local tween = TweenService:Create(
             root,
@@ -261,7 +296,6 @@ return function(context)
             end
         end
         state.Traveling = false
-        local keepUnderFieldCollision = state.UnderField and label == state.Field
         if (state.NoClip or state.UnderField) and not keepUnderFieldCollision then
             setTravelCollision(character, true)
         end
@@ -280,9 +314,7 @@ return function(context)
         end
         local radiusX = math.max(4, zone.Size.X * 0.5 * state.FieldRadius)
         local radiusZ = math.max(4, zone.Size.Z * 0.5 * state.FieldRadius)
-        local y = state.UnderField
-            and (-zone.Size.Y * 0.5 - state.UnderFieldDepth)
-            or (zone.Size.Y * 0.5 + 3.2)
+        local y = zone.Size.Y * 0.5 + 3.2
         local angle = step * 0.72
         local localPoint
         if state.Pattern == "Zigzag" then
@@ -294,7 +326,15 @@ return function(context)
         else
             localPoint = Vector3.new(math.cos(angle) * radiusX, y, math.sin(angle) * radiusZ)
         end
-        return zone.CFrame:PointToWorldSpace(localPoint)
+        local point = zone.CFrame:PointToWorldSpace(localPoint)
+        if state.UnderField then
+            point = Vector3.new(
+                point.X,
+                zone.Position.Y + zone.Size.Y * 0.5 - state.UnderFieldDepth,
+                point.Z
+            )
+        end
+        return point
     end
 
     local function ownedHive()
@@ -476,7 +516,7 @@ return function(context)
         if state.UnderField and zone then
             goal = Vector3.new(
                 position.X,
-                zone.Position.Y - zone.Size.Y * 0.5 - state.UnderFieldDepth,
+                zone.Position.Y + zone.Size.Y * 0.5 - state.UnderFieldDepth,
                 position.Z
             )
             label = state.Field
@@ -991,6 +1031,7 @@ return function(context)
         Callback = function(enabled)
             state.UnderField = enabled
             if not enabled then
+                clearUnderFieldHold()
                 setTravelCollision(LocalPlayer.Character, true)
             end
         end,
@@ -998,13 +1039,13 @@ return function(context)
     SafetySection:AddSlider({
         Name = "Under-Field Depth",
         Flag = "bee_under_field_depth",
-        Min = 2,
+        Min = 1,
         Max = 6,
         Step = 0.5,
-        Default = 3.5,
+        Default = 3,
         Suffix = " studs",
         Callback = function(value)
-            state.UnderFieldDepth = tonumber(value) or 3.5
+            state.UnderFieldDepth = tonumber(value) or 3
         end,
     })
     SafetySection:AddToggle({
@@ -1023,6 +1064,7 @@ return function(context)
             state.AutoQuest = false
             state.AutoToy = false
             stopCollection()
+            clearUnderFieldHold()
             setTravelCollision(LocalPlayer.Character, true)
             state.Phase = "Stopped"
             notify("Bee Swarm", "All Bee Swarm automation stopped")
@@ -1087,6 +1129,7 @@ return function(context)
                 end
             else
                 stopCollection()
+                clearUnderFieldHold()
                 setTravelCollision(LocalPlayer.Character, true)
                 if state.Phase:find("Farming", 1, true) or state.Phase == "Traveling" then
                     state.Phase = "Idle"
@@ -1187,6 +1230,7 @@ return function(context)
         track(gui.Destroying:Connect(function()
             state.Alive = false
             stopCollection()
+            clearUnderFieldHold()
             setTravelCollision(LocalPlayer.Character, true)
         end))
     end
