@@ -40,6 +40,16 @@ return function(runtime)
             },
             Module = "games/anime_expeditions.lua",
         },
+        BidForAnime = {
+            Key = "BidForAnime",
+            DisplayName = "Bid for Anime!",
+            UniverseId = 10448083800,
+            RootPlaceId = 87274635966213,
+            PlaceIds = {
+                [87274635966213] = true,
+            },
+            Module = "games/bid_for_anime.lua",
+        },
         BloxFruits = {
             Key = "BloxFruits",
             DisplayName = "Blox Fruits",
@@ -81,7 +91,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.2.13",
+        Version = "3.3.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
