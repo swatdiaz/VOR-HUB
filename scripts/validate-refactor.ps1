@@ -272,7 +272,10 @@ $mineMountainPages = (
     $mineMountainText -match 'addHomeCategory\("Status"' -and
     $mineMountainText -match 'addHomeCategory\("Fundamentals"' -and
     $mineMountainText -match 'FundamentalsPage:AddSection\("Character Fundamentals"' -and
-    $mineMountainText -match 'No fake local-only transparency toggle is included'
+    $mineMountainText -match 'No fake local-only transparency toggle is included' -and
+    $mineMountainText -match 'Name\s*=\s*"Stealth Session \(Solo Server\)"' -and
+    $mineMountainText -match 'VORMountainResumeSoloSession' -and
+    $mineMountainText -match 'Players\.PlayerAdded:Connect'
 )
 $mineMountainIndependentPurchases = (
     $mineMountainText -match 'local independentAutoBuy\s*=\s*state\.AutoPickaxe' -and

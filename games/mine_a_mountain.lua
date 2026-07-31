@@ -94,6 +94,8 @@ return function(context)
         LastAutoPurchase = 0,
         LastGodspeedCredited = 0,
         HighTierHunt = environment.VORMountainResumeHighTierHunt == true,
+        SoloSession = environment.VORMountainResumeSoloSession == true,
+        LastSoloHopAttempt = -math.huge,
         HopBusy = false,
         HopMissingScans = 0,
         HopCountdownDuration = 15,
@@ -1231,6 +1233,7 @@ return function(context)
             "e.VORMountainResumeHopLegendary = false",
             "e.VORMountainResumeHopMythic = false",
             "e.VORMountainResumeHighTierHunt = " .. tostring(state.HighTierHunt),
+            "e.VORMountainResumeSoloSession = " .. tostring(state.SoloSession),
             "e.VORMountainVisitedServers = {" .. table.concat(visitedEntries, ",") .. "}",
             "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
         }, "\n")
@@ -1329,7 +1332,15 @@ return function(context)
             return
         end
 
-        local selected = result[math.random(1, #result)]
+        table.sort(result, function(a, b)
+            local aPlayers = tonumber(a.playing) or math.huge
+            local bPlayers = tonumber(b.playing) or math.huge
+            if aPlayers == bPlayers then
+                return tostring(a.id) < tostring(b.id)
+            end
+            return aPlayers < bPlayers
+        end)
+        local selected = state.SoloSession and result[1] or result[math.random(1, #result)]
         visitedServers[selected.id] = true
         state.HopStatus = "Hopping: " .. tostring(reason)
         state.Phase = state.HopStatus
@@ -2025,6 +2036,21 @@ return function(context)
     VisibilitySection:AddLabel("Server invisibility: unavailable in the current game build.")
     VisibilitySection:AddLabel("No fake local-only transparency toggle is included.")
     VisibilitySection:AddLabel("The game must expose a replicated hidden state before other players can truly stop rendering you.")
+    VisibilitySection:AddToggle({
+        Name = "Stealth Session (Solo Server)",
+        Description = "Uses the emptiest public server and leaves again if another player joins",
+        Flag = "mam_solo_session",
+        Default = state.SoloSession,
+        Callback = function(enabled)
+            state.SoloSession = enabled
+            environment.VORMountainResumeSoloSession = enabled
+            if enabled and #Players:GetPlayers() > 1 then
+                state.LastSoloHopAttempt = os.clock()
+                notify("Stealth Session", "Other players detected. Moving to the emptiest fresh server.", 4)
+                task.spawn(hopToFreshServer, "stealth session player guard")
+            end
+        end,
+    })
 
     SafetySection:AddToggle({
         Name = "Freeze Guard",
@@ -2102,6 +2128,31 @@ return function(context)
             end)
         end
     end))
+
+    track(Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer and state.SoloSession then
+            state.LastSoloHopAttempt = os.clock()
+            notify("Stealth Session", player.DisplayName .. " joined. Leaving before they can watch the farm.", 4)
+            task.delay(1, function()
+                if state.Alive and state.SoloSession then
+                    hopToFreshServer("another player entered the stealth session")
+                end
+            end)
+        end
+    end))
+
+    task.spawn(function()
+        while state.Alive do
+            if state.SoloSession
+                and #Players:GetPlayers() > 1
+                and not state.HopBusy
+                and os.clock() - state.LastSoloHopAttempt >= 15 then
+                state.LastSoloHopAttempt = os.clock()
+                task.spawn(hopToFreshServer, "stealth session population guard")
+            end
+            task.wait(3)
+        end
+    end)
 
     track(TeleportService.TeleportInitFailed:Connect(function(player, _, message)
         if player ~= LocalPlayer or not state.HopBusy then
@@ -2482,6 +2533,7 @@ return function(context)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
             gui:SetAttribute("MineAMountainHopCountdownActive", state.HopCountdownEndsAt ~= nil)
             gui:SetAttribute("MineAMountainHopCountdownRemaining", state.HopCountdownRemaining)
+            gui:SetAttribute("MineAMountainSoloSession", state.SoloSession)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)
             gui:SetAttribute("MineAMountainStreamingExpanded", state.StreamingExpanded)
