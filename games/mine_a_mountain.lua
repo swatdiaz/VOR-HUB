@@ -102,6 +102,7 @@ return function(context)
         HopStatus = "Watching crystal inventory",
         HighTierCount = 0,
         HighTierCounts = {},
+        BuriedCrystalCount = 0,
         TeleportResumeQueued = false,
         TeleportQueueMethod = "Unavailable",
         ConsecutiveFailures = 0,
@@ -232,6 +233,14 @@ return function(context)
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
         return character, humanoid, root
+    end
+
+    local function isBelowMountainMap(part)
+        if not part then
+            return false
+        end
+        local baseY = tonumber(workspace:GetAttribute("MountainBaseY"))
+        return baseY ~= nil and part.Position.Y < baseY - 16
     end
 
     local function isCrystalTool(object)
@@ -593,6 +602,7 @@ return function(context)
                 if part
                     and prompt
                     and prompt.Enabled
+                    and not isBelowMountainMap(part)
                     and tier >= minimumTier
                     and tier <= efficientMaximum
                     and weight > 0
@@ -656,6 +666,7 @@ return function(context)
                 if part
                     and prompt
                     and prompt.Enabled
+                    and not isBelowMountainMap(part)
                     and prompt.MaxActivationDistance > 0
                     and weight > 0
                     and crystal:GetAttribute("Collected") ~= true
@@ -930,7 +941,7 @@ return function(context)
     end
 
     local function rareCrystalCounts()
-        local counts, highTierTotal, total = {}, 0, 0
+        local counts, highTierTotal, total, buried = {}, 0, 0, 0
         local roots = crystalRoots()
         for _, folder in ipairs(roots) do
             for _, crystal in ipairs(folder:GetChildren()) do
@@ -946,14 +957,16 @@ return function(context)
                     and part ~= nil
                 if available then
                     total += 1
-                    if highTierNames[tier] then
+                    if isBelowMountainMap(part) then
+                        buried += 1
+                    elseif highTierNames[tier] then
                         counts[tier] = (counts[tier] or 0) + 1
                         highTierTotal += 1
                     end
                 end
             end
         end
-        return counts, highTierTotal, total, #roots
+        return counts, highTierTotal, total, #roots, buried
     end
 
     local function openPublicServers()
@@ -1867,9 +1880,10 @@ return function(context)
     task.spawn(function()
         while state.Alive do
             local enabled = state.HighTierHunt
-            local tierCounts, highTierTotal, total, rootCount = rareCrystalCounts()
+            local tierCounts, highTierTotal, total, rootCount, buried = rareCrystalCounts()
             state.HighTierCounts = tierCounts
             state.HighTierCount = highTierTotal
+            state.BuriedCrystalCount = buried
             local now = os.clock()
             if total > state.LastObservedCrystalTotal then
                 state.LastCrystalGrowthAt = now
@@ -2030,7 +2044,7 @@ return function(context)
         cargoLabel.Text = string.format("Cargo: %d crystal(s) | $%d", count, math.floor(heldValue))
         local tierCounts = state.HighTierCounts
         serverHopLabel.Text = string.format(
-            "High-tier: %d | L%d M%d D%d E%d Z%d I%d U%d\n%s",
+            "High-tier: %d | L%d M%d D%d E%d Z%d I%d U%d\nSkipped below map: %d | %s",
             state.HighTierCount,
             tierCounts[5] or 0,
             tierCounts[6] or 0,
@@ -2039,6 +2053,7 @@ return function(context)
             tierCounts[9] or 0,
             tierCounts[10] or 0,
             tierCounts[11] or 0,
+            state.BuriedCrystalCount,
             state.HopStatus
         )
         adapterLabel.Text = string.format(
@@ -2087,6 +2102,7 @@ return function(context)
             gui:SetAttribute("MineAMountainInfinityCount", tierCounts[10] or 0)
             gui:SetAttribute("MineAMountainUltimaCount", tierCounts[11] or 0)
             gui:SetAttribute("MineAMountainHighTierHunt", state.HighTierHunt)
+            gui:SetAttribute("MineAMountainBuriedCrystalCount", state.BuriedCrystalCount)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)

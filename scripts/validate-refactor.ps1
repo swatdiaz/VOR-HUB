@@ -309,6 +309,12 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'BindToRenderStep\(speedBindName,\s*Enum\.RenderPriority\.Last\.Value' -and
     $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
 )
+$mineMountainBuriedCrystalGuard = (
+    $mineMountainText -match 'local function isBelowMountainMap\(part\)' -and
+    $mineMountainText -match 'part\.Position\.Y\s*<\s*baseY\s*-\s*16' -and
+    ([regex]::Matches($mineMountainText, 'and not isBelowMountainMap\(part\)').Count -ge 2) -and
+    $mineMountainText -match 'MineAMountainBuriedCrystalCount'
+)
 $mineMountainRareHop = (
     $mineMountainText -match 'Name\s*=\s*"Auto High-Tier Hunt \+ Hop"' -and
     $mineMountainText -match 'Flag\s*=\s*"mam_high_tier_hunt_hop"' -and
@@ -335,7 +341,7 @@ $mineMountainRareHop = (
     $mineMountainText -match 'TeleportService:TeleportToPlaceInstance\(game\.PlaceId,\s*selected\.id,\s*LocalPlayer\)'
 )
 $mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
-if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainGodspeed -and $mineMountainPickaxeSpeed -and $mineMountainPlotLuck -and $mineMountainMovementSafety -and $mineMountainRareHop -and $mineMountainAdminAbsent)) {
+if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainGodspeed -and $mineMountainPickaxeSpeed -and $mineMountainPlotLuck -and $mineMountainMovementSafety -and $mineMountainBuriedCrystalGuard -and $mineMountainRareHop -and $mineMountainAdminAbsent)) {
     throw "Mine a Mountain routing, credited loop, Godspeed batching, pickaxe speed, rare-crystal hopping, plot luck, progression, purchases, movement safety, navigation, or admin-remote exclusion contract failed"
 }
 
