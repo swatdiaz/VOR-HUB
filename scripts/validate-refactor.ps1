@@ -154,11 +154,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.12"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.2\.13"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.2.12 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.2.13 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -179,13 +179,14 @@ if (-not $magnetOwnershipGateRemoved -or -not $magnetSimulationRadius -or -not $
 }
 
 $stableMagnetAnchor = $bloxText -match 'targetCFrame\s*=\s*CFrame\.new\(state\.MagnetAnchorCFrame\.Position\)'
-$magnetTweenSpeed = $bloxText -match 'distanceToAnchor\s*/\s*250'
+$magnetDirectRetry = $bloxText -match '(?s)state\.MagnetTweens\[candidate\.Enemy\]\s*=\s*nil.*?candidate\.Root\.CFrame\s*=\s*targetCFrame.*?candidate\.Root\.AssemblyLinearVelocity\s*=\s*Vector3\.zero'
+$oneShotMagnetTweenRemoved = $bloxText -notmatch 'distanceToAnchor\s*/\s*250'
 $magnetMovementDecoupled = (
     $bloxText -notmatch 'squareMovement\s*=\s*state\.MobAuraRandomSquare\s*==\s*true\s+or\s+state\.AutoMagnet' -and
     $bloxText -notmatch 'if state\.AutoMagnet or state\.MobAuraRandomSquare then'
 )
-if (-not ($stableMagnetAnchor -and $magnetTweenSpeed -and $magnetMovementDecoupled)) {
-    throw "Auto Magnet must retain a stable 250-stud enemy pull without taking ownership of character movement"
+if (-not ($stableMagnetAnchor -and $magnetDirectRetry -and $oneShotMagnetTweenRemoved -and $magnetMovementDecoupled)) {
+    throw "Auto Magnet must continuously reapply a stable pile without taking ownership of character movement"
 }
 
 $mobAuraCrossTypeGather = $bloxText -match 'local targetName\s*=\s*\(raidGatherEnabled or \(state\.AutoMagnet and state\.MobAuraTp\)\) and nil'
@@ -212,7 +213,8 @@ if (-not ($mobAuraTweenTravel -and $selectedSpawnTweenTravel)) {
 $experimentalText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_experimental.lua") -Raw
 $creditedMainDouble = $experimentalText -match 'api\.SetOverride\(false\)'
 $requestSpamRemoved = $experimentalText -notmatch '(?s)if not runtime\.SwordBusy.*?dispatchSword\(\).*?if not runtime\.FruitBusy.*?dispatchFruit\(\)'
-if (-not ($creditedMainDouble -and $requestSpamRemoved)) {
+$idempotentOverride = $bloxText -match '(?s)local desired\s*=\s*enabled == true\s+if state\.ExperimentalAttackOverride ~= desired then\s+state\.ExperimentalAttackOverride = desired\s+state\.AuraAttackPending = false\s+state\.FruitDispatchPending = false\s+end'
+if (-not ($creditedMainDouble -and $requestSpamRemoved -and $idempotentOverride)) {
     throw "Double Attack must leave combat ownership with the credited main Aura engine"
 }
 
@@ -223,13 +225,13 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.2.12)"
+Write-Host "Visible semantic version: PASS (3.2.13)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
-Write-Host "Solix-style stable Magnet anchor and pull: PASS (250 studs/sec, character movement decoupled)"
-Write-Host "Double Attack credited-engine ownership: PASS"
+Write-Host "Solix-style stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
+Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-state handoff)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"

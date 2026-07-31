@@ -3672,42 +3672,23 @@ return function(context)
                         }
                     end
                     local moved = pcall(function()
+                        local activeMagnetTween = state.MagnetTweens[candidate.Enemy]
+                        if activeMagnetTween and activeMagnetTween.Tween then
+                            activeMagnetTween.Tween:Cancel()
+                        end
+                        state.MagnetTweens[candidate.Enemy] = nil
+
+                        -- Reapply the pile CFrame every scan. A one-shot client
+                        -- tween can remain "Playing" after the server restores
+                        -- an unowned NPC, which left that mob frozen at its old
+                        -- position while the UI falsely counted it as stacked.
+                        candidate.Root.CFrame = targetCFrame
+                        candidate.Root.AssemblyLinearVelocity = Vector3.zero
                         candidate.Root.AssemblyAngularVelocity = Vector3.zero
                         candidate.Root.CanCollide = false
                         enemyBody.WalkSpeed = 0
                         enemyBody.JumpPower = 0
                         enemyBody.AutoRotate = false
-                        local distanceToAnchor = (candidate.Root.Position - targetCFrame.Position).Magnitude
-                        if multiGrabEnabled or distanceToAnchor <= 1.5 then
-                            local activeMagnetTween = state.MagnetTweens[candidate.Enemy]
-                            if activeMagnetTween and activeMagnetTween.Tween then
-                                activeMagnetTween.Tween:Cancel()
-                            end
-                            state.MagnetTweens[candidate.Enemy] = nil
-                            candidate.Root.CFrame = targetCFrame
-                            candidate.Root.AssemblyLinearVelocity = Vector3.zero
-                        else
-                            local activeMagnetTween = state.MagnetTweens[candidate.Enemy]
-                            local needsTween = not activeMagnetTween
-                                or typeof(activeMagnetTween.Target) ~= "Vector3"
-                                or (activeMagnetTween.Target - targetCFrame.Position).Magnitude > 0.5
-                                or activeMagnetTween.Tween.PlaybackState ~= Enum.PlaybackState.Playing
-                            if needsTween then
-                                if activeMagnetTween and activeMagnetTween.Tween then
-                                    activeMagnetTween.Tween:Cancel()
-                                end
-                                local tween = TweenService:Create(
-                                    candidate.Root,
-                                    TweenInfo.new(math.max(0.03, distanceToAnchor / 250), Enum.EasingStyle.Linear),
-                                    {CFrame = targetCFrame}
-                                )
-                                state.MagnetTweens[candidate.Enemy] = {
-                                    Tween = tween,
-                                    Target = targetCFrame.Position,
-                                }
-                                tween:Play()
-                            end
-                        end
                     end)
                     if moved then
                         gathered += 1
@@ -5479,7 +5460,7 @@ return function(context)
 
         ExploitSection:AddToggle({
             Name = "Auto Magnet",
-            Description = "Pulls matching NPCs at 250 studs/sec into the farm target's fixed pile, then keeps them locked there",
+            Description = "Continuously locks every eligible NPC into the farm target's pile so server corrections cannot leave mobs behind",
             Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
@@ -7847,10 +7828,13 @@ return function(context)
                 Remotes = {CommF = CommF, CommE = CommE, Redeem = Redeem},
                 ExperimentalAPI = {
                     SetOverride = function(enabled)
-                        state.ExperimentalAttackOverride = enabled == true
-                        state.AuraAttackPending = false
-                        state.FruitDispatchPending = false
-                        gui:SetAttribute("BloxExperimentalAttackOverride", state.ExperimentalAttackOverride)
+                        local desired = enabled == true
+                        if state.ExperimentalAttackOverride ~= desired then
+                            state.ExperimentalAttackOverride = desired
+                            state.AuraAttackPending = false
+                            state.FruitDispatchPending = false
+                        end
+                        gui:SetAttribute("BloxExperimentalAttackOverride", desired)
                     end,
                     IsReady = function()
                         return state.Alive and state.AuraKill and not state.InventoryBusy
