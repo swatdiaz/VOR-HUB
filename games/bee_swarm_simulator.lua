@@ -238,7 +238,7 @@ return function(context)
         state.UnderMover.Position = Vector3.new(root.Position.X, worldY, root.Position.Z)
     end
 
-    local function travelTo(goal, label)
+    local function travelTo(goal, label, settleOnArrival)
         local waitDeadline = os.clock() + 15
         while state.Alive and state.Traveling and os.clock() < waitDeadline do
             task.wait(0.05)
@@ -303,6 +303,23 @@ return function(context)
         state.Traveling = false
         if (state.NoClip or state.UnderField) and not keepUnderFieldCollision then
             setTravelCollision(character, true)
+        end
+        if settleOnArrival and root.Parent then
+            local wasAnchored = root.Anchored
+            character:PivotTo(goalCFrame)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.Anchored = true
+            task.wait(0.2)
+            root.Anchored = wasAnchored
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            if not wasAnchored then
+                pcall(humanoid.ChangeState, humanoid, Enum.HumanoidStateType.GettingUp)
+            end
+            task.wait(0.1)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
         end
         return root.Parent ~= nil and (root.Position - goalCFrame.Position).Magnitude <= 12,
             "Travel did not reach " .. tostring(label or "target")
@@ -603,7 +620,7 @@ return function(context)
         end
         local goal = hivePosition(hive)
         if goal then
-            local reached, err = travelTo(goal, "Owned hive")
+            local reached, err = travelTo(goal, "Owned hive", true)
             if not reached then
                 return false, err
             end
