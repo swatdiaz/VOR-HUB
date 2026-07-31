@@ -62,6 +62,16 @@ return function(runtime)
             },
             Module = "games/bid_for_anime.lua",
         },
+        MineAMountain = {
+            Key = "MineAMountain",
+            DisplayName = "Mine a Mountain",
+            UniverseId = 10187294555,
+            RootPlaceId = 125927821145949,
+            PlaceIds = {
+                [125927821145949] = true,
+            },
+            Module = "games/mine_a_mountain.lua",
+        },
         BloxFruits = {
             Key = "BloxFruits",
             DisplayName = "Blox Fruits",
@@ -103,7 +113,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.5.0",
+        Version = "3.6.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",

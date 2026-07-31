@@ -2419,9 +2419,14 @@ return function(context)
         updates:AddLabel("Background, accent, transparency, and minimize styles are live settings.")
 
         local launch = home:AddSection("Quick Launch", "Right")
-        local launchOrder = self.Pages.Shooting
-            and {"Shooting", "Offense", "Defense", "Dribble", "Visuals"}
-            or {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
+        local launchOrder
+        if SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key == "MineAMountain" then
+            launchOrder = {"Farming", "Upgrades", "Shop", "Rewards", "Status"}
+        elseif self.Pages.Shooting then
+            launchOrder = {"Shooting", "Offense", "Defense", "Dribble", "Visuals"}
+        else
+            launchOrder = {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
+        end
         for _, pageName in ipairs(launchOrder) do
             if self.Pages[pageName] then
                 launch:AddButton({
