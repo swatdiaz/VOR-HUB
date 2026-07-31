@@ -264,11 +264,9 @@ return function(context)
         if state.NoClip or state.UnderField then
             setTravelCollision(character, false)
         end
-        if keepUnderFieldCollision then
-            holdUnderFieldHeight(root, goalCFrame.Position.Y)
-        else
-            clearUnderFieldHold()
-        end
+        -- Never let the vertical under-field mover fight the travel tween.
+        -- The mover is attached only after arrival, once tween velocity is cleared.
+        clearUnderFieldHold()
         local tween = TweenService:Create(
             root,
             TweenInfo.new(math.max(0.05, distance / math.max(40, state.TravelSpeed)), Enum.EasingStyle.Linear),
@@ -303,6 +301,13 @@ return function(context)
                 if (root.Position - goalCFrame.Position).Magnitude <= 12 then
                     break
                 end
+            end
+        end
+        if root.Parent then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            if keepUnderFieldCollision then
+                holdUnderFieldHeight(root, goalCFrame.Position.Y)
             end
         end
         state.Traveling = false
@@ -566,8 +571,9 @@ return function(context)
                 local inField = true
                 if zone then
                     local localPosition = zone.CFrame:PointToObjectSpace(position)
-                    inField = math.abs(localPosition.X) <= zone.Size.X * 0.48
-                        and math.abs(localPosition.Z) <= zone.Size.Z * 0.48
+                    local safeRadius = math.clamp(state.FieldRadius, 0.2, 0.9) * 0.5
+                    inField = math.abs(localPosition.X) <= zone.Size.X * safeRadius
+                        and math.abs(localPosition.Z) <= zone.Size.Z * safeRadius
                 end
                 if inField and distance <= state.TokenRadius and (not bestDistance or distance < bestDistance) then
                     best = token
