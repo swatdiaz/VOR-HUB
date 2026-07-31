@@ -340,7 +340,8 @@ $mineMountainRareHop = (
     $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Legendary' -and
     $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Ultima' -and
     $mineMountainText -match 'local function rareCrystalCounts\(\)' -and
-    $mineMountainText -match 'mountainGenerating\s*==\s*false' -and
+    $mineMountainText -match 'local generationSettled\s*=\s*mountainGenerating\s*==\s*false' -and
+    $mineMountainText -match 'elseif generationSettled then\s*\r?\n\s*state\.GenerationReady\s*=\s*true' -and
     $mineMountainText -match 'groundStrataBaked\s*~=\s*false' -and
     $mineMountainText -match '"StreamingTargetRadius",\s*\r?\n\s*desiredTarget' -and
     $mineMountainText -match '"StreamingMinRadius",\s*\r?\n\s*desiredMinimum' -and

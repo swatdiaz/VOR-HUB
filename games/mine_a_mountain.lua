@@ -2186,12 +2186,17 @@ return function(context)
             state.StreamingStableFor = now - state.LastCrystalGrowthAt
             local mountainGenerating = workspace:GetAttribute("MountainGenerating")
             local groundStrataBaked = workspace:GetAttribute("GroundStrataBaked")
-            state.GenerationReady = mountainGenerating == false
+            local generationSettled = mountainGenerating == false
                 and groundStrataBaked ~= false
                 and rootCount > 0
                 and state.StreamingStableFor >= 15
                 and (state.StreamingExpanded
                     or now - state.HopStartedAt >= 30)
+            if mountainGenerating ~= false or groundStrataBaked == false then
+                state.GenerationReady = false
+            elseif generationSettled then
+                state.GenerationReady = true
+            end
             if enabled and not state.HopBusy then
                 local replicationReady = state.GenerationReady
                 if replicationReady and highTierTotal == 0 then
