@@ -65,6 +65,20 @@ return function(context)
         Blue = "Blue Flower Field",
         White = "Sunflower Field",
     }
+    local FIELD_BEE_REQUIREMENTS = {
+        ["Strawberry Field"] = 5,
+        ["Bamboo Field"] = 5,
+        ["Spider Field"] = 5,
+        ["Pineapple Patch"] = 10,
+        ["Pumpkin Patch"] = 10,
+        ["Cactus Field"] = 10,
+        ["Stump Field"] = 10,
+        ["Rose Field"] = 15,
+        ["Pine Tree Forest"] = 15,
+        ["Mountain Top Field"] = 15,
+        ["Coconut Field"] = 35,
+        ["Pepper Patch"] = 35,
+    }
     local QUEST_GIVERS = {
         "Black Bear", "Brown Bear", "Mother Bear", "Panda Bear", "Science Bear",
         "Polar Bear", "Riley Bee", "Bucko Bee", "Honey Bee", "Onett",
@@ -203,6 +217,34 @@ return function(context)
         return ok and type(result) == "table" and result or {}
     end
 
+    local function ownedBeeCount(cached)
+        local count = 0
+        for _, column in pairs((cached or stats()).Honeycomb or {}) do
+            if type(column) == "table" then
+                for _, cell in pairs(column) do
+                    if type(cell) == "table" and type(cell.Type) == "string" and cell.Type ~= "" then
+                        count += 1
+                    end
+                end
+            end
+        end
+        return count
+    end
+
+    local function fieldIsAccessible(fieldName, cached)
+        return ownedBeeCount(cached) >= (FIELD_BEE_REQUIREMENTS[fieldName] or 0)
+    end
+
+    local function bestAccessibleField(cached)
+        for index = #FIELD_NAMES, 1, -1 do
+            local fieldName = FIELD_NAMES[index]
+            if fieldIsAccessible(fieldName, cached) then
+                return fieldName
+            end
+        end
+        return "Sunflower Field"
+    end
+
     local function coreStat(name, fallback)
         local core = LocalPlayer:FindFirstChild("CoreStats")
         local value = core and core:FindFirstChild(name)
@@ -307,6 +349,13 @@ return function(context)
         -- Never let the vertical under-field mover fight the travel tween.
         -- The mover is attached only after arrival, once tween velocity is cleared.
         clearUnderFieldHold()
+        -- Tweening an unanchored root lets Roblox physics/network ownership add
+        -- launch velocity while CFrame is changing. Lock the root for the whole
+        -- trip, then restore its original state after the arrival is settled.
+        local travelWasAnchored = root.Anchored
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.Anchored = true
         local tween = TweenService:Create(
             root,
             TweenInfo.new(math.max(0.05, distance / math.max(40, state.TravelSpeed)), Enum.EasingStyle.Linear),
@@ -346,6 +395,11 @@ return function(context)
             if state.TravelSerial == travelSerial then
                 state.Traveling = false
             end
+            if root.Parent then
+                root.Anchored = travelWasAnchored
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end
             clearUnderFieldHold()
             return false, "Adapter stopped"
         end
@@ -365,26 +419,33 @@ return function(context)
             root.AssemblyAngularVelocity = Vector3.zero
         end
         if settleOnArrival and root.Parent and state.TravelSerial == travelSerial then
-            local wasAnchored = root.Anchored
             character:PivotTo(goalCFrame)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            root.Anchored = true
             task.wait(0.2)
-            root.Anchored = wasAnchored
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            if not wasAnchored then
-                pcall(humanoid.ChangeState, humanoid, Enum.HumanoidStateType.GettingUp)
-            end
             task.wait(0.1)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
         end
         if state.TravelSerial ~= travelSerial then
+            if root.Parent then
+                root.Anchored = travelWasAnchored
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end
             return false, "Travel was superseded"
         end
         state.Traveling = false
+        if root.Parent then
+            root.Anchored = travelWasAnchored
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            if not travelWasAnchored then
+                pcall(humanoid.ChangeState, humanoid, Enum.HumanoidStateType.GettingUp)
+            end
+        end
         if keepUnderFieldCollision then
             holdUnderFieldHeight(root, goalCFrame.Position.Y)
         elseif state.NoClip or state.UnderField then
@@ -478,6 +539,31 @@ return function(context)
             )
         end
         return point
+    end
+
+    local function enterFieldBeforeHiding(zone, fieldName, targetPoint)
+        if not state.UnderField or LocalPlayer:GetAttribute("CurrentZone") == fieldName then
+            return true
+        end
+        local surfacePoint = Vector3.new(
+            targetPoint.X,
+            zone.Position.Y + zone.Size.Y * 0.5 + 3.2,
+            targetPoint.Z
+        )
+        local reached, err = travelTo(CFrame.new(surfacePoint), "Entering " .. fieldName, true)
+        if not reached then
+            return false, err
+        end
+        local deadline = os.clock() + 1.5
+        while state.Alive
+            and LocalPlayer:GetAttribute("CurrentZone") ~= fieldName
+            and os.clock() < deadline do
+            task.wait(0.05)
+        end
+        if LocalPlayer:GetAttribute("CurrentZone") ~= fieldName then
+            return false, fieldName .. " did not credit as entered"
+        end
+        return true
     end
 
     local function ownedHive()
@@ -785,6 +871,16 @@ return function(context)
                 return
             end
             state.LastCollectorPulse = os.clock()
+            local executorClicked = false
+            pcall(function()
+                if type(mouse1click) == "function" then
+                    mouse1click()
+                    executorClicked = true
+                end
+            end)
+            if executorClicked then
+                return
+            end
             pcall(function()
                 local camera = workspace.CurrentCamera
                 local viewport = camera and camera.ViewportSize or Vector2.new(800, 600)
@@ -1119,11 +1215,22 @@ return function(context)
     local function farmStep(step)
         local fieldName = state.Field
         local questName = "None"
+        local cached = stats()
         if state.FullOP or state.AutoQuest then
             local questField, activeQuest = activeQuestField()
             if questField then
-                fieldName = questField
-                questName = activeQuest or "Quest"
+                if fieldIsAccessible(questField, cached) then
+                    fieldName = questField
+                    questName = activeQuest or "Quest"
+                else
+                    fieldName = (not state.FullOP and fieldIsAccessible(state.Field, cached))
+                            and state.Field
+                        or bestAccessibleField(cached)
+                    questName = tostring(activeQuest or "Quest")
+                        .. " waiting for "
+                        .. tostring(FIELD_BEE_REQUIREMENTS[questField] or 0)
+                        .. " bees"
+                end
             end
         end
         state.ActiveField = fieldName
@@ -1139,6 +1246,10 @@ return function(context)
         else
             local point = fieldPoint(zone, step)
             if point then
+                local entered, enterError = enterFieldBeforeHiding(zone, fieldName, point)
+                if not entered then
+                    return false, enterError
+                end
                 local reached, err = travelTo(CFrame.new(point), fieldName)
                 if not reached then
                     return false, err
