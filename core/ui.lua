@@ -2420,7 +2420,7 @@ return function(context)
 
         local launch = home:AddSection("Quick Launch", "Right")
         local launchOrder = self.Pages.Shooting
-            and {"Shooting", "Offense", "Defense", "Dribble", "Visuals", "Settings"}
+            and {"Shooting", "Offense", "Defense", "Dribble", "Visuals"}
             or {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
         for _, pageName in ipairs(launchOrder) do
             if self.Pages[pageName] then
