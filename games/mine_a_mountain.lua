@@ -80,6 +80,7 @@ return function(context)
         RejectedTarget = nil,
         LastSafeCFrame = nil,
         FloorRecoveries = 0,
+        LastFloorRecoveryAt = -math.huge,
         TargetName = "None",
         Phase = "Idle",
         LastError = "None",
@@ -2024,8 +2025,10 @@ return function(context)
         updateFarmFloat(character, humanoid, root)
         if character and humanoid and root and humanoid.Health > 0 then
             local baseY = tonumber(workspace:GetAttribute("MountainBaseY"))
+            local now = os.clock()
             if baseY and root.Position.Y < baseY - 8
-                and (state.Master or state.AutoFarm) then
+                and (state.Master or state.AutoFarm)
+                and now - state.LastFloorRecoveryAt >= 0.25 then
                 local badTarget = state.Target
                 if badTarget and badTarget.Parent then
                     state.InvalidTargets[badTarget] = true
@@ -2044,9 +2047,15 @@ return function(context)
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
                 state.FloorRecoveries += 1
-                state.Phase = "Skipped crystal below map"
-                state.LastError = "Crystal path crossed below the mountain floor"
-            elseif baseY and root.Position.Y >= baseY + 2 then
+                state.LastFloorRecoveryAt = now
+                state.Phase = badTarget and "Skipped crystal below map"
+                    or "Recovered above mountain floor"
+                state.LastError = badTarget
+                    and "Crystal path crossed below the mountain floor"
+                    or "Recovered character from below the mountain floor"
+            elseif baseY
+                and root.Position.Y >= baseY + 2
+                and humanoid.FloorMaterial ~= Enum.Material.Air then
                 state.LastSafeCFrame = character:GetPivot()
             end
         end
