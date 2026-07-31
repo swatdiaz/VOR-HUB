@@ -202,6 +202,13 @@ return function(context)
     end
 
     local function travelTo(goal, label)
+        local waitDeadline = os.clock() + 15
+        while state.Alive and state.Traveling and os.clock() < waitDeadline do
+            task.wait(0.05)
+        end
+        if state.Traveling then
+            return false, "Travel controller is busy"
+        end
         local character, humanoid, root = characterParts()
         if not (character and humanoid and root and humanoid.Health > 0) then
             return false, "Character is unavailable"
@@ -513,8 +520,11 @@ return function(context)
                 return false, err
             end
         end
+        state.Traveling = true
+        state.Phase = "Talking to " .. name
         local ok, err = pcall(NPCActivator.ButtonEffect, LocalPlayer, npc)
         if not ok then
+            state.Traveling = false
             return false, err
         end
         task.wait(0.25)
@@ -537,6 +547,7 @@ return function(context)
             end
             task.wait(0.08)
         end
+        state.Traveling = false
         state.LastQuest = os.clock()
         return turns > 0, turns > 0 and ("Finished " .. name .. " dialogue") or "Dialogue controller did not open"
     end
@@ -920,7 +931,9 @@ return function(context)
         local step = 0
         while state.Alive do
             local enabled = state.FullOP or state.AutoFarm
-            if enabled then
+            if enabled and state.Traveling then
+                task.wait(0.1)
+            elseif enabled then
                 if state.AutoClaimHive and not ownedHive() then
                     state.Phase = "Claiming hive"
                     local ok, message = claimHive()
@@ -953,6 +966,8 @@ return function(context)
                     if not ok then
                         setError(message)
                         task.wait(0.35)
+                    else
+                        state.LastError = "None"
                     end
                 end
             else
@@ -969,13 +984,19 @@ return function(context)
     task.spawn(function()
         while state.Alive do
             local now = os.clock()
-            if (state.FullOP or state.AutoQuest) and now - state.LastQuest >= 45 and not state.Traveling then
+            if (state.FullOP or state.AutoQuest)
+                and now - state.LastQuest >= 45
+                and not state.Traveling
+                and not state.ConversionStarted then
                 local ok, message = talkToNPC(state.QuestGiver)
                 if not ok then
                     setError(message)
                 end
             end
-            if state.AutoToy and now - state.LastToy >= 60 and not state.Traveling then
+            if state.AutoToy
+                and now - state.LastToy >= 60
+                and not state.Traveling
+                and not state.ConversionStarted then
                 local ok, message = useToy(state.Toy)
                 if not ok then
                     setError(message)
