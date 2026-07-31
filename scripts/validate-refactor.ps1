@@ -14,6 +14,7 @@ $required = @(
     "core/utilities.lua",
     "games/revive.lua",
     "games/mypark.lua",
+    "games/practical_basketball.lua",
     "games/anime_expeditions.lua",
     "games/bid_for_anime.lua",
     "games/blox_fruits.lua",
@@ -247,8 +248,24 @@ if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and
     throw "Bid for Anime routing, auction payload, auto-farm, or AdminKit exclusion contract failed"
 }
 
+$practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
+$practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?games/practical_basketball\.lua'
+$practicalBasketballCharacter = $practicalBasketballText -match 'workspace:FindFirstChild\("Characters"\)'
+$practicalBasketballAero = $practicalBasketballText -match 'AeroRemoteServices' -and $practicalBasketballText -match 'InputService'
+$practicalBasketballBallTag = $practicalBasketballText -match 'GetTagged\("Basketballs"\)'
+$practicalBasketballPages = (
+    $practicalBasketballText -match 'addHomeCategory\("[^"]*Shooting"' -and
+    $practicalBasketballText -match 'addHomeCategory\("[^"]*Offense"' -and
+    $practicalBasketballText -match 'addHomeCategory\("[^"]*Defense"' -and
+    $practicalBasketballText -match 'addHomeCategory\("[^"]*Dribble"' -and
+    $practicalBasketballText -match 'addHomeCategory\("[^"]*Visuals"'
+)
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballPages)) {
+    throw "Practical Basketball routing or Aero adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (6/6)"
+Write-Host "Game builder contract: PASS (7/7)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
@@ -266,3 +283,4 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
+Write-Host "Practical Basketball support: PASS (native Aero character, inputs, meters, and ball tag)"

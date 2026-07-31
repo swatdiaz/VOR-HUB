@@ -30,6 +30,17 @@ return function(runtime)
             },
             Module = "games/mypark.lua",
         },
+        PracticalBasketball = {
+            Key = "PracticalBasketball",
+            DisplayName = "Practical Basketball",
+            UniverseId = 7529591378,
+            RootPlaceId = 85576197307056,
+            PlaceIds = {
+                [85576197307056] = true,
+                [80681221431821] = true,
+            },
+            Module = "games/practical_basketball.lua",
+        },
         AnimeExpeditions = {
             Key = "AnimeExpeditions",
             DisplayName = "Anime Expeditions",
@@ -91,7 +102,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.3.6",
+        Version = "3.4.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
