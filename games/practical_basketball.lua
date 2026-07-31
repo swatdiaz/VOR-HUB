@@ -822,15 +822,26 @@ return function(context)
     local originalFov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView or 70
     local originalZoom = LocalPlayer.CameraMaxZoomDistance
     local cameraFov = originalFov
+    local fovOverride = true
+    local fovBindName = "VORPracticalBasketballFov"
 
     local function applyCamera()
-        if workspace.CurrentCamera then
+        if fovOverride and workspace.CurrentCamera
+            and math.abs(workspace.CurrentCamera.FieldOfView - cameraFov) > 0.01 then
             workspace.CurrentCamera.FieldOfView = cameraFov
         end
     end
 
+    pcall(RunService.UnbindFromRenderStep, RunService, fovBindName)
+    RunService:BindToRenderStep(
+        fovBindName,
+        Enum.RenderPriority.Camera.Value + 50,
+        applyCamera
+    )
+
     CameraSection:AddSlider({
         Name = "Camera FOV",
+        Description = "Locks the active camera after the game's camera controller updates",
         Flag = "practical_basketball_camera_fov",
         Min = 50,
         Max = 110,
@@ -838,7 +849,18 @@ return function(context)
         Default = math.clamp(originalFov, 50, 110),
         Callback = function(value)
             cameraFov = tonumber(value) or originalFov
+            fovOverride = true
             applyCamera()
+        end,
+    })
+    CameraSection:AddButton({
+        Name = "Reset Camera FOV",
+        Description = "Releases VOR's FOV lock and restores the original value",
+        Callback = function()
+            fovOverride = false
+            if workspace.CurrentCamera then
+                workspace.CurrentCamera.FieldOfView = originalFov
+            end
         end,
     })
     CameraSection:AddSlider({
@@ -1210,6 +1232,8 @@ return function(context)
         state.Alive = false
         state.AutoGreen = false
         state.ForceNextGreen = false
+        fovOverride = false
+        RunService:UnbindFromRenderStep(fovBindName)
         setSprintHeld(false)
         setGuardHeld(false)
         setScreenHeld(false)
