@@ -823,21 +823,34 @@ return function(context)
     local originalZoom = LocalPlayer.CameraMaxZoomDistance
     local cameraFov = originalFov
     local fovOverride = true
-    local fovBindName = "VORPracticalBasketballFov"
+    local fovApplying = false
+    local fovConnection
 
     local function applyCamera()
         if fovOverride and workspace.CurrentCamera
             and math.abs(workspace.CurrentCamera.FieldOfView - cameraFov) > 0.01 then
+            fovApplying = true
             workspace.CurrentCamera.FieldOfView = cameraFov
+            fovApplying = false
         end
     end
 
-    pcall(RunService.UnbindFromRenderStep, RunService, fovBindName)
-    RunService:BindToRenderStep(
-        fovBindName,
-        Enum.RenderPriority.Camera.Value + 50,
-        applyCamera
-    )
+    local function watchCamera()
+        if fovConnection then
+            fovConnection:Disconnect()
+            fovConnection = nil
+        end
+        local camera = workspace.CurrentCamera
+        if camera then
+            fovConnection = camera:GetPropertyChangedSignal("FieldOfView"):Connect(function()
+                if fovOverride and not fovApplying then
+                    applyCamera()
+                end
+            end)
+        end
+        applyCamera()
+    end
+    watchCamera()
 
     CameraSection:AddSlider({
         Name = "Camera FOV",
@@ -875,7 +888,7 @@ return function(context)
         end,
     })
     track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        task.defer(applyCamera)
+        task.defer(watchCamera)
     end))
 
     track(LocalPlayer.Idled:Connect(function()
@@ -1226,6 +1239,7 @@ return function(context)
             updateAutomation(character, now)
         end
         updateVisionAndStatus(character, now)
+        applyCamera()
     end))
 
     track(gui.Destroying:Connect(function()
@@ -1233,7 +1247,10 @@ return function(context)
         state.AutoGreen = false
         state.ForceNextGreen = false
         fovOverride = false
-        RunService:UnbindFromRenderStep(fovBindName)
+        if fovConnection then
+            fovConnection:Disconnect()
+            fovConnection = nil
+        end
         setSprintHeld(false)
         setGuardHeld(false)
         setScreenHeld(false)

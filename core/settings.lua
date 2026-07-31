@@ -103,7 +103,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.4.6",
+        Version = "3.4.7",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
