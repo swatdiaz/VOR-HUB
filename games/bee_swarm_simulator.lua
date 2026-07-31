@@ -20,6 +20,7 @@ return function(context)
     local RunService = game:GetService("RunService")
     local TweenService = game:GetService("TweenService")
     local VirtualUser = game:GetService("VirtualUser")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
     local LocalPlayer = Players.LocalPlayer
 
     local Events = require(ReplicatedStorage:WaitForChild("Events"))
@@ -47,6 +48,8 @@ return function(context)
     local QuestInfoSection = QuestPage:AddSection("Quest Safety", "Right")
     local UpgradeSection = ProgressPage:AddSection("Equipment Progression", "Left")
     local HiveSection = ProgressPage:AddSection("Hive Progression", "Right")
+    local BeeItemSection = ProgressPage:AddSection("Eggs and Bee Items", "Left")
+    local RewardSection = ProgressPage:AddSection("Badges and Codes", "Right")
     local ToySection = UtilityPage:AddSection("Toys and Dispensers", "Left")
     local SafetySection = UtilityPage:AddSection("Movement and Safety", "Right")
     local StatSection = StatusPage:AddSection("Live Account", "Left")
@@ -82,6 +85,8 @@ return function(context)
         "Elite Barrel", "Port-O-Hive", "Blue Port-O-Hive", "Red Port-O-Hive",
         "Porcelain Port-O-Hive", "Coconut Canister",
     }
+    local HATCH_EGGS = {"Basic", "Silver", "Gold", "Diamond", "Mythic"}
+    local BEE_FEED_ITEMS = {"Treat", "SunflowerSeed", "Strawberry", "Pineapple", "Blueberry"}
 
     local state = {
         Alive = true,
@@ -90,13 +95,24 @@ return function(context)
         AutoConvert = true,
         AutoClaimHive = true,
         AutoHatchStarter = true,
+        AutoBuyBasicEgg = true,
+        AutoHiveSlot = false,
+        AutoBadgeRewards = true,
+        AutoFeedTreats = false,
+        HatchEgg = "Basic",
+        FeedItem = "Treat",
+        FeedAmount = 10,
+        PromoCode = "",
         AutoTokens = true,
+        PollenPriority = true,
         AutoSprinkler = false,
         AutoQuest = false,
         AutoCollector = false,
         AutoBackpack = false,
         AutoToy = false,
         AntiAfk = true,
+        LastAntiAfkPulse = 0,
+        AntiAfkPulseCount = 0,
         NoClip = true,
         UnderField = false,
         UnderFieldDepth = 3,
@@ -122,6 +138,9 @@ return function(context)
         LastUpgrade = 0,
         LastSprinkler = 0,
         LastHatch = 0,
+        LastHiveSlot = 0,
+        LastBadge = 0,
+        LastFeed = 0,
         LastStatus = 0,
         HoneySample = 0,
         PollenSample = 0,
@@ -442,11 +461,17 @@ return function(context)
             return false, "HivePlatforms is unavailable"
         end
         local free
+        local freeDistance
+        local _, _, root = characterParts()
         for _, platform in ipairs(platforms:GetChildren()) do
             local playerRef = platform:FindFirstChild("PlayerRef")
             if not playerRef or playerRef.Value == nil then
-                free = platform
-                break
+                local part = platform:FindFirstChild("Platform")
+                local distance = root and part and (root.Position - part.Position).Magnitude or math.huge
+                if not freeDistance or distance < freeDistance then
+                    free = platform
+                    freeDistance = distance
+                end
             end
         end
         if not free then
@@ -454,10 +479,33 @@ return function(context)
         end
         local goal = hivePosition(free)
         if goal then
-            travelTo(goal, "Free hive")
+            local reached, travelError = travelTo(goal, "Free hive", true)
+            if not reached then
+                return false, travelError
+            end
         end
-        local ok, err = pcall(Hives.ButtonEffect, LocalPlayer, free)
+        local hiveReference = free:FindFirstChild("Hive")
+        local hiveModel = hiveReference and hiveReference.Value
+        local hiveId = hiveModel and hiveModel:FindFirstChild("HiveID")
+        local claimCharacter, _, claimRoot = characterParts()
+        local wasAnchored = claimRoot and claimRoot.Anchored or false
+        if claimRoot then
+            claimRoot.AssemblyLinearVelocity = Vector3.zero
+            claimRoot.AssemblyAngularVelocity = Vector3.zero
+            claimRoot.Anchored = true
+        end
+        local ok, err
+        if hiveId then
+            ok, err = pcall(Events.ClientCall, "ClaimHive", hiveId.Value)
+        else
+            ok, err = pcall(Hives.ButtonEffect, LocalPlayer, free)
+        end
         if not ok then
+            if claimRoot and claimRoot.Parent then
+                claimRoot.Anchored = wasAnchored
+                claimRoot.AssemblyLinearVelocity = Vector3.zero
+                claimRoot.AssemblyAngularVelocity = Vector3.zero
+            end
             return false, err
         end
         local deadline = os.clock() + 6
@@ -465,6 +513,17 @@ return function(context)
             task.wait(0.2)
             existing = ownedHive()
         until existing or os.clock() >= deadline
+        if claimRoot and claimRoot.Parent then
+            if goal and claimCharacter then
+                claimCharacter:PivotTo(goal)
+            end
+            claimRoot.AssemblyLinearVelocity = Vector3.zero
+            claimRoot.AssemblyAngularVelocity = Vector3.zero
+            claimRoot.Anchored = wasAnchored
+            task.wait(0.15)
+            claimRoot.AssemblyLinearVelocity = Vector3.zero
+            claimRoot.AssemblyAngularVelocity = Vector3.zero
+        end
         return existing ~= nil, existing or "Hive claim was not credited"
     end
 
@@ -516,6 +575,157 @@ return function(context)
         end
         state.LastHatch = os.clock()
         return success == true, success == true and "Starter bee hatched" or "Starter egg was not accepted"
+    end
+
+    local function buyPackage(category, itemType, amount)
+        local package = {Category = category, Type = itemType, Amount = amount or 1}
+        local ok, purchased = pcall(Events.ClientCall, "ItemPackageEvent", "Purchase", package)
+        if ok and purchased then
+            pcall(ClientStatCache.Update, ClientStatCache)
+            task.wait(0.3)
+            return true, package
+        end
+        return false, ok and "Purchase was not accepted" or tostring(purchased)
+    end
+
+    local function buyBasicEgg()
+        if not ownedHive() then
+            return false, "Claim a hive first"
+        end
+        if not findStarterCell() then
+            return false, "No unlocked empty hive cell"
+        end
+        local before = tonumber((stats().Eggs or {}).Basic) or 0
+        if before > 0 then
+            return true, "Basic Egg already available"
+        end
+        local ok, result = buyPackage("Eggs", "Basic", 1)
+        if not ok then
+            return false, result
+        end
+        local after = tonumber((stats().Eggs or {}).Basic) or 0
+        return after > before, after > before and "Basic Egg purchased" or "Basic Egg purchase was not credited"
+    end
+
+    local function buyHiveSlot()
+        local ok, result = buyPackage("HiveSlot", "Hive Slot", 1)
+        state.LastHiveSlot = os.clock()
+        return ok, ok and "Hive slot purchased" or result
+    end
+
+    local function applyHiveItem(x, y, itemType, amount)
+        local ok, remaining, success, honeycomb, discovered, eggUses = pcall(
+            Events.ClientCall,
+            "ConstructHiveCellFromEgg",
+            x,
+            y,
+            itemType,
+            math.max(1, math.floor(tonumber(amount) or 1)),
+            false,
+            nil
+        )
+        if not ok then
+            return false, tostring(remaining)
+        end
+        if success then
+            ClientStatCache:Set({"Eggs", itemType}, remaining)
+            if discovered ~= nil then
+                ClientStatCache:Set("DiscoveredBees", discovered)
+            end
+            if honeycomb ~= nil then
+                ClientStatCache:Set("Honeycomb", honeycomb)
+            end
+            if eggUses ~= nil then
+                ClientStatCache:Set({"Totals", "EggUses"}, eggUses)
+            end
+            pcall(function()
+                require(ReplicatedStorage:WaitForChild("GateManager")).UpdateGateColors()
+            end)
+        end
+        return success == true, success == true and (itemType .. " used") or (itemType .. " was not accepted")
+    end
+
+    local function hatchSelectedEgg()
+        local itemType = state.HatchEgg
+        if (tonumber((stats().Eggs or {})[itemType]) or 0) <= 0 then
+            return false, "No " .. itemType .. " Egg available"
+        end
+        local x, y = findStarterCell()
+        if not x then
+            return false, "No unlocked empty hive cell"
+        end
+        local ok, message = applyHiveItem(x, y, itemType, 1)
+        state.LastHatch = os.clock()
+        return ok, message
+    end
+
+    local function lowestLevelBeeCell()
+        local bestX, bestY, bestLevel, bestBond
+        for xKey, column in pairs(stats().Honeycomb or {}) do
+            if type(column) == "table" then
+                for yKey, cell in pairs(column) do
+                    if type(cell) == "table" and cell.Type and cell.Type ~= "Empty" then
+                        local level = tonumber(cell.Level) or 0
+                        local bond = tonumber(cell.Bond) or 0
+                        if not bestLevel or level < bestLevel or (level == bestLevel and bond < bestBond) then
+                            bestX = tonumber(tostring(xKey):match("%d+"))
+                            bestY = tonumber(tostring(yKey):match("%d+"))
+                            bestLevel = level
+                            bestBond = bond
+                        end
+                    end
+                end
+            end
+        end
+        return bestX, bestY
+    end
+
+    local function feedSelectedItem(itemType, amount)
+        itemType = itemType or state.FeedItem
+        amount = math.max(1, math.floor(tonumber(amount) or state.FeedAmount))
+        local available = tonumber((stats().Eggs or {})[itemType]) or 0
+        if available <= 0 then
+            return false, "No " .. itemType .. " available"
+        end
+        amount = math.min(amount, available)
+        local x, y = lowestLevelBeeCell()
+        if not x then
+            return false, "No bee is available to feed"
+        end
+        local ok, message = applyHiveItem(x, y, itemType, amount)
+        state.LastFeed = os.clock()
+        return ok, message
+    end
+
+    local function claimBadgeRewards()
+        local badges = require(ReplicatedStorage:WaitForChild("Badges"))
+        local cached = stats()
+        local claimed = 0
+        for _, badgeSet in ipairs(badges.GetOrderedSets()) do
+            local readyOk, ready = pcall(badges.CheckIfSetIsReadyToCollect, badgeSet.Name, cached)
+            if readyOk and ready then
+                local claimOk = pcall(badges.ClientCollect, badgeSet.Name)
+                if claimOk then
+                    claimed += 1
+                    task.wait(0.25)
+                    pcall(ClientStatCache.Update, ClientStatCache)
+                    cached = stats()
+                end
+            end
+        end
+        state.LastBadge = os.clock()
+        return claimed > 0, claimed > 0 and ("Claimed " .. tostring(claimed) .. " badge reward(s)") or "No badge rewards are ready"
+    end
+
+    local function redeemPromoCode(code)
+        code = tostring(code or ""):match("^%s*(.-)%s*$")
+        if code == "" or #code > 100 then
+            return false, "Enter a valid promo code"
+        end
+        local ok, err = pcall(function()
+            require(ReplicatedStorage:WaitForChild("PromoCodes")).Redeem(code)
+        end)
+        return ok, ok and ("Submitted " .. code .. " for server validation") or tostring(err)
     end
 
     local function beginCollection()
@@ -859,7 +1069,7 @@ return function(context)
             return false, "Field is unavailable: " .. fieldName
         end
         state.Target = questName ~= "None" and (questName .. " > " .. fieldName) or fieldName
-        local token = nearestToken(zone)
+        local token = (not state.PollenPriority or step % 4 == 0) and nearestToken(zone) or nil
         if token then
             collectToken(token, zone)
         else
@@ -982,6 +1192,15 @@ return function(context)
             state.AutoTokens = enabled
         end,
     })
+    TokenSection:AddToggle({
+        Name = "Pollen Priority Mode",
+        Description = "Keeps three of every four moves harvesting; the fourth move may collect a nearby token",
+        Flag = "bee_pollen_priority",
+        Default = true,
+        Callback = function(enabled)
+            state.PollenPriority = enabled
+        end,
+    })
     TokenSection:AddSlider({
         Name = "Token Search Radius",
         Flag = "bee_token_radius",
@@ -1083,6 +1302,24 @@ return function(context)
             state.AutoHatchStarter = enabled
         end,
     })
+    HiveSection:AddToggle({
+        Name = "Auto Buy Basic Eggs",
+        Description = "Buys the next Basic Egg only when an unlocked empty hive cell exists",
+        Flag = "bee_auto_buy_basic_eggs",
+        Default = true,
+        Callback = function(enabled)
+            state.AutoBuyBasicEgg = enabled
+        end,
+    })
+    HiveSection:AddToggle({
+        Name = "Auto Buy Hive Slots",
+        Description = "Purchases the next server-priced hive slot when affordable",
+        Flag = "bee_auto_buy_hive_slots",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoHiveSlot = enabled
+        end,
+    })
     HiveSection:AddButton({
         Name = "Claim Hive + Hatch Starter",
         Callback = function()
@@ -1096,6 +1333,123 @@ return function(context)
                 local hatched, message = hatchStarterBee()
                 notify("Hive", hatched and "Hive ready" or message)
             end)
+        end,
+    })
+
+    BeeItemSection:AddDropdown({
+        Name = "Egg to Hatch",
+        Flag = "bee_hatch_egg_type",
+        Options = HATCH_EGGS,
+        Default = "Basic",
+        Callback = function(value)
+            state.HatchEgg = tostring(value or "Basic")
+        end,
+    })
+    BeeItemSection:AddButton({
+        Name = "Hatch Selected Egg",
+        Description = "Uses one owned egg in the next unlocked empty hive cell",
+        Callback = function()
+            task.spawn(function()
+                local ok, message = hatchSelectedEgg()
+                notify("Eggs", message)
+                if not ok then
+                    setError(message)
+                end
+            end)
+        end,
+    })
+    BeeItemSection:AddDropdown({
+        Name = "Bee Food",
+        Flag = "bee_feed_item",
+        Options = BEE_FEED_ITEMS,
+        Default = "Treat",
+        Callback = function(value)
+            state.FeedItem = tostring(value or "Treat")
+        end,
+    })
+    BeeItemSection:AddInput({
+        Name = "Feed Amount",
+        Description = "Uses up to this many owned items on the lowest-level bee",
+        Flag = "bee_feed_amount",
+        Placeholder = "10",
+        Default = "10",
+        Callback = function(value)
+            state.FeedAmount = math.max(1, math.floor(tonumber(value) or 10))
+        end,
+    })
+    BeeItemSection:AddToggle({
+        Name = "Auto Feed Plain Treats",
+        Description = "Feeds owned Treats in batches; valuable fruits stay manual",
+        Flag = "bee_auto_feed_treats",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoFeedTreats = enabled
+        end,
+    })
+    BeeItemSection:AddButton({
+        Name = "Feed Selected Item Now",
+        Callback = function()
+            task.spawn(function()
+                local ok, message = feedSelectedItem()
+                notify("Bee Items", message)
+                if not ok then
+                    setError(message)
+                end
+            end)
+        end,
+    })
+    BeeItemSection:AddButton({
+        Name = "Use 1 Royal Jelly",
+        Description = "Rerolls the lowest-level bee; manual because this destroys its current type",
+        Callback = function()
+            task.spawn(function()
+                local ok, message = feedSelectedItem("RoyalJelly", 1)
+                notify("Royal Jelly", message)
+                if not ok then
+                    setError(message)
+                end
+            end)
+        end,
+    })
+
+    RewardSection:AddToggle({
+        Name = "Auto Claim Badge Rewards",
+        Flag = "bee_auto_claim_badges",
+        Default = true,
+        Callback = function(enabled)
+            state.AutoBadgeRewards = enabled
+        end,
+    })
+    RewardSection:AddButton({
+        Name = "Claim Ready Badges Now",
+        Callback = function()
+            task.spawn(function()
+                local ok, message = claimBadgeRewards()
+                notify("Badges", message)
+                if not ok and message ~= "No badge rewards are ready" then
+                    setError(message)
+                end
+            end)
+        end,
+    })
+    RewardSection:AddInput({
+        Name = "Promo Code",
+        Description = "Uses Bee Swarm's native PromoCodeEvent; the server validates the code",
+        Flag = "bee_promo_code",
+        Placeholder = "Enter code",
+        Default = "",
+        Callback = function(value)
+            state.PromoCode = tostring(value or "")
+        end,
+    })
+    RewardSection:AddButton({
+        Name = "Redeem Promo Code",
+        Callback = function()
+            local ok, message = redeemPromoCode(state.PromoCode)
+            notify("Promo Codes", message)
+            if not ok then
+                setError(message)
+            end
         end,
     })
 
@@ -1170,6 +1524,15 @@ return function(context)
             state.AntiAfk = enabled
         end,
     })
+    local antiAfkStatusLabel = SafetySection:AddLabel("Anti AFK: Armed (55s heartbeat)")
+    SafetySection:AddButton({
+        Name = "Test Anti AFK Pulse",
+        Description = "Sends one harmless keep-alive pulse and updates the status label",
+        Persist = false,
+        Callback = function()
+            state.LastAntiAfkPulse = 0
+        end,
+    })
     SafetySection:AddButton({
         Name = "Stop Every Bee Automation",
         Callback = function()
@@ -1187,16 +1550,50 @@ return function(context)
 
     routeLabel.Text = "Credited route: ToolCollect > token touch > hive conversion"
 
-    track(LocalPlayer.Idled:Connect(function()
-        if state.AntiAfk then
+    local function performAntiAfkPulse(reason)
+        local camera = workspace.CurrentCamera
+        local cameraCFrame = camera and camera.CFrame or CFrame.identity
+        local virtualUserOk = pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:Button2Down(Vector2.zero, cameraCFrame)
+            task.wait(0.08)
+            VirtualUser:Button2Up(Vector2.zero, cameraCFrame)
+        end)
+        local virtualInputOk = pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
+            task.wait(0.04)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.LeftControl, false, game)
+        end)
+        state.LastAntiAfkPulse = os.clock()
+        state.AntiAfkPulseCount += 1
+        local succeeded = virtualUserOk or virtualInputOk
+        antiAfkStatusLabel.Text = succeeded
+            and ("Anti AFK: Pulse #" .. tostring(state.AntiAfkPulseCount) .. " sent (" .. tostring(reason) .. ")")
+            or "Anti AFK: Virtual input unavailable"
+        if gui then
             pcall(function()
-                local camera = workspace.CurrentCamera
-                VirtualUser:Button2Down(Vector2.zero, camera and camera.CFrame or CFrame.identity)
-                task.wait(0.05)
-                VirtualUser:Button2Up(Vector2.zero, camera and camera.CFrame or CFrame.identity)
+                gui:SetAttribute("BeeSwarmAntiAfkPulseCount", state.AntiAfkPulseCount)
+                gui:SetAttribute("BeeSwarmAntiAfkLastPulse", workspace:GetServerTimeNow())
+                gui:SetAttribute("BeeSwarmAntiAfkHealthy", succeeded)
             end)
         end
+        return succeeded
+    end
+
+    track(LocalPlayer.Idled:Connect(function()
+        if state.Alive and state.AntiAfk then
+            task.spawn(performAntiAfkPulse, "idle signal")
+        end
     end))
+
+    task.spawn(function()
+        while state.Alive do
+            if state.AntiAfk and os.clock() - state.LastAntiAfkPulse >= 55 then
+                performAntiAfkPulse("heartbeat")
+            end
+            task.wait(5)
+        end
+    end)
 
     task.spawn(function()
         local step = 0
@@ -1205,7 +1602,7 @@ return function(context)
             if enabled and state.Traveling then
                 task.wait(0.1)
             elseif enabled then
-                if state.AutoClaimHive and not ownedHive() then
+                if (state.FullOP or state.AutoClaimHive) and not ownedHive() then
                     state.Phase = "Claiming hive"
                     local ok, message = claimHive()
                     if not ok then
@@ -1213,40 +1610,55 @@ return function(context)
                         task.wait(1)
                     end
                 end
-                if state.AutoHatchStarter and ownedHive() and os.clock() - state.LastHatch >= 5 then
-                    local cached = stats()
-                    local eggs = cached.Eggs or {}
-                    if (tonumber(eggs.Basic) or 0) > 0 then
-                        local ok, message = hatchStarterBee()
-                        if not ok and message ~= "No unlocked empty hive cell" then
-                            setError(message)
+                if ownedHive() then
+                    if (state.FullOP or state.AutoHatchStarter) and os.clock() - state.LastHatch >= 5 then
+                        local eggs = stats().Eggs or {}
+                        if (tonumber(eggs.Basic) or 0) <= 0
+                            and (state.FullOP or state.AutoBuyBasicEgg)
+                            and findStarterCell() then
+                            local bought, buyMessage = buyBasicEgg()
+                            if not bought and buyMessage ~= "No unlocked empty hive cell" then
+                                setError(buyMessage)
+                            end
+                            eggs = stats().Eggs or {}
+                        end
+                        if (tonumber(eggs.Basic) or 0) > 0 then
+                            local ok, message = hatchStarterBee()
+                            if not ok and message ~= "No unlocked empty hive cell" then
+                                setError(message)
+                            end
                         end
                     end
-                end
-                local pollen = coreStat("Pollen", 0)
-                local capacity = math.max(1, coreStat("Capacity", 1))
-                local convertForFarm = state.AutoConvert and pollen >= capacity * (state.ConvertAt / 100)
-                local convertForQuest = (state.FullOP or state.AutoQuest) and pollen >= capacity
-                if convertForFarm or convertForQuest then
-                    local ok, message = convertPollen()
-                    if not ok then
-                        setError(message)
+                    local pollen = coreStat("Pollen", 0)
+                    local capacity = math.max(1, coreStat("Capacity", 1))
+                    local convertForFarm = state.AutoConvert and pollen >= capacity * (state.ConvertAt / 100)
+                    local convertForQuest = (state.FullOP or state.AutoQuest) and pollen >= capacity
+                    if convertForFarm or convertForQuest then
+                        local ok, message = convertPollen()
+                        if not ok then
+                            setError(message)
+                            task.wait(0.5)
+                        end
+                    elseif pollen >= capacity then
+                        stopCollection()
+                        state.Phase = "Backpack full"
+                        state.Target = "Enable Auto Convert Honey or Auto Complete Quests"
                         task.wait(0.5)
-                    end
-                elseif pollen >= capacity then
-                    stopCollection()
-                    state.Phase = "Backpack full"
-                    state.Target = "Enable Auto Convert Honey or Auto Complete Quests"
-                    task.wait(0.5)
-                else
-                    step += 1
-                    local ok, message = farmStep(step)
-                    if not ok then
-                        setError(message)
-                        task.wait(0.35)
                     else
-                        state.LastError = "None"
+                        step += 1
+                        local ok, message = farmStep(step)
+                        if not ok then
+                            setError(message)
+                            task.wait(0.35)
+                        else
+                            state.LastError = "None"
+                        end
                     end
+                else
+                    stopCollection()
+                    state.Phase = "Waiting for a credited hive claim"
+                    state.Target = "Nearest free hive"
+                    task.wait(0.5)
                 end
             else
                 stopCollection()
@@ -1297,6 +1709,24 @@ return function(context)
                 if state.FullOP or state.AutoBackpack then
                     buyBackpack()
                 end
+            end
+            if (state.FullOP or state.AutoHiveSlot)
+                and now - state.LastHiveSlot >= 15
+                and not state.Traveling
+                and ownedHive() then
+                buyHiveSlot()
+            end
+            if (state.FullOP or state.AutoFeedTreats)
+                and now - state.LastFeed >= 10
+                and not state.Traveling
+                and ownedHive()
+                and (tonumber((stats().Eggs or {}).Treat) or 0) > 0 then
+                feedSelectedItem("Treat", state.FeedAmount)
+            end
+            if (state.FullOP or state.AutoBadgeRewards)
+                and now - state.LastBadge >= 15
+                and not state.Traveling then
+                claimBadgeRewards()
             end
             task.wait(1)
         end
