@@ -298,7 +298,23 @@ $practicalBasketballFHotkey = (
     $practicalBasketballText -match 'Enum\.ContextActionResult\.Sink' -and
     $practicalBasketballText -match 'ContextActionService:UnbindAction\(comboHotkeyAction\)'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey)) {
+$practicalBasketballCustomPreview = (
+    $practicalBasketballText -match 'Window\.AvatarCharacterResolver\s*=\s*resolveCharacter' -and
+    $uiText -match 'local customResolver\s*=\s*self\.AvatarCharacterResolver' -and
+    $uiText -match 'resolveAvatarCharacter\(\)'
+)
+$practicalBasketballMobileSupport = (
+    $practicalBasketballText -match 'state\.MobileShootHeld' -and
+    $practicalBasketballText -match 'OffenseButton.*OffenseThumbstick' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Mobile Basketball Button"' -and
+    $practicalBasketballText -match 'PracticalBasketballMobileDribble' -and
+    $practicalBasketballText -match 'triggerSelectedChain\("Mobile"\)'
+)
+$practicalBasketballQuickLaunch = (
+    $uiText -match 'self\.Pages\.Shooting' -and
+    $uiText -match '\{"Shooting",\s*"Offense",\s*"Defense",\s*"Dribble",\s*"Visuals",\s*"Settings"\}'
+)
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -326,3 +342,6 @@ Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
 Write-Host "Practical Basketball camera FOV: PASS (change listener, late render lock, and clean reset)"
 Write-Host "Practical Basketball F hotkey: PASS (optional high-priority chain action with native-input restore)"
+Write-Host "Practical Basketball character preview: PASS (custom Aero character resolver)"
+Write-Host "Practical Basketball mobile support: PASS (native Shoot Auto Green and floating chain button)"
+Write-Host "Practical Basketball Quick Launch: PASS (Shooting, Offense, Defense, Dribble, Visuals)"

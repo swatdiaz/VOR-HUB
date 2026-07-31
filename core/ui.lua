@@ -2286,6 +2286,19 @@ return function(context)
         local yaw = 180
         local dragging = false
         local previousX = 0
+        local customResolver = self.AvatarCharacterResolver
+        local customAddedSignal = self.AvatarCharacterAddedSignal
+        local customFilter = self.AvatarCharacterFilter
+
+        local function resolveAvatarCharacter()
+            if type(customResolver) == "function" then
+                local ok, result = pcall(customResolver)
+                if ok and result then
+                    return result
+                end
+            end
+            return LocalPlayer.Character
+        end
 
         local function rotateAvatar()
             if avatarModel and avatarModel.Parent then
@@ -2294,7 +2307,7 @@ return function(context)
         end
 
         local function refreshAvatar(character)
-            character = character or LocalPlayer.Character
+            character = character or resolveAvatarCharacter()
             if not character or not character.Parent then
                 return
             end
@@ -2356,13 +2369,26 @@ return function(context)
                 dragging = false
             end
         end))
-        Utilities.Track(LocalPlayer.CharacterAdded:Connect(function(character)
-            task.delay(1, function()
-                if row.Parent then
-                    refreshAvatar(character)
+        if typeof(customAddedSignal) == "RBXScriptSignal" then
+            Utilities.Track(customAddedSignal:Connect(function(character)
+                if type(customFilter) == "function" and not customFilter(character) then
+                    return
                 end
-            end)
-        end))
+                task.delay(1, function()
+                    if row.Parent then
+                        refreshAvatar(character)
+                    end
+                end)
+            end))
+        else
+            Utilities.Track(LocalPlayer.CharacterAdded:Connect(function(character)
+                task.delay(1, function()
+                    if row.Parent then
+                        refreshAvatar(character)
+                    end
+                end)
+            end))
+        end
 
         task.defer(refreshAvatar)
         return viewport
@@ -2393,7 +2419,9 @@ return function(context)
         updates:AddLabel("Background, accent, transparency, and minimize styles are live settings.")
 
         local launch = home:AddSection("Quick Launch", "Right")
-        local launchOrder = {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
+        local launchOrder = self.Pages.Shooting
+            and {"Shooting", "Offense", "Defense", "Dribble", "Visuals", "Settings"}
+            or {"Farming", "Combat", "Sea & Raids", "Dungeons", "Player", "Settings", "Mastery", "Shop"}
         for _, pageName in ipairs(launchOrder) do
             if self.Pages[pageName] then
                 launch:AddButton({

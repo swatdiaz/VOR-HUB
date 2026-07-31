@@ -123,6 +123,7 @@ return function(context)
         ShotTravel = 0,
         LastShotOffset = nil,
         LastShotMeter = "Vertical",
+        MobileShootHeld = false,
         PendingReleaseOffset = nil,
         PendingReleaseMeter = nil,
         LastFeedback = "Waiting",
@@ -163,6 +164,7 @@ return function(context)
         ComboInterval = 1.5,
         LastCombo = 0,
         ComboHotkey = false,
+        MobileDribbleButton = UserInputService.TouchEnabled,
 
         CourtVision = false,
         AntiAfk = true,
@@ -198,6 +200,13 @@ return function(context)
     local function resolveCharacter()
         local characters = workspace:FindFirstChild("Characters")
         return characters and characters:FindFirstChild(LocalPlayer.Name)
+    end
+
+    local characterFolder = workspace:FindFirstChild("Characters")
+    Window.AvatarCharacterResolver = resolveCharacter
+    Window.AvatarCharacterAddedSignal = characterFolder and characterFolder.ChildAdded or nil
+    Window.AvatarCharacterFilter = function(character)
+        return character and character.Name == LocalPlayer.Name
     end
 
     local function resolveRoot(character)
@@ -494,6 +503,27 @@ return function(context)
     local adapterStatusLabel = StatusSection:AddLabel("Adapter: Aero remotes found")
     local comboHotkeyAction = "VORPracticalBasketballComboF"
 
+    local function triggerSelectedChain(source)
+        local character = resolveCharacter()
+        local action = tostring(character and character:GetAttribute("Action") or "")
+        if not character or not hasBasketball(character) then
+            chainStatusLabel.Text = "Chain: " .. source .. " waiting for possession"
+            return false
+        elseif action ~= "" and action ~= "TripleThreat" and action ~= "Moving" then
+            chainStatusLabel.Text = "Chain: " .. source .. " waiting for " .. action
+            return false
+        end
+        local fired, status, index, count = runNextDribbleStep(character)
+        chainStatusLabel.Text = string.format(
+            "Chain: %s | %s | %d/%d",
+            source,
+            status,
+            index,
+            count
+        )
+        return fired
+    end
+
     local function setComboHotkey(enabled)
         ContextActionService:UnbindAction(comboHotkeyAction)
         state.ComboHotkey = enabled == true
@@ -504,21 +534,7 @@ return function(context)
             comboHotkeyAction,
             function(_, inputState)
                 if inputState == Enum.UserInputState.Begin then
-                    local character = resolveCharacter()
-                    local action = tostring(character and character:GetAttribute("Action") or "")
-                    if not character or not hasBasketball(character) then
-                        chainStatusLabel.Text = "Chain: F hotkey waiting for possession"
-                    elseif action ~= "" and action ~= "TripleThreat" and action ~= "Moving" then
-                        chainStatusLabel.Text = "Chain: F hotkey waiting for " .. action
-                    else
-                        local _, status, index, count = runNextDribbleStep(character)
-                        chainStatusLabel.Text = string.format(
-                            "Chain: F | %s | %d/%d",
-                            status,
-                            index,
-                            count
-                        )
-                    end
+                    triggerSelectedChain("F")
                 end
                 return Enum.ContextActionResult.Sink
             end,
@@ -528,9 +544,138 @@ return function(context)
         )
     end
 
+    local buttonHost = gui:FindFirstChild("Overlay") or gui
+    local mobileDribbleButton = Instance.new("TextButton")
+    mobileDribbleButton.Name = "PracticalBasketballMobileDribble"
+    mobileDribbleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+    mobileDribbleButton.Position = UDim2.fromScale(0.84, 0.52)
+    mobileDribbleButton.Size = UDim2.fromOffset(64, 64)
+    mobileDribbleButton.BackgroundColor3 = COLORS.surfaceRaised
+    mobileDribbleButton.BackgroundTransparency = 0.08
+    mobileDribbleButton.BorderSizePixel = 0
+    mobileDribbleButton.Text = utf8.char(0x1F3C0)
+    mobileDribbleButton.TextColor3 = COLORS.white
+    mobileDribbleButton.TextSize = 32
+    mobileDribbleButton.Font = Enum.Font.GothamBold
+    mobileDribbleButton.AutoButtonColor = false
+    mobileDribbleButton.Active = true
+    mobileDribbleButton.Visible = state.MobileDribbleButton
+    mobileDribbleButton.ZIndex = 95
+    mobileDribbleButton.Parent = buttonHost
+
+    local mobileButtonCorner = Instance.new("UICorner")
+    mobileButtonCorner.CornerRadius = UDim.new(1, 0)
+    mobileButtonCorner.Parent = mobileDribbleButton
+    local mobileButtonStroke = Instance.new("UIStroke")
+    mobileButtonStroke.Color = COLORS.accentBright
+    mobileButtonStroke.Thickness = 2
+    mobileButtonStroke.Transparency = 0.08
+    mobileButtonStroke.Parent = mobileDribbleButton
+
+    local mobileDragging = false
+    local mobileDragged = false
+    local mobileDragInput
+    local mobileDragStart
+    local mobileButtonStart
+
+    track(mobileDribbleButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragging = true
+            mobileDragged = false
+            mobileDragInput = input
+            mobileDragStart = Vector2.new(input.Position.X, input.Position.Y)
+            mobileButtonStart = mobileDribbleButton.AbsolutePosition
+                + mobileDribbleButton.AbsoluteSize * 0.5
+        end
+    end))
+    track(UserInputService.InputChanged:Connect(function(input)
+        if not mobileDragging or not mobileDragStart or not mobileButtonStart then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input ~= mobileDragInput then
+            return
+        end
+        local position = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = position - mobileDragStart
+        if delta.Magnitude > 6 then
+            mobileDragged = true
+        end
+        local hostSize = buttonHost.AbsoluteSize
+        local half = mobileDribbleButton.AbsoluteSize * 0.5
+        local center = mobileButtonStart + delta - buttonHost.AbsolutePosition
+        center = Vector2.new(
+            math.clamp(center.X, half.X, math.max(half.X, hostSize.X - half.X)),
+            math.clamp(center.Y, half.Y, math.max(half.Y, hostSize.Y - half.Y))
+        )
+        mobileDribbleButton.Position = UDim2.fromScale(
+            center.X / math.max(1, hostSize.X),
+            center.Y / math.max(1, hostSize.Y)
+        )
+    end))
+    track(UserInputService.InputEnded:Connect(function(input)
+        if input == mobileDragInput
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileDragging = false
+            mobileDragInput = nil
+            mobileDragStart = nil
+            mobileButtonStart = nil
+            if mobileDragged then
+                task.defer(function()
+                    mobileDragged = false
+                end)
+            end
+        end
+    end))
+    track(mobileDribbleButton.Activated:Connect(function()
+        if not mobileDragged then
+            triggerSelectedChain("Mobile")
+        end
+    end))
+
+    local trackedMobileShootButtons = setmetatable({}, {__mode = "k"})
+    local function trackMobileShootButton(button)
+        if not button or trackedMobileShootButtons[button] then
+            return
+        end
+        trackedMobileShootButtons[button] = true
+        track(button.MouseButton1Down:Connect(function()
+            state.MobileShootHeld = true
+        end))
+        track(button.MouseButton1Up:Connect(function()
+            state.MobileShootHeld = false
+        end))
+        track(button.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+                or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                state.MobileShootHeld = false
+            end
+        end))
+    end
+
+    local function attachMobileShootControls(mobileGui)
+        if not mobileGui then
+            return
+        end
+        for _, layoutName in ipairs({"OffenseButton", "OffenseThumbstick"}) do
+            local layout = mobileGui:FindFirstChild(layoutName)
+            trackMobileShootButton(layout and layout:FindFirstChild("Shoot"))
+        end
+    end
+
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    attachMobileShootControls(playerGui and playerGui:FindFirstChild("Mobile"))
+    if playerGui then
+        track(playerGui.ChildAdded:Connect(function(child)
+            if child.Name == "Mobile" then
+                task.defer(attachMobileShootControls, child)
+            end
+        end))
+    end
+
     AutoGreenSection:AddToggle({
         Name = "Auto Green",
-        Description = "Releases your held E or Space shot from the live Aero meter",
+        Description = "Releases held keyboard or native mobile Shoot input from the live Aero meter",
         Flag = "practical_basketball_auto_green",
         Default = false,
         Callback = function(enabled)
@@ -827,6 +972,19 @@ return function(context)
                 or "Chain: F hotkey disabled"
         end,
     })
+    ComboSection:AddToggle({
+        Name = "Mobile Basketball Button",
+        Description = "Shows a draggable floating basketball that advances the selected chain per tap",
+        Flag = "practical_basketball_mobile_dribble_button",
+        Default = UserInputService.TouchEnabled,
+        Callback = function(enabled)
+            state.MobileDribbleButton = enabled
+            mobileDribbleButton.Visible = enabled
+            chainStatusLabel.Text = enabled
+                and "Chain: Mobile basketball button ready"
+                or "Chain: Mobile basketball button hidden"
+        end,
+    })
     ComboSection:AddSlider({
         Name = "Move Interval",
         Description = "Delay between accepted moves in the chain",
@@ -984,7 +1142,8 @@ return function(context)
     end))
 
     local function shootInputHeld()
-        return UserInputService:IsKeyDown(Enum.KeyCode.E)
+        return state.MobileShootHeld
+            or UserInputService:IsKeyDown(Enum.KeyCode.E)
             or UserInputService:IsKeyDown(Enum.KeyCode.Space)
     end
 
