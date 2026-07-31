@@ -243,6 +243,14 @@ return function(context)
         if state.UnderMover then
             state.UnderMover:Destroy()
         end
+        local _, _, root = characterParts()
+        if root then
+            for _, child in ipairs(root:GetChildren()) do
+                if child.Name == "VORBeeUnderFieldHeight" then
+                    child:Destroy()
+                end
+            end
+        end
         state.UnderMover = nil
         state.UnderRoot = nil
     end
@@ -1598,8 +1606,11 @@ return function(context)
     routeLabel.Text = "Credited route: ToolCollect > token touch > hive conversion"
 
     track(RunService.Heartbeat:Connect(function()
-        if state.Traveling and state.UnderMover then
-            clearUnderFieldHold()
+        if state.Traveling then
+            local _, _, root = characterParts()
+            if state.UnderMover or (root and root:FindFirstChild("VORBeeUnderFieldHeight")) then
+                clearUnderFieldHold()
+            end
         end
     end))
 
