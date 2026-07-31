@@ -134,6 +134,8 @@ return function(context)
         OwnedHive = nil,
         Collecting = false,
         Traveling = false,
+        TravelSerial = 0,
+        ActiveTween = nil,
         ConversionStarted = false,
         LastQuest = 0,
         LastToy = 0,
@@ -246,6 +248,10 @@ return function(context)
     end
 
     local function holdUnderFieldHeight(root, worldY)
+        if state.Traveling then
+            clearUnderFieldHold()
+            return
+        end
         if not root then
             clearUnderFieldHold()
             return
@@ -279,6 +285,8 @@ return function(context)
         local goalCFrame = typeof(goal) == "CFrame" and goal or CFrame.new(goal)
         local distance = (root.Position - goalCFrame.Position).Magnitude
         local keepUnderFieldCollision = state.UnderField and label == state.ActiveField
+        state.TravelSerial += 1
+        local travelSerial = state.TravelSerial
         state.Traveling = true
         state.Target = label or "Position"
         state.Phase = "Traveling"
@@ -293,6 +301,10 @@ return function(context)
             TweenInfo.new(math.max(0.05, distance / math.max(40, state.TravelSpeed)), Enum.EasingStyle.Linear),
             {CFrame = goalCFrame}
         )
+        if state.ActiveTween then
+            pcall(state.ActiveTween.Cancel, state.ActiveTween)
+        end
+        state.ActiveTween = tween
         tween:Play()
         local completed = false
         local connection
@@ -303,13 +315,19 @@ return function(context)
             end
         end)
         local started = os.clock()
-        while state.Alive and not completed and os.clock() - started < math.max(2, distance / 35 + 3) do
+        while state.Alive
+            and state.TravelSerial == travelSerial
+            and not completed
+            and os.clock() - started < math.max(2, distance / 35 + 3) do
             if not root.Parent or humanoid.Health <= 0 then
                 break
             end
             RunService.Heartbeat:Wait()
         end
         tween:Cancel()
+        if state.ActiveTween == tween then
+            state.ActiveTween = nil
+        end
         if connection then
             connection:Disconnect()
         end
@@ -324,18 +342,11 @@ return function(context)
                 end
             end
         end
-        if root.Parent then
+        if root.Parent and state.TravelSerial == travelSerial then
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            if keepUnderFieldCollision then
-                holdUnderFieldHeight(root, goalCFrame.Position.Y)
-            end
         end
-        state.Traveling = false
-        if (state.NoClip or state.UnderField) and not keepUnderFieldCollision then
-            setTravelCollision(character, true)
-        end
-        if settleOnArrival and root.Parent then
+        if settleOnArrival and root.Parent and state.TravelSerial == travelSerial then
             local wasAnchored = root.Anchored
             character:PivotTo(goalCFrame)
             root.AssemblyLinearVelocity = Vector3.zero
@@ -351,6 +362,15 @@ return function(context)
             task.wait(0.1)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
+        end
+        if state.TravelSerial ~= travelSerial then
+            return false, "Travel was superseded"
+        end
+        state.Traveling = false
+        if keepUnderFieldCollision then
+            holdUnderFieldHeight(root, goalCFrame.Position.Y)
+        elseif state.NoClip or state.UnderField then
+            setTravelCollision(character, true)
         end
         return root.Parent ~= nil and (root.Position - goalCFrame.Position).Magnitude <= 12,
             "Travel did not reach " .. tostring(label or "target")
@@ -1534,13 +1554,13 @@ return function(context)
     SafetySection:AddSlider({
         Name = "Under-Field Depth",
         Flag = "bee_under_field_depth",
-        Min = 1,
+        Min = 3,
         Max = 6,
         Step = 0.5,
         Default = 3,
         Suffix = " studs",
         Callback = function(value)
-            state.UnderFieldDepth = tonumber(value) or 3
+            state.UnderFieldDepth = math.clamp(tonumber(value) or 3, 3, 6)
         end,
     })
     SafetySection:AddToggle({
@@ -1576,6 +1596,12 @@ return function(context)
     })
 
     routeLabel.Text = "Credited route: ToolCollect > token touch > hive conversion"
+
+    track(RunService.Heartbeat:Connect(function()
+        if state.Traveling and state.UnderMover then
+            clearUnderFieldHold()
+        end
+    end))
 
     local function performAntiAfkPulse(reason)
         local camera = workspace.CurrentCamera
