@@ -552,9 +552,38 @@ return function(context)
             zone.Position.Y + zone.Size.Y * 0.5 + 1.9,
             targetPoint.Z
         )
-        local reached, err = travelTo(CFrame.new(surfacePoint), "Entering " .. fieldName, true)
-        if not reached then
-            return false, err
+        local character, humanoid, root = characterParts()
+        if not (character and humanoid and root and humanoid.Health > 0) then
+            return false, "Character is unavailable"
+        end
+        -- Long CFrame tweens through gates are occasionally server-corrected
+        -- back to the hive even when the field is unlocked. A single settled
+        -- placement at the credited touch height is accepted reliably.
+        state.TravelSerial += 1
+        if state.ActiveTween then
+            pcall(state.ActiveTween.Cancel, state.ActiveTween)
+            state.ActiveTween = nil
+        end
+        state.Traveling = true
+        state.Target = "Entering " .. fieldName
+        state.Phase = "Entering " .. fieldName
+        clearUnderFieldHold()
+        setTravelCollision(character, false)
+        root.Anchored = true
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        character:PivotTo(CFrame.new(surfacePoint) * root.CFrame.Rotation)
+        task.wait(0.15)
+        root.Anchored = false
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        setTravelCollision(character, true)
+        humanoid.Sit = false
+        humanoid.PlatformStand = false
+        pcall(humanoid.ChangeState, humanoid, Enum.HumanoidStateType.GettingUp)
+        if type(firetouchinterest) == "function" then
+            pcall(firetouchinterest, root, zone, 0)
+            pcall(firetouchinterest, root, zone, 1)
         end
         local deadline = os.clock() + 1.5
         while state.Alive
@@ -563,8 +592,10 @@ return function(context)
             task.wait(0.05)
         end
         if LocalPlayer:GetAttribute("CurrentZone") ~= fieldName then
+            state.Traveling = false
             return false, fieldName .. " did not credit as entered"
         end
+        state.Traveling = false
         return true
     end
 
