@@ -350,6 +350,8 @@ $mineMountainRareHop = (
     $mineMountainText -match 'replicationReady\s*and\s*highTierTotal\s*==\s*0' -and
     $mineMountainText -match 'HopCountdownDuration\s*=\s*15' -and
     $mineMountainText -match 'local function ensureHopCountdown\(\)' -and
+    $mineMountainText -match 'overlay\.DisplayOrder\s*=\s*1000000' -and
+    $mineMountainText -match 'VORMountainHopOverlay' -and
     $mineMountainText -match 'local function updateHopCountdown\(remaining\)' -and
     $mineMountainText -match 'local function closeHopCountdown\(\)' -and
     $mineMountainText -match 'finalHighTierTotal\s*==\s*0' -and

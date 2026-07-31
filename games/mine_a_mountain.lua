@@ -100,6 +100,7 @@ return function(context)
         HopCountdownEndsAt = nil,
         HopCountdownRemaining = 0,
         HopCountdownFrame = nil,
+        HopCountdownOverlay = nil,
         HopCountdownTimerLabel = nil,
         HopCountdownMessageLabel = nil,
         HopCountdownBar = nil,
@@ -266,15 +267,24 @@ return function(context)
             return state.HopCountdownFrame
         end
 
+        local overlay = Instance.new("ScreenGui")
+        overlay.Name = "VORMountainHopOverlay"
+        overlay.DisplayOrder = 1000000
+        overlay.IgnoreGuiInset = true
+        overlay.ResetOnSpawn = false
+        overlay.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        overlay.Parent = LocalPlayer:WaitForChild("PlayerGui")
+        state.HopCountdownOverlay = overlay
+
         local frame = Instance.new("Frame")
         frame.Name = "VORMountainHopCountdown"
-        frame.AnchorPoint = Vector2.new(0.5, 0)
-        frame.Position = UDim2.new(0.5, 0, 0, -130)
+        frame.AnchorPoint = Vector2.new(1, 1)
+        frame.Position = UDim2.new(1, 450, 1, -24)
         frame.Size = UDim2.fromOffset(430, 108)
         frame.BackgroundColor3 = COLORS.surfaceRaised
         frame.BorderSizePixel = 0
         frame.ZIndex = 1200
-        frame.Parent = gui
+        frame.Parent = overlay
         addCorner(frame, 14)
         addStroke(frame, COLORS.accentBright, 1.4, 0.12)
 
@@ -313,7 +323,7 @@ return function(context)
             utf8.char(0x26A1),
             UDim2.fromScale(1, 1),
             UDim2.fromOffset(0, 0),
-            COLORS.accentBright,
+            COLORS.text,
             27,
             Enum.Font.GothamBold
         )
@@ -324,7 +334,7 @@ return function(context)
             "HIGH-TIER SWEEP COMPLETE",
             UDim2.fromOffset(270, 22),
             UDim2.fromOffset(86, 12),
-            COLORS.accentBright,
+            COLORS.text,
             13,
             Enum.Font.GothamBold
         )
@@ -333,7 +343,7 @@ return function(context)
             "Rescanning Legendary through Ultima...",
             UDim2.fromOffset(280, 32),
             UDim2.fromOffset(86, 34),
-            COLORS.muted,
+            COLORS.text,
             11,
             Enum.Font.GothamMedium
         )
@@ -378,7 +388,7 @@ return function(context)
         TweenService:Create(
             frame,
             TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-            {Position = UDim2.new(0.5, 0, 0, 22)}
+            {Position = UDim2.new(1, -24, 1, -24)}
         ):Play()
         return frame
     end
@@ -410,18 +420,26 @@ return function(context)
         state.HopCountdownMessageLabel = nil
         state.HopCountdownBar = nil
         local frame = state.HopCountdownFrame
+        local overlay = state.HopCountdownOverlay
         state.HopCountdownFrame = nil
+        state.HopCountdownOverlay = nil
         if not (frame and frame.Parent) then
+            if overlay and overlay.Parent then
+                overlay:Destroy()
+            end
             return
         end
         local animation = TweenService:Create(
             frame,
             TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            {Position = UDim2.new(0.5, 0, 0, -130), BackgroundTransparency = 1}
+            {Position = UDim2.new(1, 450, 1, -24), BackgroundTransparency = 1}
         )
         animation.Completed:Once(function()
             if frame.Parent then
                 frame:Destroy()
+            end
+            if overlay and overlay.Parent then
+                overlay:Destroy()
             end
         end)
         animation:Play()
