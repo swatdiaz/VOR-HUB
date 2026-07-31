@@ -28,10 +28,10 @@ return function(context)
     local LocalCollect = require(ReplicatedStorage:WaitForChild("Collectors"):WaitForChild("LocalCollect"))
     local Hives = require(ReplicatedStorage:WaitForChild("Activatables"):WaitForChild("Hives"))
     local NPCActivator = require(ReplicatedStorage.Activatables:WaitForChild("NPCs"))
-    local ToyActivator = require(ReplicatedStorage.Activatables:WaitForChild("Toys"))
     local HoneycombTools = require(ReplicatedStorage:WaitForChild("HoneycombTools"))
     local ItemPackages = require(ReplicatedStorage:WaitForChild("ItemPackages"))
     local Quests = require(ReplicatedStorage:WaitForChild("Quests"))
+    local StatTools = require(ReplicatedStorage:WaitForChild("StatTools"))
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local FarmingPage = addHomeCategory("Farming", 1, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Overnight)
@@ -363,13 +363,29 @@ return function(context)
         local cached = stats()
         local active = cached.Quests and cached.Quests.Active or {}
         for _, activeData in ipairs(active) do
-            local quest = Quests:Get(activeData.Name)
+            local questOk, quest = pcall(Quests.Get, Quests, activeData.Name)
+            quest = questOk and quest or nil
             if quest then
-                local tasks = Quests.ResolveTasks(quest, cached)
-                local progress = Quests:Progress(activeData.Name, cached) or {}
+                local tasksOk, tasks = pcall(Quests.ResolveTasks, quest, cached)
+                tasks = tasksOk and tasks or {}
                 for index, taskData in ipairs(tasks or {}) do
-                    local taskProgress = progress[index]
-                    local incomplete = not taskProgress or (tonumber(taskProgress[1]) or 0) < 1
+                    local taskProgress
+                    if taskData.Type == "Collect Pollen" then
+                        local progressOk, current = pcall(function()
+                            local value = StatTools.GetRawPollenTotal(cached, taskData)
+                            if not taskData.Challenge then
+                                value -= StatTools.GetPollenTotal(cached, taskData, true)
+                            end
+                            return value
+                        end)
+                        if progressOk then
+                            local startValue = tonumber((activeData.StartValues or {})[index]) or 0
+                            local goal = tonumber(taskData.Amount) or 1
+                            local value = math.max(0, (tonumber(current) or 0) - startValue)
+                            taskProgress = {math.min(1, value / math.max(1, goal)), value, goal}
+                        end
+                    end
+                    local incomplete = taskProgress and (tonumber(taskProgress[1]) or 0) < 1
                     local zoneName = type(taskData.Zone) == "string" and taskData.Zone or nil
                     if not zoneName and type(taskData.Color) == "string" then
                         zoneName = QUEST_COLOR_FIELDS[taskData.Color]
@@ -392,13 +408,7 @@ return function(context)
         if #active == 0 then
             return true
         end
-        for _, activeData in ipairs(active) do
-            local ok, complete = pcall(Quests.CanComplete, Quests, activeData.Name, cached)
-            if ok and complete then
-                return true
-            end
-        end
-        return false
+        return activeQuestField() == nil
     end
 
     local function fieldPoint(zone, step)
@@ -702,14 +712,15 @@ return function(context)
         local cached = stats()
         local claimed = 0
         for _, badgeSet in ipairs(badges.GetOrderedSets()) do
-            local readyOk, ready = pcall(badges.CheckIfSetIsReadyToCollect, badgeSet.Name, cached)
-            if readyOk and ready then
-                local claimOk = pcall(badges.ClientCollect, badgeSet.Name)
-                if claimOk then
-                    claimed += 1
-                    task.wait(0.25)
-                    pcall(ClientStatCache.Update, ClientStatCache)
-                    cached = stats()
+            local before = tonumber((cached.Badges or {})[badgeSet.Name]) or 0
+            local claimOk = pcall(Events.ClientCall, "BadgeEvent", "Collect", badgeSet.Name)
+            if claimOk then
+                task.wait(0.12)
+                pcall(ClientStatCache.Update, ClientStatCache)
+                cached = stats()
+                local after = tonumber((cached.Badges or {})[badgeSet.Name]) or 0
+                if after > before then
+                    claimed += after - before
                 end
             end
         end
@@ -971,10 +982,6 @@ return function(context)
         if not toy then
             return false, name .. " is unavailable"
         end
-        local text, _, disabled = ToyActivator.ButtonText(LocalPlayer, toy)
-        if disabled then
-            return false, tostring(text or (name .. " is not ready"))
-        end
         local platform = toy:FindFirstChild("Platform", true)
             or toy:FindFirstChild("Button", true)
             or toy:FindFirstChildWhichIsA("BasePart", true)
@@ -984,9 +991,9 @@ return function(context)
                 return false, err
             end
         end
-        local ok, result = pcall(ToyActivator.ButtonEffect, LocalPlayer, toy)
+        local ok, result = pcall(Events.ClientCall, "ToyEvent", toy.Name)
         state.LastToy = os.clock()
-        return ok, ok and ("Used " .. name) or result
+        return ok and result ~= false, ok and result ~= false and ("Requested " .. name) or (result or (name .. " is locked or cooling down"))
     end
 
     local function itemIndex(order, name)
@@ -1724,7 +1731,7 @@ return function(context)
                 feedSelectedItem("Treat", state.FeedAmount)
             end
             if (state.FullOP or state.AutoBadgeRewards)
-                and now - state.LastBadge >= 15
+                and now - state.LastBadge >= 60
                 and not state.Traveling then
                 claimBadgeRewards()
             end

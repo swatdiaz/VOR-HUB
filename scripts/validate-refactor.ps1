@@ -382,12 +382,12 @@ $beeSwarmNativeLoop = (
     $beeSwarmText -match 'EquippedAccessories' -and
     $beeSwarmText -match 'pcall\(LocalCollect\.Run\)' -and
     $beeSwarmText -match 'local function activeQuestField\(\)' -and
-    $beeSwarmText -match 'Quests:Progress' -and
+    $beeSwarmText -match 'StatTools\.GetRawPollenTotal' -and
     $beeSwarmText -match 'Name\s*=\s*"Auto Complete Quests"' -and
     $beeSwarmText -match 'questDialogueNeeded\(\)' -and
     $beeSwarmText -match 'local function currentHivePhase\(\)' -and
     $beeSwarmText -match 'state\.Phase\s*=\s*"Stopping honey maker"' -and
-    $beeSwarmText -match 'ToyActivator\.ButtonEffect' -and
+    $beeSwarmText -match 'Events\.ClientCall, "ToyEvent"' -and
     $beeSwarmText -match 'NPCActivator\.ButtonEffect'
 )
 $beeSwarmPages = (
