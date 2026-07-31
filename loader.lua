@@ -1,12 +1,46 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "f4b869e5e96204c288b553823a6e2c91b3a7a946"
+local COMMIT = "434a20ff3f39a609aa9fdebd98ae1232827f4223"
 local REPOSITORY = "swatdiaz/VOR-HUB"
+
+local function detectExecutor()
+    local detectors = {}
+    local function addDetector(candidate)
+        if type(candidate) == "function" then
+            detectors[#detectors + 1] = candidate
+        end
+    end
+    addDetector(identifyexecutor)
+    addDetector(getexecutorname)
+    for _, detector in ipairs(detectors) do
+        if type(detector) == "function" then
+            local ok, name, version = pcall(detector)
+            if ok and name ~= nil then
+                local identity = tostring(name)
+                if version ~= nil and tostring(version) ~= "" then
+                    identity = identity .. " " .. tostring(version)
+                end
+                return identity
+            end
+        end
+    end
+    return "Unknown executor"
+end
+
+local EXECUTOR_NAME = detectExecutor()
+local IS_XENO = string.find(string.lower(EXECUTOR_NAME), "xeno", 1, true) ~= nil
 
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
+
+local Players = game:GetService("Players")
+local playerDeadline = os.clock() + 30
+while not Players.LocalPlayer and os.clock() < playerDeadline do
+    task.wait(0.1)
+end
+assert(Players.LocalPlayer, "LocalPlayer was unavailable after game load")
 
 local function tracebackError(message)
     if type(debug) == "table" and type(debug.traceback) == "function" then
@@ -16,30 +50,52 @@ local function tracebackError(message)
 end
 
 local function httpGet(url)
-    local ok, body = pcall(function()
-        return game:HttpGet(url, true)
-    end)
-    if ok and type(body) == "string" and #body > 0 then
-        return body
-    end
-    ok, body = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if ok and type(body) == "string" and #body > 0 then
-        return body
-    end
+    local lastError = "no compatible HTTP function"
+    for attempt = 1, 3 do
+        for _, cacheValue in ipairs({false, true}) do
+            local ok, body = pcall(function()
+                if cacheValue then
+                    return game:HttpGet(url, true)
+                end
+                return game:HttpGet(url)
+            end)
+            if ok and type(body) == "string" and #body > 0 then
+                return body
+            end
+            if not ok then
+                lastError = body
+            end
+        end
 
-    local requestFunction = type(request) == "function" and request
-        or type(http_request) == "function" and http_request
-        or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
-    if requestFunction then
-        local response = requestFunction({Url = url, Method = "GET"})
-        local responseBody = type(response) == "table" and (response.Body or response.body) or nil
-        if type(responseBody) == "string" and #responseBody > 0 then
-            return responseBody
+        local requestFunctions = {}
+        local function addRequestFunction(candidate)
+            if type(candidate) == "function" then
+                requestFunctions[#requestFunctions + 1] = candidate
+            end
+        end
+        addRequestFunction(request)
+        addRequestFunction(http_request)
+        addRequestFunction(type(http) == "table" and http.request or nil)
+        addRequestFunction(type(syn) == "table" and syn.request or nil)
+        addRequestFunction(type(Xeno) == "table" and Xeno.request or nil)
+        for _, requestFunction in ipairs(requestFunctions) do
+            local ok, response = pcall(requestFunction, {Url = url, Method = "GET"})
+            if ok then
+                local responseBody = type(response) == "string" and response
+                    or type(response) == "table" and (response.Body or response.body) or nil
+                if type(responseBody) == "string" and #responseBody > 0 then
+                    return responseBody
+                end
+            else
+                lastError = response
+            end
+        end
+
+        if attempt < 3 then
+            task.wait(0.35 * attempt)
         end
     end
-    error("HTTP download failed: " .. tostring(body))
+    error("HTTP download failed in " .. EXECUTOR_NAME .. ": " .. tostring(lastError))
 end
 
 local function sourceUrl(path)
@@ -103,6 +159,8 @@ assert(COMMIT:match("^[0-9a-f]+$") and #COMMIT == 40, "VOR Hub loader has no val
 local runtime = {
     Commit = COMMIT,
     Repository = REPOSITORY,
+    ExecutorName = EXECUTOR_NAME,
+    XenoCompatibility = IS_XENO,
     PlaceId = game.PlaceId,
     UniverseId = game.GameId,
 }
@@ -169,6 +227,13 @@ local function bootStatus(message, color)
 end
 
 bootStatus("Interface initialized", context.COLORS.success)
+pcall(function()
+    context.Gui:SetAttribute("VORExecutor", EXECUTOR_NAME)
+    context.Gui:SetAttribute("VORXenoCompatibility", IS_XENO)
+end)
+if IS_XENO then
+    bootStatus("Xeno compatibility mode active", context.COLORS.success)
+end
 
 local function installCore(path)
     bootStatus("Loading " .. path .. "...", context.COLORS.accentBright)
