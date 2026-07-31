@@ -645,7 +645,7 @@ return function(context)
             end
         end
         state.ConversionStarted = true
-        local deadline = os.clock() + 120
+        local deadline = os.clock() + 600
         local previousPollen = coreStat("Pollen", 0)
         local lastDecrease = os.clock()
         while state.Alive
@@ -674,8 +674,12 @@ return function(context)
             task.wait(0.35)
         end
         local converted = coreStat("Pollen", 0) <= 0
-        if converted and currentHivePhase() ~= nil and currentHivePhase() ~= "Idle" then
-            state.Phase = "Stopping honey maker"
+        if currentHivePhase() ~= nil and currentHivePhase() ~= "Idle" then
+            if converted then
+                state.Phase = "Stopping honey maker"
+            else
+                state.Phase = "Stopping interrupted conversion"
+            end
             pcall(Hives.ButtonEffect, LocalPlayer, hive)
             local stopDeadline = os.clock() + 4
             while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < stopDeadline do
