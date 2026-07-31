@@ -563,8 +563,12 @@ return function(context)
             local position = tokenPosition(token)
             if position then
                 local distance = (position - root.Position).Magnitude
-                local inField = not zone or (Vector3.new(position.X, zone.Position.Y, position.Z) - zone.Position).Magnitude
-                    <= math.max(zone.Size.X, zone.Size.Z) * 0.8
+                local inField = true
+                if zone then
+                    local localPosition = zone.CFrame:PointToObjectSpace(position)
+                    inField = math.abs(localPosition.X) <= zone.Size.X * 0.48
+                        and math.abs(localPosition.Z) <= zone.Size.Z * 0.48
+                end
                 if inField and distance <= state.TokenRadius and (not bestDistance or distance < bestDistance) then
                     best = token
                     bestDistance = distance
