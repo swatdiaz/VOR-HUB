@@ -358,8 +358,10 @@ return function(context)
         end
     end
 
-    local function movementInputHeld()
-        return UserInputService:IsKeyDown(Enum.KeyCode.W)
+    local function movementInputHeld(character)
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        return humanoid ~= nil and humanoid.MoveDirection.Magnitude > 0.05
+            or UserInputService:IsKeyDown(Enum.KeyCode.W)
             or UserInputService:IsKeyDown(Enum.KeyCode.A)
             or UserInputService:IsKeyDown(Enum.KeyCode.S)
             or UserInputService:IsKeyDown(Enum.KeyCode.D)
@@ -1041,8 +1043,8 @@ return function(context)
         local inGame = character and (character:GetAttribute("InGame") == true
             or character:GetAttribute("OnCourt") == true)
 
-        if state.AutoSprint and inGame then
-            setSprintHeld(movementInputHeld() and stamina >= state.SprintThreshold)
+        if state.AutoSprint then
+            setSprintHeld(movementInputHeld(character) and stamina >= state.SprintThreshold)
         elseif state.SprintHeld then
             setSprintHeld(false)
         end

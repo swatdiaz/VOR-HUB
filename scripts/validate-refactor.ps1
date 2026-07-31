@@ -279,7 +279,13 @@ $practicalBasketballDribbleChains = (
     $practicalBasketballText -match 'resolveValueObject\(character,\s*"Basketball"\)' -and
     $practicalBasketballText -notmatch 'Auto Dribbling Tutorial'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains)) {
+$practicalBasketballAutoSprint = (
+    $practicalBasketballText -match 'if state\.AutoSprint then' -and
+    $practicalBasketballText -match 'movementInputHeld\(character\)' -and
+    $practicalBasketballText -match 'humanoid\.MoveDirection\.Magnitude\s*>\s*0\.05' -and
+    $practicalBasketballText -notmatch 'if state\.AutoSprint and inGame then'
+)
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -304,3 +310,4 @@ Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent 
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
+Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
