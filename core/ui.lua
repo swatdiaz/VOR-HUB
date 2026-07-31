@@ -675,6 +675,11 @@ return function(context)
         Missions = "📜",
         Summon = "✨",
         Units = "👥",
+        ["Auto Farm"] = "🔥",
+        Economy = "💰",
+        Upgrades = "⬆️",
+        Rewards = "🎁",
+        Status = "📊",
     }
 
     local function setProfileState(text, color)

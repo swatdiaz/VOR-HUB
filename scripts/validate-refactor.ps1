@@ -155,11 +155,11 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.3\.0"'
+$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.3\.1"'
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.3.0 without a commit suffix"
+    throw "Visible VOR version must be clean semantic version 3.3.1 without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -224,7 +224,14 @@ $bidAnimeRouted = $settingsText -match '(?s)BidForAnime\s*=\s*\{.*?UniverseId\s*
 $bidAnimeAuctionShape = $bidAnimeText -match '(?s)action\s*=\s*"bid".*?auctionId\s*=\s*prompt\.auctionId.*?promptId\s*=\s*prompt\.promptId.*?amount\s*=\s*option\.amount'
 $bidAnimeAutoFarm = $bidAnimeText -match 'Name\s*=\s*"Full Auto Farm"' -and $bidAnimeText -match 'PlayWithAIRequest'
 $bidAnimeAdminKitAbsent = $bidAnimeText -notmatch 'AdminKit'
-if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and $bidAnimeAdminKitAbsent)) {
+$bidAnimeNavigationIcons = (
+    $uiText -match '\["Auto Farm"\]\s*=\s*"[^"]+"' -and
+    $uiText -match '(?m)^\s*Economy\s*=\s*"[^"]+"' -and
+    $uiText -match '(?m)^\s*Upgrades\s*=\s*"[^"]+"' -and
+    $uiText -match '(?m)^\s*Rewards\s*=\s*"[^"]+"' -and
+    $uiText -match '(?m)^\s*Status\s*=\s*"[^"]+"'
+)
+if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and $bidAnimeAdminKitAbsent -and $bidAnimeNavigationIcons)) {
     throw "Bid for Anime routing, auction payload, auto-farm, or AdminKit exclusion contract failed"
 }
 
@@ -235,7 +242,7 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.3.0)"
+Write-Host "Visible semantic version: PASS (3.3.1)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
@@ -245,4 +252,4 @@ Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-st
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
-Write-Host "Bid for Anime support: PASS (native auto-farm, no AdminKit)"
+Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
