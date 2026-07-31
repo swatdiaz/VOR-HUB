@@ -1800,10 +1800,10 @@ return function(context)
     task.spawn(function()
         while state.Alive do
             local enabled = state.HopNoLegendary or state.HopNoMythic
+            local legendary, mythic, total, rootCount = rareCrystalCounts()
+            state.LegendaryCount = legendary
+            state.MythicCount = mythic
             if enabled and not state.HopBusy then
-                local legendary, mythic, total, rootCount = rareCrystalCounts()
-                state.LegendaryCount = legendary
-                state.MythicCount = mythic
                 local missing = {}
                 if state.HopNoLegendary and legendary == 0 then
                     table.insert(missing, "no Legendary")
