@@ -1104,14 +1104,9 @@ return function(context)
                 previousPollen = pollen
                 lastDecrease = os.clock()
             elseif os.clock() - lastDecrease >= 10 then
-                local stalledPhase = currentHivePhase()
-                if stalledPhase ~= nil and stalledPhase ~= "Idle" then
-                    toggleHoneyMaking()
-                    local idleDeadline = os.clock() + 3
-                    while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < idleDeadline do
-                        task.wait(0.15)
-                    end
-                end
+                -- Never toggle an active honey maker: the same command is both
+                -- Start and Stop. A temporary conversion pause must not cause
+                -- the adapter to press E a second time and cancel itself.
                 if currentHivePhase() == nil or currentHivePhase() == "Idle" then
                     toggleHoneyMaking()
                 end
