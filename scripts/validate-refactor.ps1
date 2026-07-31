@@ -18,6 +18,7 @@ $required = @(
     "games/anime_expeditions.lua",
     "games/bid_for_anime.lua",
     "games/mine_a_mountain.lua",
+    "games/bee_swarm_simulator.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
     "games/blox_fruits_parity.lua",
@@ -370,6 +371,33 @@ if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainF
     throw "Mine a Mountain routing, credited loop, Godspeed batching, pickaxe speed, rare-crystal hopping, plot luck, progression, purchases, movement safety, navigation, or admin-remote exclusion contract failed"
 }
 
+$beeSwarmText = Get-Content -LiteralPath (Join-Path $repo "games/bee_swarm_simulator.lua") -Raw
+$beeSwarmRouted = $settingsText -match '(?s)BeeSwarm\s*=\s*\{.*?UniverseId\s*=\s*601130232.*?1537690962.*?games/bee_swarm_simulator\.lua'
+$beeSwarmNativeLoop = (
+    $beeSwarmText -match 'Collectors.*LocalCollect' -and
+    $beeSwarmText -match 'LocalCollect\.StartCollection' -and
+    $beeSwarmText -match 'Hives\.ButtonEffect' -and
+    $beeSwarmText -match 'ConstructHiveCellFromEgg' -and
+    $beeSwarmText -match 'PlayerPurchase' -and
+    $beeSwarmText -match 'ToyActivator\.ButtonEffect' -and
+    $beeSwarmText -match 'NPCActivator\.ButtonEffect'
+)
+$beeSwarmPages = (
+    $beeSwarmText -match 'addHomeCategory\("Farming"' -and
+    $beeSwarmText -match 'addHomeCategory\("Quests"' -and
+    $beeSwarmText -match 'addHomeCategory\("Progression"' -and
+    $beeSwarmText -match 'addHomeCategory\("Utilities"' -and
+    $beeSwarmText -match 'addHomeCategory\("Status"'
+)
+$beeSwarmCreditedSafety = (
+    $beeSwarmText -match 'Moves through nearby field tokens so the server credits the pickup' -and
+    $beeSwarmText -notmatch 'hookmetamethod|hookfunction|sethiddenproperty' -and
+    $beeSwarmText -notmatch 'Pollen\s*=\s*math\.huge|Honey\s*=\s*math\.huge'
+)
+if (-not ($beeSwarmRouted -and $beeSwarmNativeLoop -and $beeSwarmPages -and $beeSwarmCreditedSafety)) {
+    throw "Bee Swarm routing, credited farming loop, navigation, or safety contract failed"
+}
+
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
 $practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?106120159518740.*?games/practical_basketball\.lua'
 $practicalBasketballCharacter = $practicalBasketballText -match 'workspace:FindFirstChild\("Characters"\)'
@@ -441,7 +469,7 @@ if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $pr
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (8/8)"
+Write-Host "Game builder contract: PASS (9/9)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
@@ -460,6 +488,7 @@ Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, stic
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
+Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"

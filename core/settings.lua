@@ -72,6 +72,16 @@ return function(runtime)
             },
             Module = "games/mine_a_mountain.lua",
         },
+        BeeSwarm = {
+            Key = "BeeSwarm",
+            DisplayName = "Bee Swarm Simulator",
+            UniverseId = 601130232,
+            RootPlaceId = 1537690962,
+            PlaceIds = {
+                [1537690962] = true,
+            },
+            Module = "games/bee_swarm_simulator.lua",
+        },
         BloxFruits = {
             Key = "BloxFruits",
             DisplayName = "Blox Fruits",
@@ -113,7 +123,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.7.10",
+        Version = "3.8.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
