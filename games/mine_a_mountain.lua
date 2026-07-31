@@ -61,6 +61,7 @@ return function(context)
         FreezeGuard = true,
         NoClipTravel = true,
         FarmFloat = true,
+        FreezeAtCrystal = true,
         AntiRagdoll = true,
         WalkSpeedEnabled = false,
         WalkSpeed = 24,
@@ -93,6 +94,9 @@ return function(context)
         StateCharacter = nil,
         FloatMover = nil,
         FloatRoot = nil,
+        FrozenRoot = nil,
+        OriginalRootAnchored = nil,
+        MiningFrozen = false,
         OriginalPickaxeAttributes = setmetatable({}, {__mode = "k"}),
     }
 
@@ -398,6 +402,52 @@ return function(context)
         end
     end
 
+    local function releaseCrystalFreeze()
+        local root = state.FrozenRoot
+        if root and root.Parent then
+            root.Anchored = state.OriginalRootAnchored == true
+        end
+        state.FrozenRoot = nil
+        state.OriginalRootAnchored = nil
+        state.MiningFrozen = false
+    end
+
+    local function freezeAtCrystal()
+        if not state.FreezeAtCrystal then
+            return false
+        end
+        local _, humanoid, root = characterParts()
+        if not (humanoid and root and humanoid.Health > 0) then
+            return false
+        end
+        if state.FrozenRoot ~= root then
+            releaseCrystalFreeze()
+            state.FrozenRoot = root
+            state.OriginalRootAnchored = root.Anchored
+        end
+        state.MiningFrozen = true
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.Anchored = true
+        return true
+    end
+
+    local function maintainCrystalFreeze()
+        local root = state.FrozenRoot
+        local enabled = state.FreezeAtCrystal
+            and state.MiningFrozen
+            and (state.Master or state.AutoFarm)
+            and root ~= nil
+            and root.Parent ~= nil
+        if not enabled then
+            releaseCrystalFreeze()
+            return
+        end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.Anchored = true
+    end
+
     local function setTravelCollision(character, enabled)
         if not character or (enabled and not state.NoClipTravel) then
             return
@@ -421,6 +471,7 @@ return function(context)
     end
 
     local function travelTo(position)
+        releaseCrystalFreeze()
         local character, humanoid, root = characterParts()
         if not (character and humanoid and root) then
             return false, "character unavailable"
@@ -614,11 +665,14 @@ return function(context)
 
         local beforeWeight, beforeCount = cargo()
         local maximumHold = 0
+        local minimumHold = math.huge
         for _, candidate in ipairs(batch) do
+            local holdDuration = tonumber(candidate.Prompt.HoldDuration) or 0
             maximumHold = math.max(
                 maximumHold,
-                tonumber(candidate.Prompt.HoldDuration) or 0
+                holdDuration
             )
+            minimumHold = math.min(minimumHold, holdDuration)
             task.spawn(function()
                 local ok = activatePrompt(candidate.Prompt)
                 if not ok and candidate.Crystal.Parent then
@@ -628,12 +682,39 @@ return function(context)
         end
 
         state.Phase = string.format("Godspeed mining %d crystals", #batch)
-        local deadline = os.clock() + maximumHold + 0.75
-        repeat
-            task.wait(0.05)
-        until not state.Alive
-            or not (state.Master or state.AutoFarm)
-            or os.clock() >= deadline
+        local started = os.clock()
+        local deadline = started + maximumHold + 0.15
+        local noCreditDeadline = started + minimumHold + 0.35
+        local lastProgress = -1
+        while state.Alive
+            and (state.Master or state.AutoFarm)
+            and os.clock() < deadline do
+            local _, nextCount = cargo()
+            local progress = math.max(0, nextCount - beforeCount)
+            local remaining = 0
+            for _, candidate in ipairs(batch) do
+                if candidate.Crystal.Parent
+                    and candidate.Crystal:GetAttribute("Collected") ~= true
+                    and candidate.Crystal:GetAttribute("Value") ~= nil then
+                    remaining += 1
+                end
+            end
+            if progress ~= lastProgress then
+                lastProgress = progress
+                state.Phase = string.format(
+                    "Godspeed %d/%d credited",
+                    progress,
+                    #batch
+                )
+            end
+            if progress >= #batch or (progress > 0 and remaining == 0) then
+                break
+            end
+            if progress == 0 and os.clock() >= noCreditDeadline then
+                break
+            end
+            task.wait(0.02)
+        end
 
         local nextWeight, nextCount = cargo()
         local credited = math.max(0, nextCount - beforeCount)
@@ -663,6 +744,7 @@ return function(context)
         if not moved then
             return false, moveError
         end
+        freezeAtCrystal()
         task.wait(0.12)
         local prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or target.Prompt
         local promptDeadline = os.clock() + 1.25
@@ -740,6 +822,7 @@ return function(context)
     end
 
     local function sellCargo(manual)
+        releaseCrystalFreeze()
         local weight, count, heldValue = cargo()
         if count <= 0 then
             if manual then
@@ -1055,6 +1138,7 @@ return function(context)
     end
 
     local function emergencyReviveAtBase()
+        releaseCrystalFreeze()
         local _, humanoid = characterParts()
         state.Phase = "Emergency cold reset"
         if humanoid and humanoid.Health > 0 then
@@ -1110,6 +1194,9 @@ return function(context)
         Callback = function(enabled)
             state.Master = enabled
             state.Phase = enabled and "Starting full loop" or "Idle"
+            if not enabled and not state.AutoFarm then
+                releaseCrystalFreeze()
+            end
         end,
     })
     MainFarmSection:AddToggle({
@@ -1120,6 +1207,7 @@ return function(context)
             state.AutoFarm = enabled
             if not enabled and not state.Master then
                 state.Phase = "Idle"
+                releaseCrystalFreeze()
             end
         end,
     })
@@ -1468,6 +1556,18 @@ return function(context)
         end,
     })
     SafetySection:AddToggle({
+        Name = "Freeze at Crystal",
+        Description = "Anchors you beside the crystal only while its mining batch is running",
+        Flag = "mam_freeze_at_crystal",
+        Default = true,
+        Callback = function(enabled)
+            state.FreezeAtCrystal = enabled
+            if not enabled then
+                releaseCrystalFreeze()
+            end
+        end,
+    })
+    SafetySection:AddToggle({
         Name = "Anti Ragdoll",
         Description = "Immediately cancels fall ragdoll during the mining loop",
         Flag = "mam_anti_ragdoll",
@@ -1663,6 +1763,7 @@ return function(context)
         configureRagdollStates(character, humanoid)
         clearActiveRagdoll(character, humanoid)
         updateFarmFloat(character, humanoid, root)
+        maintainCrystalFreeze()
         if humanoid then
             if state.OriginalWalkSpeed == nil then
                 state.OriginalWalkSpeed = humanoid.WalkSpeed
@@ -1741,6 +1842,9 @@ return function(context)
             gui:SetAttribute("MineAMountainAntiRagdoll", state.AntiRagdoll)
             gui:SetAttribute("MineAMountainFarmFloat", state.FloatMover ~= nil
                 and state.FloatMover.Parent == root)
+            gui:SetAttribute("MineAMountainFreezeAtCrystal", state.MiningFrozen
+                and state.FrozenRoot == root
+                and root.Anchored)
             gui:SetAttribute("MineAMountainWalkSpeedLock", state.WalkSpeedEnabled)
         end)
     end))
@@ -1774,6 +1878,7 @@ return function(context)
             state.FloatMover = nil
             state.FloatRoot = nil
         end
+        releaseCrystalFreeze()
         setGodspeedPickaxe(false)
         targetHighlight:Destroy()
     end))

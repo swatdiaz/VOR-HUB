@@ -282,7 +282,9 @@ $mineMountainGodspeed = (
     $mineMountainText -match 'local function runGodspeedBatch\(\)' -and
     $mineMountainText -match 'task\.spawn\(function\(\)\s*\r?\n\s*local ok = activatePrompt\(candidate\.Prompt\)' -and
     $mineMountainText -match 'Godspeed credited %d/%d crystals' -and
-    $mineMountainText -match 'reservedWeight \+ candidate\.Weight <= room'
+    $mineMountainText -match 'reservedWeight \+ candidate\.Weight <= room' -and
+    $mineMountainText -match 'local noCreditDeadline\s*=\s*started \+ minimumHold \+ 0\.35' -and
+    $mineMountainText -match 'progress >= #batch'
 )
 $mineMountainPickaxeSpeed = (
     $mineMountainText -match 'Name\s*=\s*"Godspeed Pickaxe"' -and
@@ -303,6 +305,10 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'Instance\.new\("BodyVelocity"\)' -and
     $mineMountainText -match 'mover\.MaxForce\s*=\s*Vector3\.new\(0,\s*math\.huge,\s*0\)' -and
     $mineMountainText -notmatch 'VORMountainFarmFloat' -and
+    $mineMountainText -match 'Name\s*=\s*"Freeze at Crystal"' -and
+    $mineMountainText -match 'local function freezeAtCrystal\(\)' -and
+    $mineMountainText -match 'root\.Anchored\s*=\s*true' -and
+    $mineMountainText -match 'local function releaseCrystalFreeze\(\)' -and
     $mineMountainText -match 'Name\s*=\s*"Anti Ragdoll"' -and
     $mineMountainText -match 'DeactivateRagdoll:FireServer\(\)' -and
     $mineMountainText -match 'BindToRenderStep\(speedBindName,\s*Enum\.RenderPriority\.Last\.Value' -and
