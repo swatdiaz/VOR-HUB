@@ -69,6 +69,7 @@ return function(context)
         LastReward = 0,
         LastClaimButtons = 0,
         LastPromptKey = nil,
+        SellBusy = false,
         SpinBusy = false,
         SpinStarted = 0,
         BidCount = 0,
@@ -109,6 +110,7 @@ return function(context)
 
     local endpoints = {
         QuickJoin = PlayerEvents and PlayerEvents:FindFirstChild("QuickJoin"),
+        EnterRequest = TableEvents and TableEvents:FindFirstChild("EnterRequest"),
         PlayWithAI = TableEvents and TableEvents:FindFirstChild("PlayWithAIRequest"),
         AuctionPrompt = TableEvents and TableEvents:FindFirstChild("AuctionPrompt"),
         BidSubmitted = TableEvents and TableEvents:FindFirstChild("BidSubmitted"),
@@ -129,6 +131,7 @@ return function(context)
 
     local requiredEndpointNames = {
         "QuickJoin",
+        "EnterRequest",
         "PlayWithAI",
         "AuctionPrompt",
         "BidSubmitted",
@@ -200,6 +203,60 @@ return function(context)
             or LocalPlayer:GetAttribute("ClientInDuel") == true
     end
 
+    local function seatAtOpenTable()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local tables = workspace:FindFirstChild("Map")
+        tables = tables and tables:FindFirstChild("Tables")
+        if not humanoid or not root or not tables or not endpoints.EnterRequest then
+            return false, "table seating unavailable"
+        end
+
+        local currentSeat = humanoid.SeatPart
+        if currentSeat and currentSeat:IsDescendantOf(tables) then
+            return true
+        end
+
+        local nearest
+        local nearestDistance = math.huge
+        for _, tableModel in ipairs(tables:GetChildren()) do
+            for _, descendant in ipairs(tableModel:GetDescendants()) do
+                if descendant:IsA("Seat") and descendant.Occupant == nil then
+                    local distance = (root.Position - descendant.Position).Magnitude
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearest = {
+                            Table = tableModel,
+                            Chair = descendant.Parent,
+                            Seat = descendant,
+                        }
+                    end
+                end
+            end
+        end
+        if not nearest then
+            return false, "no open auction table"
+        end
+
+        setStatus("Taking an open table for AI match...", true)
+        root.CFrame = nearest.Seat.CFrame * CFrame.new(0, 2, 0)
+        task.wait(0.2)
+        nearest.Seat:Sit(humanoid)
+        task.wait(0.2)
+        local entered, enterResult = fire(
+            endpoints.EnterRequest,
+            nearest.Table.Name,
+            nearest.Chair.Name,
+            true
+        )
+        if not entered then
+            return false, enterResult
+        end
+        task.wait(0.35)
+        return true
+    end
+
     local function requestMatch(force)
         local now = os.clock()
         if not force and now - state.LastJoin < state.JoinInterval then
@@ -210,6 +267,11 @@ return function(context)
         end
         state.LastJoin = now
         if state.MatchMode == "Play With AI" and endpoints.PlayWithAI then
+            local seated, seatError = seatAtOpenTable()
+            if not seated then
+                setError(seatError)
+                return false, seatError
+            end
             local ok, result = fire(endpoints.PlayWithAI)
             if ok then
                 setStatus("Requested an AI match", true)
@@ -307,11 +369,29 @@ return function(context)
     end
 
     local function sellSelectedRarity()
-        local ok, result = fire(endpoints.SellAll, state.SellRarity)
-        if ok then
-            state.LastSell = os.clock()
+        if state.SellBusy then
+            return false, "sell already in progress"
         end
-        return ok, result
+
+        state.SellBusy = true
+        local rarity = state.SellRarity
+        local requested, requestResult = fire(endpoints.SellAll, rarity)
+        if not requested then
+            state.SellBusy = false
+            return false, requestResult
+        end
+
+        -- The server intentionally treats the first request as a confirmation
+        -- prompt. A matching second request inside its confirmation window is
+        -- what actually performs the protected bulk sale.
+        task.wait(0.4)
+        local confirmed, confirmResult = fire(endpoints.SellAll, rarity)
+        state.SellBusy = false
+        if confirmed then
+            state.LastSell = os.clock()
+            setStatus("Requested " .. rarity .. " quick sell", true)
+        end
+        return confirmed, confirmResult
     end
 
     local function buyLuck()

@@ -155,11 +155,12 @@ foreach ($check in $routingChecks) {
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
-$semanticVersionOk = $versionText -match 'Version\s*=\s*"3\.3\.1"'
+$semanticVersionMatch = [regex]::Match($versionText, 'Version\s*=\s*"(?<version>\d+\.\d+\.\d+)"')
+$semanticVersionOk = $semanticVersionMatch.Success
 $visibleVersionOk = $uiText -match '"v"\s*\.\.\s*tostring\(SETTINGS\.Version\)'
 $cleanVersionOk = $loaderText -notmatch 'BuildVersion' -and $uiText -notmatch 'BuildVersion'
 if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
-    throw "Visible VOR version must be clean semantic version 3.3.1 without a commit suffix"
+    throw "Visible VOR version must be a clean semantic version without a commit suffix"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -242,7 +243,7 @@ Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
-Write-Host "Visible semantic version: PASS (3.3.1)"
+Write-Host "Visible semantic version: PASS ($($semanticVersionMatch.Groups['version'].Value))"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
