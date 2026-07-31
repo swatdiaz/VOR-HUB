@@ -375,23 +375,28 @@ return function(context)
 
         state.SellBusy = true
         local rarity = state.SellRarity
-        local requested, requestResult = fire(endpoints.SellAll, rarity)
-        if not requested then
-            state.SellBusy = false
-            return false, requestResult
-        end
+        task.spawn(function()
+            local requested, requestResult = fire(endpoints.SellAll, rarity)
+            if not requested then
+                state.SellBusy = false
+                setError(requestResult)
+                return
+            end
 
-        -- The server intentionally treats the first request as a confirmation
-        -- prompt. A matching second request inside its confirmation window is
-        -- what actually performs the protected bulk sale.
-        task.wait(0.4)
-        local confirmed, confirmResult = fire(endpoints.SellAll, rarity)
-        state.SellBusy = false
-        if confirmed then
-            state.LastSell = os.clock()
-            setStatus("Requested " .. rarity .. " quick sell", true)
-        end
-        return confirmed, confirmResult
+            -- The server intentionally treats the first request as a
+            -- confirmation prompt. Run the matching second request in a
+            -- separate yieldable task so both UI buttons and auto-sell work.
+            task.wait(0.4)
+            local confirmed, confirmResult = fire(endpoints.SellAll, rarity)
+            state.SellBusy = false
+            if confirmed then
+                state.LastSell = os.clock()
+                setStatus("Requested " .. rarity .. " quick sell", true)
+            else
+                setError(confirmResult)
+            end
+        end)
+        return true, "sell confirmation scheduled"
     end
 
     local function buyLuck()
