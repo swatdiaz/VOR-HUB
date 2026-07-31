@@ -313,7 +313,11 @@ $mineMountainBuriedCrystalGuard = (
     $mineMountainText -match 'local function isBelowMountainMap\(part\)' -and
     $mineMountainText -match 'part\.Position\.Y\s*<\s*baseY\s*-\s*16' -and
     ([regex]::Matches($mineMountainText, 'and not isBelowMountainMap\(part\)').Count -ge 2) -and
-    $mineMountainText -match 'MineAMountainBuriedCrystalCount'
+    $mineMountainText -match 'root\.Position\.Y\s*<\s*baseY\s*-\s*8' -and
+    $mineMountainText -match 'state\.InvalidTargets\[badTarget\]\s*=\s*true' -and
+    $mineMountainText -match 'state\.RejectedTarget\s*=\s*badTarget' -and
+    $mineMountainText -match 'MineAMountainBuriedCrystalCount' -and
+    $mineMountainText -match 'MineAMountainFloorRecoveries'
 )
 $mineMountainRareHop = (
     $mineMountainText -match 'Name\s*=\s*"Auto High-Tier Hunt \+ Hop"' -and

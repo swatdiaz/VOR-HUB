@@ -77,6 +77,9 @@ return function(context)
         SellPercent = 92,
         CashReserve = 0,
         Target = nil,
+        RejectedTarget = nil,
+        LastSafeCFrame = nil,
+        FloorRecoveries = 0,
         TargetName = "None",
         Phase = "Idle",
         LastError = "None",
@@ -108,6 +111,7 @@ return function(context)
         ConsecutiveFailures = 0,
         PurchaseBusy = false,
         FailedTargets = setmetatable({}, {__mode = "k"}),
+        InvalidTargets = setmetatable({}, {__mode = "k"}),
         OriginalCollision = setmetatable({}, {__mode = "k"}),
         OriginalWalkSpeed = nil,
         OriginalFallingDownEnabled = nil,
@@ -541,7 +545,9 @@ return function(context)
             local goal = CFrame.new(goalPosition)
             local duration = math.clamp(distance / math.max(25, state.TravelSpeed), 0.08, 8)
             local started = os.clock()
-            while state.Alive and (state.Master or state.AutoFarm) do
+            while state.Alive
+                and (state.Master or state.AutoFarm)
+                and state.RejectedTarget ~= state.Target do
                 local alpha = math.clamp((os.clock() - started) / duration, 0, 1)
                 character:PivotTo(start:Lerp(goal, alpha))
                 root.AssemblyLinearVelocity = Vector3.zero
@@ -556,6 +562,9 @@ return function(context)
         setTravelCollision(character, false)
         if not ok then
             return false, err
+        end
+        if state.RejectedTarget == state.Target then
+            return false, "target crossed below the mountain floor"
         end
         return true
     end
@@ -603,6 +612,7 @@ return function(context)
                     and prompt
                     and prompt.Enabled
                     and not isBelowMountainMap(part)
+                    and not state.InvalidTargets[crystal]
                     and tier >= minimumTier
                     and tier <= efficientMaximum
                     and weight > 0
@@ -667,6 +677,7 @@ return function(context)
                     and prompt
                     and prompt.Enabled
                     and not isBelowMountainMap(part)
+                    and not state.InvalidTargets[crystal]
                     and prompt.MaxActivationDistance > 0
                     and weight > 0
                     and crystal:GetAttribute("Collected") ~= true
@@ -759,12 +770,16 @@ return function(context)
             return false, "target vanished"
         end
         state.Target = target.Crystal
+        state.RejectedTarget = nil
         state.TargetName = string.format("%s | T%d | $%s", target.Name, target.Tier, tostring(math.floor(target.Value)))
         equipBestPickaxe()
         local beforeWeight, beforeCount = cargo()
         local moved, moveError = travelTo(target.Part.Position)
         if not moved then
             return false, moveError
+        end
+        if state.RejectedTarget == target.Crystal then
+            return false, "crystal pulled character below the map"
         end
         task.wait(0.12)
         local prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or target.Prompt
@@ -788,6 +803,7 @@ return function(context)
             and (state.Master or state.AutoFarm)
             and os.clock() < deadline
             and target.Crystal.Parent
+            and state.RejectedTarget ~= target.Crystal
             and target.Crystal:GetAttribute("Value") ~= nil do
             local currentAir = tonumber(statValue("CurrentAir", 0)) or 0
             local airCapacity = math.max(1, tonumber(statValue("AirCapacity", 1)) or 1)
@@ -957,7 +973,7 @@ return function(context)
                     and part ~= nil
                 if available then
                     total += 1
-                    if isBelowMountainMap(part) then
+                    if isBelowMountainMap(part) or state.InvalidTargets[crystal] then
                         buried += 1
                     elseif highTierNames[tier] then
                         counts[tier] = (counts[tier] or 0) + 1
@@ -2006,6 +2022,34 @@ return function(context)
         configureRagdollStates(character, humanoid)
         clearActiveRagdoll(character, humanoid)
         updateFarmFloat(character, humanoid, root)
+        if character and humanoid and root and humanoid.Health > 0 then
+            local baseY = tonumber(workspace:GetAttribute("MountainBaseY"))
+            if baseY and root.Position.Y < baseY - 8
+                and (state.Master or state.AutoFarm) then
+                local badTarget = state.Target
+                if badTarget and badTarget.Parent then
+                    state.InvalidTargets[badTarget] = true
+                    state.FailedTargets[badTarget] = os.clock() + 120
+                    state.RejectedTarget = badTarget
+                end
+                local fallback = state.LastSafeCFrame
+                if not fallback then
+                    local spawn = workspace:FindFirstChildWhichIsA("SpawnLocation")
+                    fallback = CFrame.new(
+                        spawn and spawn.Position + Vector3.new(0, 4, 0)
+                            or Vector3.new(0, baseY + 8, 0)
+                    )
+                end
+                character:PivotTo(fallback)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                state.FloorRecoveries += 1
+                state.Phase = "Skipped crystal below map"
+                state.LastError = "Crystal path crossed below the mountain floor"
+            elseif baseY and root.Position.Y >= baseY + 2 then
+                state.LastSafeCFrame = character:GetPivot()
+            end
+        end
         if humanoid then
             if state.OriginalWalkSpeed == nil then
                 state.OriginalWalkSpeed = humanoid.WalkSpeed
@@ -2044,7 +2088,7 @@ return function(context)
         cargoLabel.Text = string.format("Cargo: %d crystal(s) | $%d", count, math.floor(heldValue))
         local tierCounts = state.HighTierCounts
         serverHopLabel.Text = string.format(
-            "High-tier: %d | L%d M%d D%d E%d Z%d I%d U%d\nSkipped below map: %d | %s",
+            "High-tier: %d | L%d M%d D%d E%d Z%d I%d U%d\nSkipped invalid/below map: %d | %s",
             state.HighTierCount,
             tierCounts[5] or 0,
             tierCounts[6] or 0,
@@ -2103,6 +2147,7 @@ return function(context)
             gui:SetAttribute("MineAMountainUltimaCount", tierCounts[11] or 0)
             gui:SetAttribute("MineAMountainHighTierHunt", state.HighTierHunt)
             gui:SetAttribute("MineAMountainBuriedCrystalCount", state.BuriedCrystalCount)
+            gui:SetAttribute("MineAMountainFloorRecoveries", state.FloorRecoveries)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)
