@@ -542,7 +542,7 @@ return function(context)
             state.FullAuto = enabled
             state.LastJoin = 0
             if enabled then
-                requestMatch(false)
+                task.spawn(requestMatch, false)
             else
                 setStatus("Full Auto disabled", true)
             end
@@ -566,7 +566,7 @@ return function(context)
             state.AutoJoin = enabled
             state.LastJoin = 0
             if enabled then
-                requestMatch(false)
+                task.spawn(requestMatch, false)
             end
         end,
     })
@@ -593,7 +593,7 @@ return function(context)
     MatchSection:AddButton({
         Name = "Join Now",
         Callback = function()
-            requestMatch(true)
+            task.spawn(requestMatch, true)
         end,
     })
 
