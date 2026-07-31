@@ -163,6 +163,17 @@ if (-not ($semanticVersionOk -and $visibleVersionOk -and $cleanVersionOk)) {
     throw "Visible VOR version must be a clean semantic version without a commit suffix"
 }
 
+$xenoExecutorDetection = $loaderText -match 'local IS_XENO\s*=\s*string\.find'
+$xenoHttpRetry = $loaderText -match 'for attempt\s*=\s*1,\s*3 do'
+$xenoRequestFallback = $loaderText -match 'addRequestFunction\(type\(Xeno\)'
+$xenoRuntimeMarker = $loaderText -match 'VORXenoCompatibility'
+$xenoHomeIdentity = $uiText -match 'Executor:\s*"\s*\.\.\s*tostring\(context\.Runtime'
+$dungeonText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_dungeons.lua") -Raw
+$xenoTeleportResume = $dungeonText -match '\(type\(getgenv\) == \\"function\\" and getgenv\(\) or _G\)\.VORDungeonResumeAll'
+if (-not ($xenoExecutorDetection -and $xenoHttpRetry -and $xenoRequestFallback -and $xenoRuntimeMarker -and $xenoHomeIdentity -and $xenoTeleportResume)) {
+    throw "Xeno compatibility contract failed"
+}
+
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
 $automaticFruitCadenceOk = $bloxText -match 'state\.FruitM1ReadyAt\s*=\s*os\.clock\(\)\s*\+\s*DoubleAttackEngine\.FruitCadence'
 if (-not ($manualFruitMaxOk -and $automaticFruitCadenceOk)) {
@@ -244,6 +255,7 @@ Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
 Write-Host "Visible semantic version: PASS ($($semanticVersionMatch.Groups['version'].Value))"
+Write-Host "Xeno compatibility: PASS (executor identity, HTTP retry/fallback, teleport resume)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"

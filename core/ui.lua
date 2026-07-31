@@ -2381,6 +2381,7 @@ return function(context)
         overview:AddLabel("Welcome back, " .. tostring(LocalPlayer and LocalPlayer.DisplayName or "Player"))
         overview:AddLabel("Game module: " .. tostring(SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported"))
         overview:AddLabel("Version: " .. tostring(SETTINGS.Version) .. " | Module commit: " .. string.sub(tostring(context.Commit or "local"), 1, 8))
+        overview:AddLabel("Executor: " .. tostring(context.Runtime and context.Runtime.ExecutorName or "Unknown"))
         overview:AddLabel("Runtime: immutable, modular, and verified")
 
         local updates = home:AddSection("Latest Build", "Left")
