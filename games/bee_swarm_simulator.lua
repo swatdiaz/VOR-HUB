@@ -156,6 +156,7 @@ return function(context)
         LastUpgrade = 0,
         LastSprinkler = 0,
         LastHatch = 0,
+        HatchInFlight = false,
         LastCollectorPulse = 0,
         LastHiveSlot = 0,
         LastBadge = 0,
@@ -1885,29 +1886,43 @@ return function(context)
                     end
                 end
                 if ownedHive() then
-                    if (state.FullOP or state.AutoHatchStarter) and os.clock() - state.LastHatch >= 5 then
-                        local eggs = stats().Eggs or {}
-                        if (tonumber(eggs.Basic) or 0) <= 0
-                            and (state.FullOP or state.AutoBuyBasicEgg)
-                            and findStarterCell() then
-                            local bought, buyMessage = buyBasicEgg()
-                            if not bought
-                                and buyMessage ~= "No unlocked empty hive cell"
-                                and buyMessage ~= "Purchase was not accepted"
-                                and buyMessage ~= "Basic Egg purchase was not credited" then
-                                setError(buyMessage)
+                    if (state.FullOP or state.AutoHatchStarter)
+                        and not state.HatchInFlight
+                        and os.clock() - state.LastHatch >= 5 then
+                        -- Remote egg construction can yield indefinitely on a
+                        -- rejected cell. Never let it block the farming loop.
+                        state.HatchInFlight = true
+                        state.LastHatch = os.clock()
+                        task.spawn(function()
+                            local eggs = stats().Eggs or {}
+                            if (tonumber(eggs.Basic) or 0) <= 0
+                                and (state.FullOP or state.AutoBuyBasicEgg)
+                                and findStarterCell() then
+                                local bought, buyMessage = buyBasicEgg()
+                                if not bought
+                                    and buyMessage ~= "No unlocked empty hive cell"
+                                    and buyMessage ~= "Purchase was not accepted"
+                                    and buyMessage ~= "Basic Egg purchase was not credited" then
+                                    setError(buyMessage)
+                                end
+                                eggs = stats().Eggs or {}
                             end
-                            eggs = stats().Eggs or {}
-                        end
-                        if (tonumber(eggs.Basic) or 0) > 0 then
-                            local ok, message = hatchStarterBee()
-                            if not ok and message ~= "No unlocked empty hive cell" then
-                                setError(message)
+                            if (tonumber(eggs.Basic) or 0) > 0 then
+                                local ok, message = hatchStarterBee()
+                                if not ok and message ~= "No unlocked empty hive cell" then
+                                    setError(message)
+                                end
                             end
-                        end
+                            state.HatchInFlight = false
+                        end)
                     end
                     local pollen = coreStat("Pollen", 0)
                     local capacity = math.max(1, coreStat("Capacity", 1))
+                    if pollen <= 0 and currentHivePhase() ~= nil and currentHivePhase() ~= "Idle" then
+                        state.Phase = "Stopping finished honey maker"
+                        toggleHoneyMaking()
+                        task.wait(0.25)
+                    end
                     local convertForFarm = state.AutoConvert and pollen >= capacity * (state.ConvertAt / 100)
                     local convertForQuest = (state.FullOP or state.AutoQuest) and pollen >= capacity
                     if convertForFarm or convertForQuest then
