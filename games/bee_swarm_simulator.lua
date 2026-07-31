@@ -30,6 +30,7 @@ return function(context)
     local ToyActivator = require(ReplicatedStorage.Activatables:WaitForChild("Toys"))
     local HoneycombTools = require(ReplicatedStorage:WaitForChild("HoneycombTools"))
     local ItemPackages = require(ReplicatedStorage:WaitForChild("ItemPackages"))
+    local Quests = require(ReplicatedStorage:WaitForChild("Quests"))
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local FarmingPage = addHomeCategory("Farming", 1, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Overnight)
@@ -95,6 +96,8 @@ return function(context)
         UnderField = false,
         UnderFieldDepth = 3,
         Field = "Sunflower Field",
+        ActiveField = "Sunflower Field",
+        ActiveQuest = "None",
         Pattern = "Wide Circle",
         QuestGiver = "Black Bear",
         Toy = "Honey Dispenser",
@@ -134,6 +137,8 @@ return function(context)
     local equipmentLabel = StatSection:AddLabel("Collector: Reading | Backpack: Reading")
     local hiveLabel = StatSection:AddLabel("Hive: Unclaimed")
     local rateLabel = StatSection:AddLabel("Rates: 0 pollen/min | 0 honey/min")
+    local activeQuestLabel = QuestInfoSection:AddLabel("Active quest: Reading...")
+    local questFieldLabel = QuestInfoSection:AddLabel("Quest field: Reading...")
 
     local function notify(title, message, duration)
         pcall(function()
@@ -247,7 +252,7 @@ return function(context)
         end
         local goalCFrame = typeof(goal) == "CFrame" and goal or CFrame.new(goal)
         local distance = (root.Position - goalCFrame.Position).Magnitude
-        local keepUnderFieldCollision = state.UnderField and label == state.Field
+        local keepUnderFieldCollision = state.UnderField and label == state.ActiveField
         state.Traveling = true
         state.Target = label or "Position"
         state.Phase = "Traveling"
@@ -306,6 +311,42 @@ return function(context)
     local function findField(name)
         local zones = workspace:FindFirstChild("FlowerZones")
         return zones and zones:FindFirstChild(name)
+    end
+
+    local function activeQuestField()
+        local cached = stats()
+        local active = cached.Quests and cached.Quests.Active or {}
+        for _, activeData in ipairs(active) do
+            local quest = Quests:Get(activeData.Name)
+            if quest then
+                local tasks = Quests.ResolveTasks(quest, cached)
+                local progress = Quests:Progress(activeData.Name, cached) or {}
+                for index, taskData in ipairs(tasks or {}) do
+                    local taskProgress = progress[index]
+                    local incomplete = not taskProgress or (tonumber(taskProgress[1]) or 0) < 1
+                    local zoneName = type(taskData.Zone) == "string" and taskData.Zone or nil
+                    if incomplete and zoneName and findField(zoneName) then
+                        return zoneName, activeData.Name, taskProgress
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function questDialogueNeeded()
+        local cached = stats()
+        local active = cached.Quests and cached.Quests.Active or {}
+        if #active == 0 then
+            return true
+        end
+        for _, activeData in ipairs(active) do
+            local ok, complete = pcall(Quests.CanComplete, Quests, activeData.Name, cached)
+            if ok and complete then
+                return true
+            end
+        end
+        return false
     end
 
     local function fieldPoint(zone, step)
@@ -519,7 +560,7 @@ return function(context)
                 zone.Position.Y + zone.Size.Y * 0.5 - state.UnderFieldDepth,
                 position.Z
             )
-            label = state.Field
+            label = state.ActiveField
         end
         local ok = travelTo(CFrame.new(goal), label)
         local _, _, root = characterParts()
@@ -740,18 +781,29 @@ return function(context)
     end
 
     local function farmStep(step)
-        local zone = findField(state.Field)
-        if not zone then
-            return false, "Field is unavailable: " .. state.Field
+        local fieldName = state.Field
+        local questName = "None"
+        if state.FullOP or state.AutoQuest then
+            local questField, activeQuest = activeQuestField()
+            if questField then
+                fieldName = questField
+                questName = activeQuest or "Quest"
+            end
         end
-        state.Target = state.Field
+        state.ActiveField = fieldName
+        state.ActiveQuest = questName
+        local zone = findField(fieldName)
+        if not zone then
+            return false, "Field is unavailable: " .. fieldName
+        end
+        state.Target = questName ~= "None" and (questName .. " > " .. fieldName) or fieldName
         local token = nearestToken(zone)
         if token then
             collectToken(token, zone)
         else
             local point = fieldPoint(zone, step)
             if point then
-                local reached, err = travelTo(CFrame.new(point), state.Field)
+                local reached, err = travelTo(CFrame.new(point), fieldName)
                 if not reached then
                     return false, err
                 end
@@ -761,7 +813,7 @@ return function(context)
         if state.AutoSprinkler and os.clock() - state.LastSprinkler >= 30 then
             placeSprinkler()
         end
-        state.Phase = "Farming " .. state.Field
+        state.Phase = "Farming " .. fieldName
         return true
     end
 
@@ -890,8 +942,8 @@ return function(context)
     })
 
     QuestSection:AddToggle({
-        Name = "Auto Quest Pickup + Turn-In",
-        Description = "Uses the game's NPC controller and advances the real dialogue",
+        Name = "Auto Complete Quests",
+        Description = "Targets required fields, completes objectives, turns in, accepts the next quest, and repeats",
         Flag = "bee_auto_quests",
         Default = false,
         Callback = function(enabled)
@@ -1146,7 +1198,8 @@ return function(context)
             if (state.FullOP or state.AutoQuest)
                 and now - state.LastQuest >= 45
                 and not state.Traveling
-                and not state.ConversionStarted then
+                and not state.ConversionStarted
+                and questDialogueNeeded() then
                 local ok, message = talkToNPC(state.QuestGiver)
                 if not ok then
                     setError(message)
@@ -1203,6 +1256,13 @@ return function(context)
             hiveLabel.Text = "Hive: " .. (hive and "Claimed" or "Unclaimed")
             rateLabel.Text = "Rates: " .. formatNumber(state.PollenRate) .. " pollen/min | "
                 .. formatNumber(state.HoneyRate) .. " honey/min"
+            local questField, questName, questProgress = activeQuestField()
+            local progressText = questProgress
+                and (formatNumber(questProgress[2]) .. "/" .. formatNumber(questProgress[3]))
+                or ""
+            activeQuestLabel.Text = "Active quest: " .. tostring(questName or "None")
+                .. (progressText ~= "" and (" | " .. progressText) or "")
+            questFieldLabel.Text = "Quest field: " .. tostring(questField or "No unfinished field objective")
             phaseLabel.Text = "Phase: " .. state.Phase
             targetLabel.Text = "Target: " .. state.Target
             errorLabel.Text = "Last error: " .. state.LastError
@@ -1211,7 +1271,9 @@ return function(context)
                     gui:SetAttribute("BeeSwarmAdapter", true)
                     gui:SetAttribute("BeeSwarmUniverseId", 601130232)
                     gui:SetAttribute("BeeSwarmPhase", state.Phase)
-                    gui:SetAttribute("BeeSwarmField", state.Field)
+                    gui:SetAttribute("BeeSwarmField", state.ActiveField or state.Field)
+                    gui:SetAttribute("BeeSwarmSelectedField", state.Field)
+                    gui:SetAttribute("BeeSwarmActiveQuest", state.ActiveQuest)
                     gui:SetAttribute("BeeSwarmHoney", honey)
                     gui:SetAttribute("BeeSwarmPollen", pollen)
                     gui:SetAttribute("BeeSwarmCapacity", capacity)
