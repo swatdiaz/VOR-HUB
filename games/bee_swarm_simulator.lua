@@ -620,13 +620,27 @@ return function(context)
         local deadline = os.clock() + 120
         local previousPollen = coreStat("Pollen", 0)
         local lastDecrease = os.clock()
-        while state.Alive and (state.FullOP or state.AutoFarm) and coreStat("Pollen", 0) > 0 and os.clock() < deadline do
+        while state.Alive
+            and (state.FullOP or (state.AutoFarm and state.AutoConvert))
+            and coreStat("Pollen", 0) > 0
+            and os.clock() < deadline do
             local pollen = coreStat("Pollen", 0)
             if pollen < previousPollen then
                 previousPollen = pollen
                 lastDecrease = os.clock()
-            elseif os.clock() - lastDecrease >= 3 and currentHivePhase() == "Idle" then
-                pcall(Hives.ButtonEffect, LocalPlayer, hive)
+            elseif os.clock() - lastDecrease >= 10 then
+                local stalledPhase = currentHivePhase()
+                if stalledPhase ~= nil and stalledPhase ~= "Idle" then
+                    pcall(Hives.ButtonEffect, LocalPlayer, hive)
+                    local idleDeadline = os.clock() + 3
+                    while state.Alive and currentHivePhase() ~= "Idle" and os.clock() < idleDeadline do
+                        task.wait(0.15)
+                    end
+                end
+                if currentHivePhase() == nil or currentHivePhase() == "Idle" then
+                    pcall(Hives.ButtonEffect, LocalPlayer, hive)
+                end
+                previousPollen = coreStat("Pollen", 0)
                 lastDecrease = os.clock()
             end
             task.wait(0.35)
@@ -641,7 +655,13 @@ return function(context)
             end
         end
         state.ConversionStarted = false
-        return converted, "Conversion timed out"
+        if converted then
+            return true
+        end
+        if not state.AutoConvert and not state.FullOP then
+            return false, "Conversion stopped"
+        end
+        return false, "Conversion timed out"
     end
 
     local function findNPC(name)
