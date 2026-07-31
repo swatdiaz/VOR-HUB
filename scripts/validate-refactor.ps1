@@ -283,8 +283,7 @@ $mineMountainGodspeed = (
     $mineMountainText -match 'task\.spawn\(function\(\)\s*\r?\n\s*local ok = activatePrompt\(candidate\.Prompt\)' -and
     $mineMountainText -match 'Godspeed credited %d/%d crystals' -and
     $mineMountainText -match 'reservedWeight \+ candidate\.Weight <= room' -and
-    $mineMountainText -match 'local noCreditDeadline\s*=\s*started \+ minimumHold \+ 0\.35' -and
-    $mineMountainText -match 'progress >= #batch'
+    $mineMountainText -match 'local deadline\s*=\s*os\.clock\(\) \+ maximumHold \+ 0\.75'
 )
 $mineMountainPickaxeSpeed = (
     $mineMountainText -match 'Name\s*=\s*"Godspeed Pickaxe"' -and

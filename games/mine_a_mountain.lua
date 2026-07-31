@@ -665,14 +665,11 @@ return function(context)
 
         local beforeWeight, beforeCount = cargo()
         local maximumHold = 0
-        local minimumHold = math.huge
         for _, candidate in ipairs(batch) do
-            local holdDuration = tonumber(candidate.Prompt.HoldDuration) or 0
             maximumHold = math.max(
                 maximumHold,
-                holdDuration
+                tonumber(candidate.Prompt.HoldDuration) or 0
             )
-            minimumHold = math.min(minimumHold, holdDuration)
             task.spawn(function()
                 local ok = activatePrompt(candidate.Prompt)
                 if not ok and candidate.Crystal.Parent then
@@ -682,39 +679,12 @@ return function(context)
         end
 
         state.Phase = string.format("Godspeed mining %d crystals", #batch)
-        local started = os.clock()
-        local deadline = started + maximumHold + 0.15
-        local noCreditDeadline = started + minimumHold + 0.35
-        local lastProgress = -1
-        while state.Alive
-            and (state.Master or state.AutoFarm)
-            and os.clock() < deadline do
-            local _, nextCount = cargo()
-            local progress = math.max(0, nextCount - beforeCount)
-            local remaining = 0
-            for _, candidate in ipairs(batch) do
-                if candidate.Crystal.Parent
-                    and candidate.Crystal:GetAttribute("Collected") ~= true
-                    and candidate.Crystal:GetAttribute("Value") ~= nil then
-                    remaining += 1
-                end
-            end
-            if progress ~= lastProgress then
-                lastProgress = progress
-                state.Phase = string.format(
-                    "Godspeed %d/%d credited",
-                    progress,
-                    #batch
-                )
-            end
-            if progress >= #batch or (progress > 0 and remaining == 0) then
-                break
-            end
-            if progress == 0 and os.clock() >= noCreditDeadline then
-                break
-            end
-            task.wait(0.02)
-        end
+        local deadline = os.clock() + maximumHold + 0.75
+        repeat
+            task.wait(0.05)
+        until not state.Alive
+            or not (state.Master or state.AutoFarm)
+            or os.clock() >= deadline
 
         local nextWeight, nextCount = cargo()
         local credited = math.max(0, nextCount - beforeCount)
