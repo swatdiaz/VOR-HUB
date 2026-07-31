@@ -87,8 +87,7 @@ return function(context)
         LastFarmCycle = 0,
         LastAutoPurchase = 0,
         LastGodspeedCredited = 0,
-        HopNoLegendary = environment.VORMountainResumeHopLegendary == true,
-        HopNoMythic = environment.VORMountainResumeHopMythic == true,
+        HighTierHunt = environment.VORMountainResumeHighTierHunt == true,
         HopBusy = false,
         HopMissingScans = 0,
         HopStartedAt = os.clock(),
@@ -101,8 +100,8 @@ return function(context)
         OriginalStreamingTarget = nil,
         OriginalStreamingMinimum = nil,
         HopStatus = "Watching crystal inventory",
-        LegendaryCount = 0,
-        MythicCount = 0,
+        HighTierCount = 0,
+        HighTierCounts = {},
         TeleportResumeQueued = false,
         TeleportQueueMethod = "Unavailable",
         ConsecutiveFailures = 0,
@@ -137,6 +136,15 @@ return function(context)
         Zenith = 9,
         Infinity = 10,
         Ultima = 11,
+    }
+    local highTierNames = {
+        [5] = "Legendary",
+        [6] = "Mythic",
+        [7] = "Divine",
+        [8] = "Empyrean",
+        [9] = "Zenith",
+        [10] = "Infinity",
+        [11] = "Ultima",
     }
 
     local function expandMountainStreaming()
@@ -567,9 +575,12 @@ return function(context)
         local now = os.clock()
         local candidates = {}
         local _, pickaxePower = bestPickaxe()
-        local efficientMaximum = state.MaximumTier > 0
-            and state.MaximumTier
-            or math.clamp(math.floor(pickaxePower + 0.6), 1, 11)
+        local minimumTier = state.HighTierHunt and tierNames.Legendary
+            or state.MinimumTier
+        local efficientMaximum = state.HighTierHunt and tierNames.Ultima
+            or (state.MaximumTier > 0
+                and state.MaximumTier
+                or math.clamp(math.floor(pickaxePower + 0.6), 1, 11))
 
         for _, folder in ipairs(crystalRoots()) do
             for _, crystal in ipairs(folder:GetChildren()) do
@@ -582,7 +593,7 @@ return function(context)
                 if part
                     and prompt
                     and prompt.Enabled
-                    and tier >= state.MinimumTier
+                    and tier >= minimumTier
                     and tier <= efficientMaximum
                     and weight > 0
                     and weight <= room + 0.001
@@ -902,8 +913,9 @@ return function(context)
             "repeat task.wait() until game:IsLoaded()",
             "task.wait(0.2)",
             "local e = type(getgenv) == \"function\" and getgenv() or _G",
-            "e.VORMountainResumeHopLegendary = " .. tostring(state.HopNoLegendary),
-            "e.VORMountainResumeHopMythic = " .. tostring(state.HopNoMythic),
+            "e.VORMountainResumeHopLegendary = false",
+            "e.VORMountainResumeHopMythic = false",
+            "e.VORMountainResumeHighTierHunt = " .. tostring(state.HighTierHunt),
             "e.VORMountainVisitedServers = {" .. table.concat(visitedEntries, ",") .. "}",
             "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
         }, "\n")
@@ -918,7 +930,7 @@ return function(context)
     end
 
     local function rareCrystalCounts()
-        local legendary, mythic, total = 0, 0, 0
+        local counts, highTierTotal, total = {}, 0, 0
         local roots = crystalRoots()
         for _, folder in ipairs(roots) do
             for _, crystal in ipairs(folder:GetChildren()) do
@@ -934,15 +946,14 @@ return function(context)
                     and part ~= nil
                 if available then
                     total += 1
-                    if tier == tierNames.Legendary then
-                        legendary += 1
-                    elseif tier == tierNames.Mythic then
-                        mythic += 1
+                    if highTierNames[tier] then
+                        counts[tier] = (counts[tier] or 0) + 1
+                        highTierTotal += 1
                     end
                 end
             end
         end
-        return legendary, mythic, total, #roots
+        return counts, highTierTotal, total, #roots
     end
 
     local function openPublicServers()
@@ -1319,7 +1330,7 @@ return function(context)
     local targetLabel = MiningStatusSection:AddLabel("Target: None")
     local backpackLabel = MiningStatusSection:AddLabel("Backpack: 0 / 0 kg")
     local saleLabel = MiningStatusSection:AddLabel("Last sale: $0")
-    local serverHopLabel = ServerHopSection:AddLabel("Legendary: ? | Mythic: ?")
+    local serverHopLabel = ServerHopSection:AddLabel("High-tier crystals: ?")
     local cashLabel = StatsSection:AddLabel("Cash: $0")
     local heightLabel = StatsSection:AddLabel("Height: 0m | Best: 0m")
     local warmthLabel = StatsSection:AddLabel("Warmth: 0 | Exposure: 0%")
@@ -1437,27 +1448,21 @@ return function(context)
     })
 
     ServerHopSection:AddToggle({
-        Name = "Hop When No Legendary",
-        Description = "After three confirmed empty scans, sells cargo and joins a fresh public server",
-        Flag = "mam_hop_no_legendary",
-        Default = state.HopNoLegendary,
+        Name = "Auto High-Tier Hunt + Hop",
+        Description = "Hunts Legendary through Ultima, switches tiers automatically, and hops only when all seven tiers are gone",
+        Flag = "mam_high_tier_hunt_hop",
+        Default = state.HighTierHunt,
         Callback = function(enabled)
-            state.HopNoLegendary = enabled
+            state.HighTierHunt = enabled
             state.HopMissingScans = 0
-            environment.VORMountainResumeHopLegendary = enabled
+            environment.VORMountainResumeHopLegendary = false
+            environment.VORMountainResumeHopMythic = false
+            environment.VORMountainResumeHighTierHunt = enabled
         end,
     })
-    ServerHopSection:AddToggle({
-        Name = "Hop When No Mythic",
-        Description = "After three confirmed empty scans, sells cargo and joins a fresh public server",
-        Flag = "mam_hop_no_mythic",
-        Default = state.HopNoMythic,
-        Callback = function(enabled)
-            state.HopNoMythic = enabled
-            state.HopMissingScans = 0
-            environment.VORMountainResumeHopMythic = enabled
-        end,
-    })
+    ServerHopSection:AddLabel(
+        "Pool: Legendary, Mythic, Divine, Empyrean (Imperium), Zenith, Infinity, Ultima"
+    )
 
     TargetSection:AddLabel("Auto Mine Search: Entire mountain (expanded streaming radius)")
     TargetSection:AddDropdown({
@@ -1861,10 +1866,10 @@ return function(context)
 
     task.spawn(function()
         while state.Alive do
-            local enabled = state.HopNoLegendary or state.HopNoMythic
-            local legendary, mythic, total, rootCount = rareCrystalCounts()
-            state.LegendaryCount = legendary
-            state.MythicCount = mythic
+            local enabled = state.HighTierHunt
+            local tierCounts, highTierTotal, total, rootCount = rareCrystalCounts()
+            state.HighTierCounts = tierCounts
+            state.HighTierCount = highTierTotal
             local now = os.clock()
             if total > state.LastObservedCrystalTotal then
                 state.LastCrystalGrowthAt = now
@@ -1878,24 +1883,15 @@ return function(context)
                 and (state.StreamingExpanded
                     or now - state.HopStartedAt >= 30)
             if enabled and not state.HopBusy then
-                local missing = {}
-                if state.HopNoLegendary and legendary == 0 then
-                    table.insert(missing, "no Legendary")
-                end
-                if state.HopNoMythic and mythic == 0 then
-                    table.insert(missing, "no Mythic")
-                end
-
                 local replicationReady = state.GenerationReady
-                if replicationReady and #missing > 0 then
+                if replicationReady and highTierTotal == 0 then
                     state.HopMissingScans += 1
                     state.HopStatus = string.format(
-                        "%s (%d/3 checks)",
-                        table.concat(missing, " + "),
+                        "All high tiers gone (%d/3 checks)",
                         state.HopMissingScans
                     )
                     if state.HopMissingScans >= 3 then
-                        task.spawn(hopToFreshServer, table.concat(missing, " + "))
+                        task.spawn(hopToFreshServer, "all high tiers gone")
                     end
                 else
                     state.HopMissingScans = 0
@@ -1914,14 +1910,15 @@ return function(context)
                         end
                     else
                         state.HopStatus = string.format(
-                            "Watching %d crystal(s)",
+                            "Watching %d high-tier / %d total",
+                            highTierTotal,
                             total
                         )
                     end
                 end
             elseif not enabled then
                 state.HopMissingScans = 0
-                state.HopStatus = "Rare crystal hopping disabled"
+                state.HopStatus = "High-tier hunt and hop disabled"
             end
             task.wait(1)
         end
@@ -2031,10 +2028,17 @@ return function(context)
         warmthLabel.Text = string.format("Warmth: %s | Exposure: %.0f%%", tostring(warmth), exposure * 100)
         equipmentLabel.Text = string.format("Pickaxe: %s | Power: %.1f", pickaxe and pickaxe.Name or "None", power)
         cargoLabel.Text = string.format("Cargo: %d crystal(s) | $%d", count, math.floor(heldValue))
+        local tierCounts = state.HighTierCounts
         serverHopLabel.Text = string.format(
-            "Legendary: %d | Mythic: %d\n%s",
-            state.LegendaryCount,
-            state.MythicCount,
+            "High-tier: %d | L%d M%d D%d E%d Z%d I%d U%d\n%s",
+            state.HighTierCount,
+            tierCounts[5] or 0,
+            tierCounts[6] or 0,
+            tierCounts[7] or 0,
+            tierCounts[8] or 0,
+            tierCounts[9] or 0,
+            tierCounts[10] or 0,
+            tierCounts[11] or 0,
             state.HopStatus
         )
         adapterLabel.Text = string.format(
@@ -2074,10 +2078,15 @@ return function(context)
             gui:SetAttribute("MineAMountainGodspeed", state.GodspeedMining)
             gui:SetAttribute("MineAMountainGodspeedCredited", state.LastGodspeedCredited)
             gui:SetAttribute("MineAMountainGodspeedPickaxe", state.GodspeedPickaxe)
-            gui:SetAttribute("MineAMountainLegendaryCount", state.LegendaryCount)
-            gui:SetAttribute("MineAMountainMythicCount", state.MythicCount)
-            gui:SetAttribute("MineAMountainHopNoLegendary", state.HopNoLegendary)
-            gui:SetAttribute("MineAMountainHopNoMythic", state.HopNoMythic)
+            gui:SetAttribute("MineAMountainHighTierCount", state.HighTierCount)
+            gui:SetAttribute("MineAMountainLegendaryCount", tierCounts[5] or 0)
+            gui:SetAttribute("MineAMountainMythicCount", tierCounts[6] or 0)
+            gui:SetAttribute("MineAMountainDivineCount", tierCounts[7] or 0)
+            gui:SetAttribute("MineAMountainEmpyreanCount", tierCounts[8] or 0)
+            gui:SetAttribute("MineAMountainZenithCount", tierCounts[9] or 0)
+            gui:SetAttribute("MineAMountainInfinityCount", tierCounts[10] or 0)
+            gui:SetAttribute("MineAMountainUltimaCount", tierCounts[11] or 0)
+            gui:SetAttribute("MineAMountainHighTierHunt", state.HighTierHunt)
             gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
             gui:SetAttribute("MineAMountainGenerationReady", state.GenerationReady)
             gui:SetAttribute("MineAMountainStreamingStableFor", state.StreamingStableFor)

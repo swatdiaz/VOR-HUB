@@ -310,8 +310,17 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
 )
 $mineMountainRareHop = (
-    $mineMountainText -match 'Name\s*=\s*"Hop When No Legendary"' -and
-    $mineMountainText -match 'Name\s*=\s*"Hop When No Mythic"' -and
+    $mineMountainText -match 'Name\s*=\s*"Auto High-Tier Hunt \+ Hop"' -and
+    $mineMountainText -match 'Flag\s*=\s*"mam_high_tier_hunt_hop"' -and
+    $mineMountainText -match '\[5\]\s*=\s*"Legendary"' -and
+    $mineMountainText -match '\[6\]\s*=\s*"Mythic"' -and
+    $mineMountainText -match '\[7\]\s*=\s*"Divine"' -and
+    $mineMountainText -match '\[8\]\s*=\s*"Empyrean"' -and
+    $mineMountainText -match '\[9\]\s*=\s*"Zenith"' -and
+    $mineMountainText -match '\[10\]\s*=\s*"Infinity"' -and
+    $mineMountainText -match '\[11\]\s*=\s*"Ultima"' -and
+    $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Legendary' -and
+    $mineMountainText -match 'state\.HighTierHunt\s*and\s*tierNames\.Ultima' -and
     $mineMountainText -match 'local function rareCrystalCounts\(\)' -and
     $mineMountainText -match 'workspace:GetAttribute\("MountainGenerating"\)\s*==\s*false' -and
     $mineMountainText -match 'workspace:GetAttribute\("GroundStrataBaked"\)\s*==\s*true' -and
@@ -319,10 +328,10 @@ $mineMountainRareHop = (
     $mineMountainText -match '"StreamingMinRadius",\s*\r?\n\s*desiredMinimum' -and
     $mineMountainText -match 'LocalPlayer:RequestStreamAroundAsync\(center,\s*15\)' -and
     $mineMountainText -match 'state\.StreamingStableFor\s*>=\s*15' -and
+    $mineMountainText -match 'replicationReady\s*and\s*highTierTotal\s*==\s*0' -and
     $mineMountainText -match 'state\.HopMissingScans\s*>=\s*3' -and
     $mineMountainText -match 'local function queueMountainResume\(\)' -and
-    $mineMountainText -match 'VORMountainResumeHopLegendary' -and
-    $mineMountainText -match 'VORMountainResumeHopMythic' -and
+    $mineMountainText -match 'VORMountainResumeHighTierHunt' -and
     $mineMountainText -match 'TeleportService:TeleportToPlaceInstance\(game\.PlaceId,\s*selected\.id,\s*LocalPlayer\)'
 )
 $mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
