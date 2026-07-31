@@ -291,7 +291,14 @@ $practicalBasketballFovLock = (
     $practicalBasketballText -match 'Name\s*=\s*"Reset Camera FOV"' -and
     $practicalBasketballText -match 'fovConnection:Disconnect\(\)'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock)) {
+$practicalBasketballFHotkey = (
+    $practicalBasketballText -match 'Name\s*=\s*"F Chain Hotkey"' -and
+    $practicalBasketballText -match 'BindActionAtPriority\(' -and
+    $practicalBasketballText -match 'Enum\.KeyCode\.F' -and
+    $practicalBasketballText -match 'Enum\.ContextActionResult\.Sink' -and
+    $practicalBasketballText -match 'ContextActionService:UnbindAction\(comboHotkeyAction\)'
+)
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -318,3 +325,4 @@ Write-Host "Practical Basketball support: PASS (native Aero character, safe mete
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
 Write-Host "Practical Basketball camera FOV: PASS (change listener, late render lock, and clean reset)"
+Write-Host "Practical Basketball F hotkey: PASS (optional high-priority chain action with native-input restore)"

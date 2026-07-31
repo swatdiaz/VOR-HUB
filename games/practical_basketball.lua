@@ -84,6 +84,7 @@ return function(context)
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
+    local ContextActionService = game:GetService("ContextActionService")
     local CollectionService = game:GetService("CollectionService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
@@ -161,6 +162,7 @@ return function(context)
         CustomDribbleChain = {"Z", "C", "CC", "ZZ", "CX", "XZ", "XX", "VV", "VC", "V"},
         ComboInterval = 1.5,
         LastCombo = 0,
+        ComboHotkey = false,
 
         CourtVision = false,
         AntiAfk = true,
@@ -447,6 +449,39 @@ return function(context)
             or "Dribble remote unavailable"
     end
 
+    local function getSelectedDribbleStep()
+        local preset = AUTO_DRIBBLE_PRESETS[state.DribblePreset]
+        local custom = state.DribblePreset == "Custom Chain"
+        local count = custom and #state.CustomDribbleChain or (preset and #preset or 0)
+        if count <= 0 then
+            return nil, 0, 0
+        end
+        if state.DribblePresetIndex > count then
+            state.DribblePresetIndex = 1
+        end
+        local index = state.DribblePresetIndex
+        local step = custom
+            and {
+                Input = state.CustomDribbleChain[index],
+                Escape = true,
+                Direction = "Forward",
+            }
+            or preset[index]
+        return step, count, index
+    end
+
+    local function runNextDribbleStep(character)
+        local step, count, index = getSelectedDribbleStep()
+        if not step then
+            return false, "Empty chain", index, count
+        end
+        local fired, status = runDribbleStep(character, step)
+        if fired then
+            state.DribblePresetIndex = index % count + 1
+        end
+        return fired, status, index, count
+    end
+
     local meterNameLabel = MeterSection:AddLabel("Meter: Waiting")
     local meterProgressLabel = MeterSection:AddLabel("Charge: 0%")
     local meterReleaseLabel = MeterSection:AddLabel("Release: Disabled")
@@ -457,6 +492,41 @@ return function(context)
     local ballStatusLabel = StatusSection:AddLabel("Ball: Reading...")
     local opponentStatusLabel = StatusSection:AddLabel("Opponent: Reading...")
     local adapterStatusLabel = StatusSection:AddLabel("Adapter: Aero remotes found")
+    local comboHotkeyAction = "VORPracticalBasketballComboF"
+
+    local function setComboHotkey(enabled)
+        ContextActionService:UnbindAction(comboHotkeyAction)
+        state.ComboHotkey = enabled == true
+        if not state.ComboHotkey then
+            return
+        end
+        ContextActionService:BindActionAtPriority(
+            comboHotkeyAction,
+            function(_, inputState)
+                if inputState == Enum.UserInputState.Begin then
+                    local character = resolveCharacter()
+                    local action = tostring(character and character:GetAttribute("Action") or "")
+                    if not character or not hasBasketball(character) then
+                        chainStatusLabel.Text = "Chain: F hotkey waiting for possession"
+                    elseif action ~= "" and action ~= "TripleThreat" and action ~= "Moving" then
+                        chainStatusLabel.Text = "Chain: F hotkey waiting for " .. action
+                    else
+                        local _, status, index, count = runNextDribbleStep(character)
+                        chainStatusLabel.Text = string.format(
+                            "Chain: F | %s | %d/%d",
+                            status,
+                            index,
+                            count
+                        )
+                    end
+                end
+                return Enum.ContextActionResult.Sink
+            end,
+            false,
+            Enum.ContextActionPriority.High.Value + 100,
+            Enum.KeyCode.F
+        )
+    end
 
     AutoGreenSection:AddToggle({
         Name = "Auto Green",
@@ -745,6 +815,18 @@ return function(context)
             end
         end,
     })
+    ComboSection:AddToggle({
+        Name = "F Chain Hotkey",
+        Description = "F advances the selected chain and temporarily replaces native foul/clutch/self-pass",
+        Flag = "practical_basketball_f_chain_hotkey",
+        Default = false,
+        Callback = function(enabled)
+            setComboHotkey(enabled)
+            chainStatusLabel.Text = enabled
+                and "Chain: F hotkey armed"
+                or "Chain: F hotkey disabled"
+        end,
+    })
     ComboSection:AddSlider({
         Name = "Move Interval",
         Description = "Delay between accepted moves in the chain",
@@ -782,6 +864,7 @@ return function(context)
         end,
     })
     ComboStatusSection:AddLabel("Guarded Only chains stop once the defender leaves your trigger range.")
+    ComboStatusSection:AddLabel("Mobile uses the Guarded Only trigger; F hotkey is desktop-only.")
     ComboStatusSection:AddLabel("Presets cover every native move family found in the Dribbling lesson.")
     ComboStatusSection:AddLabel("The server still validates possession, stamina, and animation state.")
 
@@ -1137,30 +1220,16 @@ return function(context)
                     .. tostring(state.DribbleRange) .. " studs"
             elseif now - state.LastCombo >= state.ComboInterval
                 and (action == "" or action == "TripleThreat" or action == "Moving") then
-                local preset = AUTO_DRIBBLE_PRESETS[state.DribblePreset]
-                local custom = state.DribblePreset == "Custom Chain"
-                local count = custom and #state.CustomDribbleChain or (preset and #preset or 0)
+                local fired, status, index, count = runNextDribbleStep(character)
                 if count > 0 then
-                    if state.DribblePresetIndex > count then
-                        state.DribblePresetIndex = 1
-                    end
-                    local step = custom
-                        and {
-                            Input = state.CustomDribbleChain[state.DribblePresetIndex],
-                            Escape = true,
-                            Direction = "Forward",
-                        }
-                        or preset[state.DribblePresetIndex]
-                    local fired, status = runDribbleStep(character, step)
                     if fired then
                         state.LastCombo = now
-                        state.DribblePresetIndex = state.DribblePresetIndex + 1
                     end
                     chainStatusLabel.Text = string.format(
                         "Chain: %s | %s | %d/%d",
                         state.DribblePreset,
                         status,
-                        math.min(state.DribblePresetIndex, count),
+                        index,
                         count
                     )
                 end
@@ -1246,6 +1315,7 @@ return function(context)
         state.Alive = false
         state.AutoGreen = false
         state.ForceNextGreen = false
+        setComboHotkey(false)
         fovOverride = false
         if fovConnection then
             fovConnection:Disconnect()
