@@ -84,6 +84,8 @@ return function(context)
         OriginalFallingDownEnabled = nil,
         OriginalRagdollEnabled = nil,
         StateCharacter = nil,
+        FloatMover = nil,
+        FloatRoot = nil,
     }
 
     local tierNames = {
@@ -251,18 +253,6 @@ return function(context)
         return ok, err
     end
 
-    local floatPlatform = Instance.new("Part")
-    floatPlatform.Name = "VORMountainFarmFloat"
-    floatPlatform.Size = Vector3.new(10, 0.45, 10)
-    floatPlatform.Anchored = true
-    floatPlatform.Transparency = 1
-    floatPlatform.CanCollide = false
-    floatPlatform.CanTouch = false
-    floatPlatform.CanQuery = false
-    floatPlatform.CastShadow = false
-    floatPlatform.CFrame = CFrame.new(0, -10000, 0)
-    floatPlatform.Parent = workspace
-
     local function configureRagdollStates(character, humanoid)
         if state.StateCharacter ~= character then
             state.StateCharacter = character
@@ -335,14 +325,34 @@ return function(context)
             and humanoid ~= nil
             and root ~= nil
             and humanoid.Health > 0
-        floatPlatform.CanCollide = enabled
         if not enabled then
-            floatPlatform.CFrame = CFrame.new(0, -10000, 0)
+            if state.FloatMover then
+                state.FloatMover:Destroy()
+                state.FloatMover = nil
+                state.FloatRoot = nil
+            end
             return
         end
-        floatPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 3.25, root.Position.Z)
+
+        if state.FloatRoot ~= root or not (state.FloatMover and state.FloatMover.Parent == root) then
+            if state.FloatMover then
+                state.FloatMover:Destroy()
+            end
+            local mover = Instance.new("BodyVelocity")
+            mover.Name = "VORMountainHeightHold"
+            mover.MaxForce = Vector3.new(0, math.huge, 0)
+            mover.P = 50000
+            mover.Velocity = Vector3.zero
+            mover.Parent = root
+            state.FloatMover = mover
+            state.FloatRoot = root
+        end
+
+        -- Hold vertical velocity at zero. Horizontal movement and tweened CFrame
+        -- changes remain untouched, so wall crystals do not make the player rise.
+        state.FloatMover.Velocity = Vector3.zero
         local velocity = root.AssemblyLinearVelocity
-        if velocity.Y < 0 then
+        if math.abs(velocity.Y) > 0.01 then
             root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
         end
     end
@@ -1158,14 +1168,15 @@ return function(context)
     })
     SafetySection:AddToggle({
         Name = "Farm Float",
-        Description = "Keeps an invisible floor under you while mining so slopes cannot drop you",
+        Description = "Holds your current height without lifting you, so wall crystals cannot drop you",
         Flag = "mam_farm_float",
         Default = true,
         Callback = function(enabled)
             state.FarmFloat = enabled
-            if not enabled then
-                floatPlatform.CanCollide = false
-                floatPlatform.CFrame = CFrame.new(0, -10000, 0)
+            if not enabled and state.FloatMover then
+                state.FloatMover:Destroy()
+                state.FloatMover = nil
+                state.FloatRoot = nil
             end
         end,
     })
@@ -1425,7 +1436,8 @@ return function(context)
             gui:SetAttribute("MineAMountainPurchaseBusy", state.PurchaseBusy)
             gui:SetAttribute("MineAMountainLastAutoPurchase", state.LastAutoPurchase)
             gui:SetAttribute("MineAMountainAntiRagdoll", state.AntiRagdoll)
-            gui:SetAttribute("MineAMountainFarmFloat", floatPlatform.CanCollide)
+            gui:SetAttribute("MineAMountainFarmFloat", state.FloatMover ~= nil
+                and state.FloatMover.Parent == root)
             gui:SetAttribute("MineAMountainWalkSpeedLock", state.WalkSpeedEnabled)
         end)
     end))
@@ -1454,8 +1466,10 @@ return function(context)
                 end
             end)
         end
-        if floatPlatform then
-            floatPlatform:Destroy()
+        if state.FloatMover then
+            state.FloatMover:Destroy()
+            state.FloatMover = nil
+            state.FloatRoot = nil
         end
         targetHighlight:Destroy()
     end))

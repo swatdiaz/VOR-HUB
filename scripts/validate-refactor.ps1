@@ -278,7 +278,10 @@ $mineMountainIndependentPurchases = (
 )
 $mineMountainMovementSafety = (
     $mineMountainText -match 'Name\s*=\s*"Farm Float"' -and
-    $mineMountainText -match 'VORMountainFarmFloat' -and
+    $mineMountainText -match 'VORMountainHeightHold' -and
+    $mineMountainText -match 'Instance\.new\("BodyVelocity"\)' -and
+    $mineMountainText -match 'mover\.MaxForce\s*=\s*Vector3\.new\(0,\s*math\.huge,\s*0\)' -and
+    $mineMountainText -notmatch 'VORMountainFarmFloat' -and
     $mineMountainText -match 'Name\s*=\s*"Anti Ragdoll"' -and
     $mineMountainText -match 'DeactivateRagdoll:FireServer\(\)' -and
     $mineMountainText -match 'BindToRenderStep\(speedBindName,\s*Enum\.RenderPriority\.Last\.Value' -and
