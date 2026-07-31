@@ -271,7 +271,15 @@ $practicalBasketballPages = (
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Dribble"' -and
     $practicalBasketballText -match 'addHomeCategory\("[^"]*Visuals"'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages)) {
+$practicalBasketballDribbleChains = (
+    $practicalBasketballText -match 'Name\s*=\s*"Auto Dribble Chain"' -and
+    $practicalBasketballText -match 'Options\s*=\s*\{"Guarded Only",\s*"Always"\}' -and
+    $practicalBasketballText -match 'DRIBBLE_MOVE_INPUTS' -and
+    $practicalBasketballText -match '\["All Moves"\]' -and
+    $practicalBasketballText -match 'resolveValueObject\(character,\s*"Basketball"\)' -and
+    $practicalBasketballText -notmatch 'Auto Dribbling Tutorial'
+)
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -295,3 +303,4 @@ Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, stic
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
+Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"

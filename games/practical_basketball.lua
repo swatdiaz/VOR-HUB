@@ -1,5 +1,77 @@
 -- Practical Basketball adapter for VOR Hub.
 -- Universe 7529591378 uses Aero, workspace.Characters, and tagged basketballs.
+local DRIBBLE_MOVE_INPUTS = {
+    SwitchHand = {R = "H", L = "H"},
+    Crossover = {R = "Z", L = "C"},
+    Hesitation = {R = "C", L = "Z"},
+    DoubleCrossover = {R = "CC", L = "ZZ"},
+    Tween = {R = "ZZ", L = "CC"},
+    BehindBack = {R = "CX", L = "ZX"},
+    Spin = {R = "CXZ", L = "ZXC"},
+    DoubleBehindBack = {R = "XZ", L = "XC"},
+    StepBack = {R = "X", L = "X"},
+    SnatchBack = {R = "XX", L = "XX"},
+    Combo = {R = "VV", L = "VV"},
+    Breakdown = {R = "VC", L = "VZ"},
+    HalfSpin = {R = "V", L = "V"},
+}
+
+local AUTO_DRIBBLE_PRESETS = {
+    ["Separation Chain"] = {
+        {Move = "Crossover", Escape = true, Direction = "Horizontal"},
+        {Move = "BehindBack", Escape = true, Direction = "Backward"},
+        {Move = "StepBack"},
+        {Move = "SnatchBack"},
+        {Move = "Tween", Escape = true, Direction = "Forward"},
+    },
+    ["Forward Chain"] = {
+        {Move = "Crossover", Escape = true, Direction = "Forward"},
+        {Move = "Hesitation", Escape = true, Direction = "Forward"},
+        {Move = "Tween", Escape = true, Direction = "Forward"},
+        {Move = "BehindBack", Escape = true, Direction = "Forward"},
+    },
+    ["Standing Chain"] = {
+        {Move = "Crossover", Escape = false},
+        {Move = "Hesitation", Escape = false},
+        {Move = "DoubleCrossover", Escape = false},
+        {Move = "Tween", Escape = false},
+        {Move = "BehindBack", Escape = false},
+        {Move = "DoubleBehindBack", Escape = false},
+    },
+    ["Escape Mix"] = {
+        {Move = "Crossover", Escape = true, Direction = "Idle"},
+        {Move = "Hesitation", Escape = true, Direction = "Backward"},
+        {Move = "BehindBack", Escape = true, Direction = "Horizontal"},
+        {Move = "Breakdown", Escape = true, Direction = "Forward"},
+        {Move = "SnatchBack"},
+    },
+    ["Ankle Breaker"] = {
+        {Move = "Crossover", Escape = true, Direction = "Forward"},
+        {Move = "DoubleCrossover", Escape = true},
+        {Move = "Tween", Escape = true, Direction = "Forward"},
+        {Move = "BehindBack", Escape = true, Direction = "Backward"},
+        {Move = "Spin"},
+        {Move = "SnatchBack"},
+        {Move = "Combo"},
+        {Move = "HalfSpin"},
+    },
+    ["All Moves"] = {
+        {Move = "SwitchHand"},
+        {Move = "Crossover", Escape = true, Direction = "Forward"},
+        {Move = "Hesitation", Escape = true, Direction = "Backward"},
+        {Move = "DoubleCrossover", Escape = false},
+        {Move = "Tween", Escape = true, Direction = "Forward"},
+        {Move = "BehindBack", Escape = true, Direction = "Horizontal"},
+        {Move = "Spin"},
+        {Move = "DoubleBehindBack", Escape = false},
+        {Move = "StepBack"},
+        {Move = "SnatchBack"},
+        {Move = "Combo"},
+        {Move = "Breakdown", Escape = true, Direction = "Forward"},
+        {Move = "HalfSpin"},
+    },
+}
+
 return function(context)
     local Window = assert(context.Window, "game module requires Window")
     local createCategoryHomePage = assert(context.CreateCategoryHomePage, "game module requires CreateCategoryHomePage")
@@ -82,6 +154,11 @@ return function(context)
 
         AutoDribble = false,
         Combo = "ZX",
+        DribblePreset = "Separation Chain",
+        DribblePresetIndex = 1,
+        DribbleTrigger = "Guarded Only",
+        DribbleRange = 14,
+        CustomDribbleChain = {"Z", "C", "CC", "ZZ", "CX", "XZ", "XX", "VV", "VC", "V"},
         ComboInterval = 1.5,
         LastCombo = 0,
 
@@ -124,6 +201,19 @@ return function(context)
     local function resolveRoot(character)
         character = character or resolveCharacter()
         return character and character:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function resolveValueObject(character, name)
+        local attributes = character and character:FindFirstChild("Attributes")
+        local valueObject = attributes and attributes:FindFirstChild(name)
+        return valueObject and valueObject:IsA("ValueBase") and valueObject.Value or nil
+    end
+
+    local function hasBasketball(character)
+        return character ~= nil and (
+            character:GetAttribute("Basketball") == true
+            or resolveValueObject(character, "Basketball") ~= nil
+        )
     end
 
     local function getTeam(character)
@@ -288,11 +378,79 @@ return function(context)
         return root and root.CFrame.LookVector * Vector3.new(1, 0, 1) or Vector3.zero
     end
 
+    local function getDribbleDirection(character, direction)
+        if not direction or direction == "Idle" then
+            return Vector3.zero
+        end
+
+        local root = resolveRoot(character)
+        if not root then
+            return Vector3.zero
+        end
+
+        local goal = resolveValueObject(character, "Goal")
+        local flatRoot = root.Position * Vector3.new(1, 0, 1)
+        local flatGoal = goal and goal:IsA("BasePart")
+            and goal.Position * Vector3.new(1, 0, 1)
+            or flatRoot + root.CFrame.LookVector * Vector3.new(1, 0, 1)
+        local basis = (flatGoal - flatRoot).Magnitude > 0.01
+            and CFrame.lookAt(flatRoot, flatGoal)
+            or root.CFrame.Rotation
+        local forward = basis.LookVector * Vector3.new(1, 0, 1)
+        local right = basis.RightVector * Vector3.new(1, 0, 1)
+
+        if direction == "Forward" then
+            return forward.Unit
+        elseif direction == "Backward" then
+            return -forward.Unit
+        elseif direction == "OppositeHorizontal" then
+            return character:GetAttribute("Hand") == "L" and -right.Unit or right.Unit
+        elseif direction == "Horizontal" then
+            return character:GetAttribute("Hand") == "L" and right.Unit or -right.Unit
+        end
+        return Vector3.zero
+    end
+
+    local function runDribbleStep(character, step)
+        if not character or not step then
+            return false, "Waiting"
+        end
+        local hand = character:GetAttribute("Hand") == "L" and "L" or "R"
+        local input = step.Input
+        if not input and step.Move then
+            local moveInputs = DRIBBLE_MOVE_INPUTS[step.Move]
+            input = moveInputs and moveInputs[hand]
+        end
+        if not input then
+            return false, "Invalid move"
+        end
+
+        if step.Escape ~= nil then
+            setSprintHeld(step.Escape)
+        end
+        local fired
+        if input == "H" then
+            fired = fireRemote("Dribble", input)
+        else
+            fired = fireRemote(
+                "Dribble",
+                input,
+                step.Escape == true,
+                step.Direction and getDribbleDirection(character, step.Direction)
+                    or currentMoveDirection(character)
+            )
+        end
+        return fired, fired
+            and string.format("%s | %s hand", step.Move or input, hand)
+            or "Dribble remote unavailable"
+    end
+
     local meterNameLabel = MeterSection:AddLabel("Meter: Waiting")
     local meterProgressLabel = MeterSection:AddLabel("Charge: 0%")
     local meterReleaseLabel = MeterSection:AddLabel("Release: Disabled")
     local meterStateLabel = MeterSection:AddLabel("Shot state: Waiting")
-    local comboLabel = ComboStatusSection:AddLabel("Combo: ZX | Manual")
+    local comboLabel = ComboStatusSection:AddLabel("Single move: ZX")
+    local chainStatusLabel = ComboStatusSection:AddLabel("Chain: Separation Chain | Waiting")
     local playerStatusLabel = StatusSection:AddLabel("Player: Reading...")
     local ballStatusLabel = StatusSection:AddLabel("Ball: Reading...")
     local opponentStatusLabel = StatusSection:AddLabel("Opponent: Reading...")
@@ -502,29 +660,92 @@ return function(context)
     })
 
     ComboSection:AddDropdown({
-        Name = "Combo Input",
-        Description = "Exact Aero dribble sequences; no fake move names",
-        Flag = "practical_basketball_dribble_combo",
-        Options = {"Z", "C", "V", "X", "ZX", "CX", "ZZ", "CC", "VV", "XX", "ZCX", "CVX"},
-        Default = "ZX",
+        Name = "Dribble Chain",
+        Description = "Selects the move sequence used to create separation",
+        Flag = "practical_basketball_dribble_chain",
+        Options = {
+            "Separation Chain",
+            "Forward Chain",
+            "Standing Chain",
+            "Escape Mix",
+            "Ankle Breaker",
+            "All Moves",
+            "Custom Chain",
+        },
+        Default = "Separation Chain",
         Callback = function(value)
-            state.Combo = tostring(value or "ZX")
-            comboLabel.Text = "Combo: " .. state.Combo .. (state.AutoDribble and " | Auto" or " | Manual")
+            state.DribblePreset = tostring(value or "Separation Chain")
+            state.DribblePresetIndex = 1
+            chainStatusLabel.Text = "Chain: " .. state.DribblePreset .. " | Waiting"
+        end,
+    })
+    ComboSection:AddDropdown({
+        Name = "Chain Trigger",
+        Description = "Guarded Only stops the chain after you create shooting space",
+        Flag = "practical_basketball_dribble_trigger",
+        Options = {"Guarded Only", "Always"},
+        Default = "Guarded Only",
+        Callback = function(value)
+            state.DribbleTrigger = tostring(value or "Guarded Only")
+        end,
+    })
+    ComboSection:AddSlider({
+        Name = "Defender Trigger Range",
+        Description = "A defender inside this range starts the guarded chain",
+        Flag = "practical_basketball_dribble_defender_range",
+        Min = 5,
+        Max = 30,
+        Step = 1,
+        Default = 14,
+        Suffix = " studs",
+        Callback = function(value)
+            state.DribbleRange = tonumber(value) or 14
+        end,
+    })
+    ComboSection:AddInput({
+        Name = "Custom Chain",
+        Description = "Comma-separated native inputs, for example Z,C,CC,ZZ,CX,XZ,XX,VV",
+        Flag = "practical_basketball_custom_dribble_chain",
+        Placeholder = "Z,C,CC,ZZ,CX,XZ,XX,VV,VC,V",
+        Default = "Z,C,CC,ZZ,CX,XZ,XX,VV,VC,V",
+        Callback = function(value)
+            local validInputs = {
+                H = true, Z = true, C = true, V = true, X = true,
+                ZZ = true, CC = true, ZX = true, CX = true,
+                XZ = true, XC = true, XX = true, VV = true,
+                VC = true, VZ = true, ZXC = true, CXZ = true,
+            }
+            local parsed = {}
+            for token in string.gmatch(string.upper(tostring(value or "")), "[A-Z]+") do
+                if validInputs[token] then
+                    table.insert(parsed, token)
+                end
+            end
+            if #parsed > 0 then
+                state.CustomDribbleChain = parsed
+                state.DribblePresetIndex = 1
+            end
         end,
     })
     ComboSection:AddToggle({
-        Name = "Auto Dribble Combo",
-        Description = "Repeats the selected native combo while you hold the ball",
+        Name = "Auto Dribble Chain",
+        Description = "Runs the selected chain while you hold the ball and the trigger is active",
         Flag = "practical_basketball_auto_dribble",
         Default = false,
         Callback = function(enabled)
             state.AutoDribble = enabled
             state.LastCombo = 0
-            comboLabel.Text = "Combo: " .. state.Combo .. (enabled and " | Auto" or " | Manual")
+            state.DribblePresetIndex = 1
+            chainStatusLabel.Text = "Chain: " .. state.DribblePreset
+                .. (enabled and " | Armed" or " | Disabled")
+            if not enabled then
+                setSprintHeld(false)
+            end
         end,
     })
     ComboSection:AddSlider({
-        Name = "Combo Interval",
+        Name = "Move Interval",
+        Description = "Delay between accepted moves in the chain",
         Flag = "practical_basketball_combo_interval",
         Min = 0.6,
         Max = 4,
@@ -535,15 +756,32 @@ return function(context)
             state.ComboInterval = tonumber(value) or 1.5
         end,
     })
-    ComboSection:AddButton({
-        Name = "Run Combo Once",
-        Callback = function()
-            local character = resolveCharacter()
-            fireRemote("Dribble", state.Combo, state.SprintHeld, currentMoveDirection(character))
+    ComboSection:AddDropdown({
+        Name = "Single Move Input",
+        Description = "Exact Aero input for manual testing",
+        Flag = "practical_basketball_dribble_combo",
+        Options = {
+            "H", "Z", "C", "V", "X", "ZZ", "CC", "ZX", "CX",
+            "XZ", "XC", "XX", "VV", "VC", "VZ", "ZXC", "CXZ",
+        },
+        Default = "ZX",
+        Callback = function(value)
+            state.Combo = tostring(value or "ZX")
+            comboLabel.Text = "Single move: " .. state.Combo
         end,
     })
-    ComboStatusSection:AddLabel("Z / C / V / X are the game's real keyboard dribble inputs.")
-    ComboStatusSection:AddLabel("The server still validates stamina, possession, and animation state.")
+    ComboSection:AddButton({
+        Name = "Run Single Move",
+        Callback = function()
+            runDribbleStep(resolveCharacter(), {
+                Input = state.Combo,
+                Escape = state.SprintHeld,
+            })
+        end,
+    })
+    ComboStatusSection:AddLabel("Guarded Only chains stop once the defender leaves your trigger range.")
+    ComboStatusSection:AddLabel("Presets cover every native move family found in the Dribbling lesson.")
+    ComboStatusSection:AddLabel("The server still validates possession, stamina, and animation state.")
 
     local ballHighlight = Instance.new("Highlight")
     ballHighlight.Name = "VORPracticalBallVision"
@@ -843,7 +1081,7 @@ return function(context)
         end
 
         if state.AutoRebound and inGame and now - state.LastRebound >= 0.40
-            and character:GetAttribute("Basketball") ~= true then
+            and not hasBasketball(character) then
             local ball = nearestActiveBall(state.ReboundRange)
             local root = resolveRoot(character)
             if ball and root and ball.Position.Y >= root.Position.Y + 1 then
@@ -852,13 +1090,46 @@ return function(context)
             end
         end
 
-        if state.AutoDribble and inGame and now - state.LastCombo >= state.ComboInterval
-            and character:GetAttribute("Basketball") == true then
+        if state.AutoDribble and inGame and hasBasketball(character) then
+            local defender = nearestOpponent(state.DribbleRange, false)
+            local triggerActive = state.DribbleTrigger == "Always" or defender ~= nil
             local action = tostring(character:GetAttribute("Action") or "")
-            if action == "" or action == "TripleThreat" or action == "Moving" then
-                state.LastCombo = now
-                fireRemote("Dribble", state.Combo, state.SprintHeld, currentMoveDirection(character))
+            if not triggerActive then
+                setSprintHeld(false)
+                chainStatusLabel.Text = "Chain: Open | Defender outside "
+                    .. tostring(state.DribbleRange) .. " studs"
+            elseif now - state.LastCombo >= state.ComboInterval
+                and (action == "" or action == "TripleThreat" or action == "Moving") then
+                local preset = AUTO_DRIBBLE_PRESETS[state.DribblePreset]
+                local custom = state.DribblePreset == "Custom Chain"
+                local count = custom and #state.CustomDribbleChain or (preset and #preset or 0)
+                if count > 0 then
+                    if state.DribblePresetIndex > count then
+                        state.DribblePresetIndex = 1
+                    end
+                    local step = custom
+                        and {
+                            Input = state.CustomDribbleChain[state.DribblePresetIndex],
+                            Escape = true,
+                            Direction = "Forward",
+                        }
+                        or preset[state.DribblePresetIndex]
+                    local fired, status = runDribbleStep(character, step)
+                    if fired then
+                        state.LastCombo = now
+                        state.DribblePresetIndex = state.DribblePresetIndex + 1
+                    end
+                    chainStatusLabel.Text = string.format(
+                        "Chain: %s | %s | %d/%d",
+                        state.DribblePreset,
+                        status,
+                        math.min(state.DribblePresetIndex, count),
+                        count
+                    )
+                end
             end
+        elseif state.AutoDribble then
+            chainStatusLabel.Text = "Chain: Waiting for possession"
         end
     end
 
@@ -880,7 +1151,7 @@ return function(context)
 
         local action = character and tostring(character:GetAttribute("Action") or "") or "No character"
         local stamina = character and tonumber(character:GetAttribute("Stamina")) or 0
-        local hasBall = character and character:GetAttribute("Basketball") == true
+        local hasBall = hasBasketball(character)
         meterNameLabel.Text = "Meter: " .. state.MeterName
         meterNameLabel.TextColor3 = state.MeterName ~= "None" and COLORS.success or COLORS.muted
         local meterOffset = character and character:GetAttribute("meterOffset")
