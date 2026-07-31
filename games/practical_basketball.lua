@@ -40,6 +40,7 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
+        ReleaseDelay = 0.015,
         ReleasedThisShot = false,
         WasMeterActive = false,
         WasServerReleased = true,
@@ -320,6 +321,19 @@ return function(context)
             if parsed then
                 state.PerfectOffsets.Vertical = Vector2.new(0, parsed)
             end
+        end,
+    })
+    AutoGreenSection:AddSlider({
+        Name = "Release Delay",
+        Description = "Small server-credit correction; feedback adjusts it after each Auto Green shot",
+        Flag = "practical_basketball_release_delay",
+        Min = 0,
+        Max = 60,
+        Step = 1,
+        Default = 15,
+        Suffix = "ms",
+        Callback = function(value)
+            state.ReleaseDelay = math.clamp((tonumber(value) or 15) / 1000, 0, 0.06)
         end,
     })
     AutoGreenSection:AddButton({
@@ -678,22 +692,33 @@ return function(context)
                 and (state.AutoGreen or state.ForceNextGreen) then
                 state.ReleasedThisShot = true
                 state.ForceNextGreen = false
-                state.PendingReleaseOffset = offset
-                state.PendingReleaseMeter = state.MeterName
-                if releaseShoot() then
-                    state.LastRelease = string.format(
-                        "%s at (%.5f, %.5f)",
-                        state.MeterName,
-                        offset.X,
-                        offset.Y
-                    )
-                    meterReleaseLabel.Text = "Release: " .. state.LastRelease
-                    meterReleaseLabel.TextColor3 = COLORS.success
-                else
-                    state.LastRelease = "Shoot remote unavailable"
-                    meterReleaseLabel.Text = "Release: Shoot remote unavailable"
-                    meterReleaseLabel.TextColor3 = COLORS.error
-                end
+                local releaseMeter = state.MeterName
+                local thresholdOffset = offset
+                task.delay(state.ReleaseDelay, function()
+                    if not state.Alive then
+                        return
+                    end
+                    local liveCharacter = resolveCharacter()
+                    local liveOffset = liveCharacter and liveCharacter:GetAttribute("meterOffset")
+                    local releaseOffset = typeof(liveOffset) == "Vector2" and liveOffset or thresholdOffset
+                    state.PendingReleaseOffset = releaseOffset
+                    state.PendingReleaseMeter = releaseMeter
+                    if releaseShoot() then
+                        state.LastRelease = string.format(
+                            "%s at (%.5f, %.5f) + %dms",
+                            releaseMeter,
+                            releaseOffset.X,
+                            releaseOffset.Y,
+                            math.round(state.ReleaseDelay * 1000)
+                        )
+                        meterReleaseLabel.Text = "Release: " .. state.LastRelease
+                        meterReleaseLabel.TextColor3 = COLORS.success
+                    else
+                        state.LastRelease = "Shoot remote unavailable"
+                        meterReleaseLabel.Text = "Release: Shoot remote unavailable"
+                        meterReleaseLabel.TextColor3 = COLORS.error
+                    end
+                end)
             end
         end
 
@@ -742,13 +767,27 @@ return function(context)
                 timingName,
                 math.round(tonumber(contest) or 0)
             )
+            if state.ReleasedThisShot then
+                if index == 4 then
+                    state.ReleaseDelay = math.min(0.06, state.ReleaseDelay + 0.008)
+                elseif index and index <= 3 then
+                    state.ReleaseDelay = math.min(0.06, state.ReleaseDelay + 0.015)
+                elseif index == 6 then
+                    state.ReleaseDelay = math.max(0, state.ReleaseDelay - 0.006)
+                elseif index and index >= 7 then
+                    state.ReleaseDelay = math.max(0, state.ReleaseDelay - 0.012)
+                end
+            end
             if index == 5 and typeof(state.PendingReleaseOffset) == "Vector2" then
                 local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
                 if not state.ReleasedThisShot then
                     state.PerfectOffsets[learnedMeter] = state.PendingReleaseOffset
                 end
                 meterReleaseLabel.Text = state.ReleasedThisShot
-                    and string.format("Perfect confirmed: %s", state.LastRelease)
+                    and string.format(
+                        "Perfect confirmed: %s",
+                        state.LastRelease
+                    )
                     or string.format(
                         "Calibrated %s: %.8f",
                         learnedMeter,
