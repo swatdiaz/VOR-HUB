@@ -17,9 +17,12 @@ return function(context)
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
     local TweenService = game:GetService("TweenService")
+    local TeleportService = game:GetService("TeleportService")
+    local HttpService = game:GetService("HttpService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
     local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+    local environment = type(getgenv) == "function" and getgenv() or _G
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local FarmingPage = addHomeCategory("Farming", 1, CATEGORY_DECALS.Progress)
@@ -32,6 +35,7 @@ return function(context)
     local MainFarmSection = FarmingPage:AddSection("OP Mining Loop", "Left")
     local TargetSection = FarmingPage:AddSection("Crystal Targeting", "Right")
     local MiningStatusSection = FarmingPage:AddSection("Mining Status", "Right")
+    local ServerHopSection = FarmingPage:AddSection("Rare Crystal Server Hop", "Right")
     local UpgradeSection = UpgradesPage:AddSection("Stat Upgrades", "Left")
     local AutoPurchaseSection = UpgradesPage:AddSection("Automatic Progression", "Right")
     local PlotSection = UpgradesPage:AddSection("Plot Luck Farm", "Right")
@@ -61,7 +65,6 @@ return function(context)
         FreezeGuard = true,
         NoClipTravel = true,
         FarmFloat = true,
-        FreezeAtCrystal = true,
         AntiRagdoll = true,
         WalkSpeedEnabled = false,
         WalkSpeed = 24,
@@ -84,6 +87,16 @@ return function(context)
         LastFarmCycle = 0,
         LastAutoPurchase = 0,
         LastGodspeedCredited = 0,
+        HopNoLegendary = environment.VORMountainResumeHopLegendary == true,
+        HopNoMythic = environment.VORMountainResumeHopMythic == true,
+        HopBusy = false,
+        HopMissingScans = 0,
+        HopStartedAt = os.clock(),
+        HopStatus = "Watching crystal inventory",
+        LegendaryCount = 0,
+        MythicCount = 0,
+        TeleportResumeQueued = false,
+        TeleportQueueMethod = "Unavailable",
         ConsecutiveFailures = 0,
         PurchaseBusy = false,
         FailedTargets = setmetatable({}, {__mode = "k"}),
@@ -94,11 +107,14 @@ return function(context)
         StateCharacter = nil,
         FloatMover = nil,
         FloatRoot = nil,
-        FrozenRoot = nil,
-        OriginalRootAnchored = nil,
-        MiningFrozen = false,
         OriginalPickaxeAttributes = setmetatable({}, {__mode = "k"}),
     }
+    local visitedServers = environment.VORMountainVisitedServers
+    if type(visitedServers) ~= "table" then
+        visitedServers = {}
+        environment.VORMountainVisitedServers = visitedServers
+    end
+    visitedServers[game.JobId] = true
 
     local tierNames = {
         All = 1,
@@ -402,52 +418,6 @@ return function(context)
         end
     end
 
-    local function releaseCrystalFreeze()
-        local root = state.FrozenRoot
-        if root and root.Parent then
-            root.Anchored = state.OriginalRootAnchored == true
-        end
-        state.FrozenRoot = nil
-        state.OriginalRootAnchored = nil
-        state.MiningFrozen = false
-    end
-
-    local function freezeAtCrystal()
-        if not state.FreezeAtCrystal then
-            return false
-        end
-        local _, humanoid, root = characterParts()
-        if not (humanoid and root and humanoid.Health > 0) then
-            return false
-        end
-        if state.FrozenRoot ~= root then
-            releaseCrystalFreeze()
-            state.FrozenRoot = root
-            state.OriginalRootAnchored = root.Anchored
-        end
-        state.MiningFrozen = true
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.Anchored = true
-        return true
-    end
-
-    local function maintainCrystalFreeze()
-        local root = state.FrozenRoot
-        local enabled = state.FreezeAtCrystal
-            and state.MiningFrozen
-            and (state.Master or state.AutoFarm)
-            and root ~= nil
-            and root.Parent ~= nil
-        if not enabled then
-            releaseCrystalFreeze()
-            return
-        end
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.Anchored = true
-    end
-
     local function setTravelCollision(character, enabled)
         if not character or (enabled and not state.NoClipTravel) then
             return
@@ -471,7 +441,6 @@ return function(context)
     end
 
     local function travelTo(position)
-        releaseCrystalFreeze()
         local character, humanoid, root = characterParts()
         if not (character and humanoid and root) then
             return false, "character unavailable"
@@ -714,7 +683,6 @@ return function(context)
         if not moved then
             return false, moveError
         end
-        freezeAtCrystal()
         task.wait(0.12)
         local prompt = target.Crystal:FindFirstChildWhichIsA("ProximityPrompt", true) or target.Prompt
         local promptDeadline = os.clock() + 1.25
@@ -792,7 +760,6 @@ return function(context)
     end
 
     local function sellCargo(manual)
-        releaseCrystalFreeze()
         local weight, count, heldValue = cargo()
         if count <= 0 then
             if manual then
@@ -831,6 +798,152 @@ return function(context)
         until os.clock() >= deadline
         state.LastError = "SellRequest was not credited"
         return false, state.LastError
+    end
+
+    local function queueFunction()
+        if type(queue_on_teleport) == "function" then
+            return queue_on_teleport, "queue_on_teleport"
+        end
+        if type(queueonteleport) == "function" then
+            return queueonteleport, "queueonteleport"
+        end
+        if type(syn) == "table" and type(syn.queue_on_teleport) == "function" then
+            return syn.queue_on_teleport, "syn.queue_on_teleport"
+        end
+        if type(fluxus) == "table" and type(fluxus.queue_on_teleport) == "function" then
+            return fluxus.queue_on_teleport, "fluxus.queue_on_teleport"
+        end
+        return nil, "Unavailable"
+    end
+
+    local function queueMountainResume()
+        if state.TeleportResumeQueued
+            or environment.VORMountainTeleportQueuedJob == game.JobId then
+            state.TeleportResumeQueued = true
+            return true
+        end
+        local queue, method = queueFunction()
+        state.TeleportQueueMethod = method
+        if type(queue) ~= "function" then
+            return false, "This executor does not expose a teleport queue"
+        end
+
+        local visitedEntries = {}
+        for jobId, seen in pairs(visitedServers) do
+            if seen and type(jobId) == "string" and #visitedEntries < 50 then
+                table.insert(visitedEntries, string.format("[%q]=true", jobId))
+            end
+        end
+        table.sort(visitedEntries)
+        local loaderUrl = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua?mountainhop="
+            .. tostring(game.JobId):gsub("[^%w%-]", "")
+        local payload = table.concat({
+            "repeat task.wait() until game:IsLoaded()",
+            "task.wait(0.2)",
+            "local e = type(getgenv) == \"function\" and getgenv() or _G",
+            "e.VORMountainResumeHopLegendary = " .. tostring(state.HopNoLegendary),
+            "e.VORMountainResumeHopMythic = " .. tostring(state.HopNoMythic),
+            "e.VORMountainVisitedServers = {" .. table.concat(visitedEntries, ",") .. "}",
+            "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
+        }, "\n")
+        local ok, message = pcall(queue, payload)
+        if not ok then
+            return false, tostring(message)
+        end
+        state.TeleportResumeQueued = true
+        state.TeleportQueueMethod = method
+        environment.VORMountainTeleportQueuedJob = game.JobId
+        return true
+    end
+
+    local function rareCrystalCounts()
+        local legendary, mythic, total = 0, 0, 0
+        local roots = crystalRoots()
+        for _, folder in ipairs(roots) do
+            for _, crystal in ipairs(folder:GetChildren()) do
+                local part = crystal:IsA("BasePart")
+                    and crystal
+                    or crystal:FindFirstChildWhichIsA("BasePart")
+                local tier = tonumber(
+                    crystal:GetAttribute("Tier")
+                        or (part and part:GetAttribute("Tier"))
+                ) or 0
+                local available = crystal:GetAttribute("Collected") ~= true
+                    and crystal:GetAttribute("Value") ~= nil
+                    and part ~= nil
+                if available then
+                    total += 1
+                    if tier == tierNames.Legendary then
+                        legendary += 1
+                    elseif tier == tierNames.Mythic then
+                        mythic += 1
+                    end
+                end
+            end
+        end
+        return legendary, mythic, total, #roots
+    end
+
+    local function openPublicServers()
+        local servers = {}
+        local cursor
+        for _ = 1, 3 do
+            local url = "https://games.roblox.com/v1/games/"
+                .. tostring(game.PlaceId)
+                .. "/servers/Public?sortOrder=Asc&limit=100"
+            if cursor and cursor ~= "" then
+                url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
+            local data = HttpService:JSONDecode(game:HttpGet(url))
+            for _, server in ipairs(data.data or {}) do
+                if server.id ~= game.JobId
+                    and server.playing < server.maxPlayers
+                    and not visitedServers[server.id] then
+                    table.insert(servers, server)
+                end
+            end
+            cursor = data.nextPageCursor
+            if #servers > 0 or not cursor then
+                break
+            end
+        end
+        return servers
+    end
+
+    local function hopToFreshServer(reason)
+        if state.HopBusy then
+            return
+        end
+        state.HopBusy = true
+        state.HopStatus = "Selling cargo before server hop"
+        local _, count = cargo()
+        if count > 0 then
+            sellCargo(false)
+        end
+
+        local queued, queueError = queueMountainResume()
+        if not queued then
+            state.HopBusy = false
+            state.HopStatus = "Auto-resume unavailable"
+            state.LastError = "Server hop: " .. tostring(queueError)
+            notify("Rare Crystal Hop", state.LastError, 6)
+            return
+        end
+
+        local ok, result = pcall(openPublicServers)
+        if not ok or #result == 0 then
+            state.HopBusy = false
+            state.HopMissingScans = 0
+            state.HopStatus = "No fresh public server found"
+            state.LastError = ok and state.HopStatus or tostring(result)
+            return
+        end
+
+        local selected = result[math.random(1, #result)]
+        visitedServers[selected.id] = true
+        state.HopStatus = "Hopping: " .. tostring(reason)
+        state.Phase = state.HopStatus
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, selected.id, LocalPlayer)
     end
 
     local function inventoryCategory(name)
@@ -1108,7 +1221,6 @@ return function(context)
     end
 
     local function emergencyReviveAtBase()
-        releaseCrystalFreeze()
         local _, humanoid = characterParts()
         state.Phase = "Emergency cold reset"
         if humanoid and humanoid.Health > 0 then
@@ -1146,6 +1258,7 @@ return function(context)
     local targetLabel = MiningStatusSection:AddLabel("Target: None")
     local backpackLabel = MiningStatusSection:AddLabel("Backpack: 0 / 0 kg")
     local saleLabel = MiningStatusSection:AddLabel("Last sale: $0")
+    local serverHopLabel = ServerHopSection:AddLabel("Legendary: ? | Mythic: ?")
     local cashLabel = StatsSection:AddLabel("Cash: $0")
     local heightLabel = StatsSection:AddLabel("Height: 0m | Best: 0m")
     local warmthLabel = StatsSection:AddLabel("Warmth: 0 | Exposure: 0%")
@@ -1164,9 +1277,6 @@ return function(context)
         Callback = function(enabled)
             state.Master = enabled
             state.Phase = enabled and "Starting full loop" or "Idle"
-            if not enabled and not state.AutoFarm then
-                releaseCrystalFreeze()
-            end
         end,
     })
     MainFarmSection:AddToggle({
@@ -1177,7 +1287,6 @@ return function(context)
             state.AutoFarm = enabled
             if not enabled and not state.Master then
                 state.Phase = "Idle"
-                releaseCrystalFreeze()
             end
         end,
     })
@@ -1263,6 +1372,29 @@ return function(context)
         Name = "Sell Backpack Now",
         Callback = function()
             task.spawn(sellCargo, true)
+        end,
+    })
+
+    ServerHopSection:AddToggle({
+        Name = "Hop When No Legendary",
+        Description = "After three confirmed empty scans, sells cargo and joins a fresh public server",
+        Flag = "mam_hop_no_legendary",
+        Default = state.HopNoLegendary,
+        Callback = function(enabled)
+            state.HopNoLegendary = enabled
+            state.HopMissingScans = 0
+            environment.VORMountainResumeHopLegendary = enabled
+        end,
+    })
+    ServerHopSection:AddToggle({
+        Name = "Hop When No Mythic",
+        Description = "After three confirmed empty scans, sells cargo and joins a fresh public server",
+        Flag = "mam_hop_no_mythic",
+        Default = state.HopNoMythic,
+        Callback = function(enabled)
+            state.HopNoMythic = enabled
+            state.HopMissingScans = 0
+            environment.VORMountainResumeHopMythic = enabled
         end,
     })
 
@@ -1526,18 +1658,6 @@ return function(context)
         end,
     })
     SafetySection:AddToggle({
-        Name = "Freeze at Crystal",
-        Description = "Anchors you beside the crystal only while its mining batch is running",
-        Flag = "mam_freeze_at_crystal",
-        Default = true,
-        Callback = function(enabled)
-            state.FreezeAtCrystal = enabled
-            if not enabled then
-                releaseCrystalFreeze()
-            end
-        end,
-    })
-    SafetySection:AddToggle({
         Name = "Anti Ragdoll",
         Description = "Immediately cancels fall ragdoll during the mining loop",
         Flag = "mam_anti_ragdoll",
@@ -1589,6 +1709,18 @@ return function(context)
                 VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.identity)
             end)
         end
+    end))
+
+    track(TeleportService.TeleportInitFailed:Connect(function(player, _, message)
+        if player ~= LocalPlayer or not state.HopBusy then
+            return
+        end
+        state.HopBusy = false
+        state.HopMissingScans = 0
+        state.TeleportResumeQueued = false
+        environment.VORMountainTeleportQueuedJob = nil
+        state.HopStatus = "Teleport failed; retrying scan"
+        state.LastError = "Server hop: " .. tostring(message)
     end))
 
     task.spawn(function()
@@ -1667,6 +1799,52 @@ return function(context)
 
     task.spawn(function()
         while state.Alive do
+            local enabled = state.HopNoLegendary or state.HopNoMythic
+            if enabled and not state.HopBusy then
+                local legendary, mythic, total, rootCount = rareCrystalCounts()
+                state.LegendaryCount = legendary
+                state.MythicCount = mythic
+                local missing = {}
+                if state.HopNoLegendary and legendary == 0 then
+                    table.insert(missing, "no Legendary")
+                end
+                if state.HopNoMythic and mythic == 0 then
+                    table.insert(missing, "no Mythic")
+                end
+
+                local replicationReady = rootCount > 0
+                    and os.clock() - state.HopStartedAt >= 8
+                if replicationReady and #missing > 0 then
+                    state.HopMissingScans += 1
+                    state.HopStatus = string.format(
+                        "%s (%d/3 checks)",
+                        table.concat(missing, " + "),
+                        state.HopMissingScans
+                    )
+                    if state.HopMissingScans >= 3 then
+                        task.spawn(hopToFreshServer, table.concat(missing, " + "))
+                    end
+                else
+                    state.HopMissingScans = 0
+                    if not replicationReady then
+                        state.HopStatus = "Waiting for mountain replication"
+                    else
+                        state.HopStatus = string.format(
+                            "Watching %d crystal(s)",
+                            total
+                        )
+                    end
+                end
+            elseif not enabled then
+                state.HopMissingScans = 0
+                state.HopStatus = "Rare crystal hopping disabled"
+            end
+            task.wait(1)
+        end
+    end)
+
+    task.spawn(function()
+        while state.Alive do
             local now = os.clock()
             if (state.Master or state.AutoRewards) and now - state.LastReward >= 15 then
                 claimRewards(false)
@@ -1733,7 +1911,6 @@ return function(context)
         configureRagdollStates(character, humanoid)
         clearActiveRagdoll(character, humanoid)
         updateFarmFloat(character, humanoid, root)
-        maintainCrystalFreeze()
         if humanoid then
             if state.OriginalWalkSpeed == nil then
                 state.OriginalWalkSpeed = humanoid.WalkSpeed
@@ -1770,6 +1947,12 @@ return function(context)
         warmthLabel.Text = string.format("Warmth: %s | Exposure: %.0f%%", tostring(warmth), exposure * 100)
         equipmentLabel.Text = string.format("Pickaxe: %s | Power: %.1f", pickaxe and pickaxe.Name or "None", power)
         cargoLabel.Text = string.format("Cargo: %d crystal(s) | $%d", count, math.floor(heldValue))
+        serverHopLabel.Text = string.format(
+            "Legendary: %d | Mythic: %d\n%s",
+            state.LegendaryCount,
+            state.MythicCount,
+            state.HopStatus
+        )
         adapterLabel.Text = string.format(
             "Adapter: %s | Mode: %s",
             promptFunction() and "prompt ready" or "prompt fallback",
@@ -1807,14 +1990,18 @@ return function(context)
             gui:SetAttribute("MineAMountainGodspeed", state.GodspeedMining)
             gui:SetAttribute("MineAMountainGodspeedCredited", state.LastGodspeedCredited)
             gui:SetAttribute("MineAMountainGodspeedPickaxe", state.GodspeedPickaxe)
+            gui:SetAttribute("MineAMountainLegendaryCount", state.LegendaryCount)
+            gui:SetAttribute("MineAMountainMythicCount", state.MythicCount)
+            gui:SetAttribute("MineAMountainHopNoLegendary", state.HopNoLegendary)
+            gui:SetAttribute("MineAMountainHopNoMythic", state.HopNoMythic)
+            gui:SetAttribute("MineAMountainHopStatus", state.HopStatus)
+            gui:SetAttribute("MineAMountainTeleportResumeQueued", state.TeleportResumeQueued)
+            gui:SetAttribute("MineAMountainTeleportQueueMethod", state.TeleportQueueMethod)
             gui:SetAttribute("MineAMountainPlotCapacity", tonumber(statValue("PlotCapacity", 0)) or 0)
             gui:SetAttribute("MineAMountainPlotLuck", tonumber(statValue("PlotLuck", 0)) or 0)
             gui:SetAttribute("MineAMountainAntiRagdoll", state.AntiRagdoll)
             gui:SetAttribute("MineAMountainFarmFloat", state.FloatMover ~= nil
                 and state.FloatMover.Parent == root)
-            gui:SetAttribute("MineAMountainFreezeAtCrystal", state.MiningFrozen
-                and state.FrozenRoot == root
-                and root.Anchored)
             gui:SetAttribute("MineAMountainWalkSpeedLock", state.WalkSpeedEnabled)
         end)
     end))
@@ -1848,7 +2035,6 @@ return function(context)
             state.FloatMover = nil
             state.FloatRoot = nil
         end
-        releaseCrystalFreeze()
         setGodspeedPickaxe(false)
         targetHighlight:Destroy()
     end))

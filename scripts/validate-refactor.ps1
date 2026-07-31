@@ -304,18 +304,24 @@ $mineMountainMovementSafety = (
     $mineMountainText -match 'Instance\.new\("BodyVelocity"\)' -and
     $mineMountainText -match 'mover\.MaxForce\s*=\s*Vector3\.new\(0,\s*math\.huge,\s*0\)' -and
     $mineMountainText -notmatch 'VORMountainFarmFloat' -and
-    $mineMountainText -match 'Name\s*=\s*"Freeze at Crystal"' -and
-    $mineMountainText -match 'local function freezeAtCrystal\(\)' -and
-    $mineMountainText -match 'root\.Anchored\s*=\s*true' -and
-    $mineMountainText -match 'local function releaseCrystalFreeze\(\)' -and
     $mineMountainText -match 'Name\s*=\s*"Anti Ragdoll"' -and
     $mineMountainText -match 'DeactivateRagdoll:FireServer\(\)' -and
     $mineMountainText -match 'BindToRenderStep\(speedBindName,\s*Enum\.RenderPriority\.Last\.Value' -and
     $mineMountainText -match 'root\.AssemblyLinearVelocity\s*=\s*Vector3\.new\(horizontal\.X'
 )
+$mineMountainRareHop = (
+    $mineMountainText -match 'Name\s*=\s*"Hop When No Legendary"' -and
+    $mineMountainText -match 'Name\s*=\s*"Hop When No Mythic"' -and
+    $mineMountainText -match 'local function rareCrystalCounts\(\)' -and
+    $mineMountainText -match 'state\.HopMissingScans\s*>=\s*3' -and
+    $mineMountainText -match 'local function queueMountainResume\(\)' -and
+    $mineMountainText -match 'VORMountainResumeHopLegendary' -and
+    $mineMountainText -match 'VORMountainResumeHopMythic' -and
+    $mineMountainText -match 'TeleportService:TeleportToPlaceInstance\(game\.PlaceId,\s*selected\.id,\s*LocalPlayer\)'
+)
 $mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
-if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainGodspeed -and $mineMountainPickaxeSpeed -and $mineMountainPlotLuck -and $mineMountainMovementSafety -and $mineMountainAdminAbsent)) {
-    throw "Mine a Mountain routing, credited loop, Godspeed batching, pickaxe speed, plot luck, progression, purchases, movement safety, navigation, or admin-remote exclusion contract failed"
+if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainIndependentPurchases -and $mineMountainGodspeed -and $mineMountainPickaxeSpeed -and $mineMountainPlotLuck -and $mineMountainMovementSafety -and $mineMountainRareHop -and $mineMountainAdminAbsent)) {
+    throw "Mine a Mountain routing, credited loop, Godspeed batching, pickaxe speed, rare-crystal hopping, plot luck, progression, purchases, movement safety, navigation, or admin-remote exclusion contract failed"
 }
 
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
@@ -407,7 +413,7 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
-Write-Host "Mine a Mountain support: PASS (Godspeed mining/pickaxe, plot luck automation, purchases, movement safety, no admin remotes)"
+Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
