@@ -17,6 +17,7 @@ $required = @(
     "games/practical_basketball.lua",
     "games/anime_expeditions.lua",
     "games/bid_for_anime.lua",
+    "games/mine_a_mountain.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
     "games/blox_fruits_parity.lua",
@@ -248,6 +249,33 @@ if (-not ($bidAnimeRouted -and $bidAnimeAuctionShape -and $bidAnimeAutoFarm -and
     throw "Bid for Anime routing, auction payload, auto-farm, or AdminKit exclusion contract failed"
 }
 
+$mineMountainText = Get-Content -LiteralPath (Join-Path $repo "games/mine_a_mountain.lua") -Raw
+$mineMountainRouted = $settingsText -match '(?s)MineAMountain\s*=\s*\{.*?UniverseId\s*=\s*10187294555.*?125927821145949.*?games/mine_a_mountain\.lua'
+$mineMountainCreditedLoop = (
+    $mineMountainText -match 'activatePrompt\(prompt\)' -and
+    $mineMountainText -match 'Remotes\.GoHome:FireServer\("sell"\)' -and
+    $mineMountainText -match 'Remotes\.SellRequest:FireServer\("all"\)' -and
+    $mineMountainText -match 'Remotes\.ShopBuy:FireServer\(item\.id\)' -and
+    $mineMountainText -match 'Remotes\.UpgradeBuy:FireServer\(kind,\s*bundle\)'
+)
+$mineMountainFullAuto = (
+    $mineMountainText -match 'Name\s*=\s*"Full OP Mining Loop"' -and
+    $mineMountainText -match 'TargetMode\s*=\s*"Best Value"' -and
+    $mineMountainText -match 'MaximumTier\s*=\s*0' -and
+    $mineMountainText -match 'catalogScore\(category,\s*item\)\s*<=\s*ownedBestScore'
+)
+$mineMountainPages = (
+    $mineMountainText -match 'addHomeCategory\("Farming"' -and
+    $mineMountainText -match 'addHomeCategory\("Upgrades"' -and
+    $mineMountainText -match 'addHomeCategory\("Shop"' -and
+    $mineMountainText -match 'addHomeCategory\("Rewards"' -and
+    $mineMountainText -match 'addHomeCategory\("Status"'
+)
+$mineMountainAdminAbsent = $mineMountainText -notmatch 'AdminCmd|AdminQuery'
+if (-not ($mineMountainRouted -and $mineMountainCreditedLoop -and $mineMountainFullAuto -and $mineMountainPages -and $mineMountainAdminAbsent)) {
+    throw "Mine a Mountain routing, credited loop, progression, navigation, or admin-remote exclusion contract failed"
+}
+
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
 $practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?106120159518740.*?games/practical_basketball\.lua'
 $practicalBasketballCharacter = $practicalBasketballText -match 'workspace:FindFirstChild\("Characters"\)'
@@ -319,7 +347,7 @@ if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $pr
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (7/7)"
+Write-Host "Game builder contract: PASS (8/8)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
@@ -337,6 +365,7 @@ Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
+Write-Host "Mine a Mountain support: PASS (credited mining/selling, efficient tiering, upgrade-only spending, no admin remotes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"

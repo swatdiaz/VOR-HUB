@@ -518,6 +518,14 @@ return function(context)
         return equipped and tostring(equipped.Value) or ""
     end
 
+    local function catalogScore(category, item)
+        local stats = item and item.stats or {}
+        if category == "Pickaxes" then
+            return tonumber(stats.DigPower) or 0
+        end
+        return tonumber(stats.WeightLimit) or tonumber(item and item.backpackIndex) or 0
+    end
+
     local function bestCatalogItem(category, affordableOnly, unownedOnly)
         if not ShopCatalog or type(ShopCatalog.getCategory) ~= "function" then
             return nil
@@ -532,10 +540,7 @@ return function(context)
                 and (not unownedOnly or price > 0)
                 and (not affordableOnly or price <= available)
                 and (not unownedOnly or not owned) then
-                local stats = item.stats or {}
-                local score = category == "Pickaxes"
-                    and (tonumber(stats.DigPower) or 0)
-                    or (tonumber(stats.WeightLimit) or tonumber(item.backpackIndex) or 0)
+                local score = catalogScore(category, item)
                 if score > bestScore then
                     best, bestScore = item, score
                 end
@@ -545,18 +550,14 @@ return function(context)
     end
 
     local function equipBestOwned(category)
-        local item = bestCatalogItem(category, false, false)
-        if not item then
+        if not ShopCatalog or type(ShopCatalog.getCategory) ~= "function" then
             return false
         end
         local list = ShopCatalog.getCategory(category) or {}
         local best, bestScore = nil, -math.huge
         for _, candidate in ipairs(list) do
             if not candidate.adminOnly and isOwned(category, candidate.id) then
-                local stats = candidate.stats or {}
-                local score = category == "Pickaxes"
-                    and (tonumber(stats.DigPower) or 0)
-                    or (tonumber(stats.WeightLimit) or tonumber(candidate.backpackIndex) or 0)
+                local score = catalogScore(category, candidate)
                 if score > bestScore then
                     best, bestScore = candidate, score
                 end
@@ -574,7 +575,17 @@ return function(context)
 
     local function buyBestEquipment(category, manual)
         local item = bestCatalogItem(category, true, true)
-        if not item or (tonumber(item.price) or 0) <= 0 then
+        local ownedBestScore = -math.huge
+        if ShopCatalog and type(ShopCatalog.getCategory) == "function" then
+            for _, ownedItem in ipairs(ShopCatalog.getCategory(category) or {}) do
+                if not ownedItem.adminOnly and isOwned(category, ownedItem.id) then
+                    ownedBestScore = math.max(ownedBestScore, catalogScore(category, ownedItem))
+                end
+            end
+        end
+        if not item
+            or (tonumber(item.price) or 0) <= 0
+            or catalogScore(category, item) <= ownedBestScore then
             equipBestOwned(category)
             if manual then
                 notify("Equipment", "Nothing better is affordable yet.")
@@ -1023,6 +1034,7 @@ return function(context)
                 -- IsFreezing only means the cold zone is active. CurrentAir is
                 -- the server-replicated danger signal that actually counts down.
                 local mustEscape = state.FreezeGuard
+                    and LocalPlayer:GetAttribute("IsFreezing") == true
                     and currentAir <= math.max(1, airCapacity * 0.12)
                 local shouldSell = (state.Master or state.AutoSell)
                     and weight > 0
@@ -1034,7 +1046,7 @@ return function(context)
                         sellCargo(false)
                         runPurchases()
                     else
-                        goHome("home")
+                        goHome("sell")
                         task.wait(0.8)
                     end
                 elseif shouldSell then
