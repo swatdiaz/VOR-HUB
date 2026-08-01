@@ -229,9 +229,83 @@ if (-not ($mobAuraTweenTravel -and $selectedSpawnTweenTravel)) {
 $experimentalText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_experimental.lua") -Raw
 $creditedMainDouble = $experimentalText -match 'api\.SetOverride\(false\)'
 $requestSpamRemoved = $experimentalText -notmatch '(?s)if not runtime\.SwordBusy.*?dispatchSword\(\).*?if not runtime\.FruitBusy.*?dispatchFruit\(\)'
-$idempotentOverride = $bloxText -match '(?s)local desired\s*=\s*enabled == true\s+if state\.ExperimentalAttackOverride ~= desired then\s+state\.ExperimentalAttackOverride = desired\s+state\.AuraAttackPending = false\s+state\.FruitDispatchPending = false\s+end'
+$idempotentOverride = $bloxText -match '(?s)local desired\s*=\s*enabled == true\s+if state\.ExperimentalAttackOverride ~= desired then\s+state\.ExperimentalAttackOverride = desired\s+state\.AuraAttackGeneration \+= 1\s+state\.FruitDispatchGeneration \+= 1\s+state\.AuraAttackPending = false\s+state\.FruitDispatchPending = false\s+state\.FruitDispatchPendingAt = 0\s+state\.AuraFruitBusy = false\s+end'
 if (-not ($creditedMainDouble -and $requestSpamRemoved -and $idempotentOverride)) {
     throw "Double Attack must leave combat ownership with the credited main Aura engine"
+}
+
+$auraGenerationOwned = (
+    $bloxText -match 'AuraAttackGeneration\s*=\s*0' -and
+    $bloxText -match 'local attackGeneration\s*=\s*state\.AuraAttackGeneration' -and
+    ([regex]::Matches($bloxText, 'state\.AuraAttackGeneration\s*~=\s*attackGeneration')).Count -ge 5 -and
+    $bloxText -match '(?s)sendRegisteredAuraHit\(\s*plan\.Tool,\s*plan\.WeaponData,\s*target,\s*plan\.Profile,\s*attackTargets,\s*attackGeneration\s*\)' -and
+    $bloxText -match '(?s)DoubleAttackEngine\.SendSword\(\s*plan\.Sword,\s*plan\.SwordData,\s*plan\.SwordProfile,\s*attackGeneration\s*\)'
+)
+if (-not $auraGenerationOwned) {
+    throw "Aura Kill pending recovery must use generation-owned attack windows"
+}
+
+$fruitGenerationOwned = (
+    $bloxText -match 'FruitDispatchGeneration\s*=\s*0' -and
+    $bloxText -match 'state\.FruitDispatchGeneration \+= 1\s+local fruitGeneration = state\.FruitDispatchGeneration' -and
+    $bloxText -match '(?s)task\.spawn\(function\(\)\s+local operationOk, sent, message, sentCount = pcall\(\s*DoubleAttackEngine\.SendFruit,\s*fruit,\s*fruitGeneration\s*\)\s+if state\.FruitDispatchGeneration ~= fruitGeneration then\s+return\s+end.*?state\.FruitDispatchPending = false\s+state\.FruitDispatchPendingAt = 0\s+end\)' -and
+    $bloxText -match 'sendNativeFruitM1\(tool, targets\[1\], true, nil, fruitGeneration\)' -and
+    $bloxText -match 'or \(fruitGeneration and state\.FruitDispatchGeneration ~= fruitGeneration\)'
+)
+if (-not $fruitGenerationOwned) {
+    throw "Double Attack Fruit dispatch recovery must use generation-owned work"
+}
+
+$doubleToggleBlock = [regex]::Match(
+    $bloxText,
+    '(?ms)^\s{12}Name\s*=\s*"Double Attack \(Sword \+ Fruit M1\)".*?^\s{8}\}\)'
+)
+$doubleToggleInvalidatesBoth = (
+    $doubleToggleBlock.Success -and
+    $doubleToggleBlock.Value -match 'state\.AuraAttackGeneration \+= 1' -and
+    $doubleToggleBlock.Value -match 'state\.FruitDispatchGeneration \+= 1' -and
+    $doubleToggleBlock.Value -match 'state\.AuraAttackPending = false' -and
+    $doubleToggleBlock.Value -match 'state\.FruitDispatchPending = false' -and
+    $doubleToggleBlock.Value -match 'state\.AuraFruitBusy = false'
+)
+if (-not $doubleToggleInvalidatesBoth) {
+    throw "Double Attack mode changes must invalidate both Aura dispatch lifecycles"
+}
+
+$auraTimeoutReleasesFruitBusy = $bloxText -match '(?s)if state\.AuraAttackPending then\s+if os\.clock\(\) - \(state\.AuraAttackPendingAt or 0\) < 1 then\s+return false\s+end.*?state\.LastRegisterHitResolve = -math\.huge\s+if not state\.FruitDispatchPending then\s+state\.AuraFruitBusy = false\s+end\s+state\.AuraStage = "pending-timeout-recovered"'
+if (-not $auraTimeoutReleasesFruitBusy) {
+    throw "Aura Kill timeout recovery must release stale native Fruit movement ownership"
+}
+
+$damageDebugDrain = (
+    $bloxText -match 'state\.DamageDebugConnection\s*=\s*track\(' -and
+    $bloxText -match 'state\.DamageDebugConnection:Disconnect\(\)'
+)
+if (-not $damageDebugDrain) {
+    throw "Blox Fruits DMGDEBUG must be drained and disconnected during module cleanup"
+}
+
+$movementModes = @{
+    "Auto Farm Level" = @("blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm", "blox_auto_chest")
+    "Auto Collect Chests" = @("blox_auto_level", "blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm")
+    "Mob Aura TP" = @("blox_auto_level", "blox_auto_boss", "blox_auto_raid", "blox_auto_chest")
+    "Selected Mob Farm TP" = @("blox_auto_level", "blox_auto_boss", "blox_auto_raid", "blox_auto_chest")
+    "Auto Farm Selected Boss" = @("blox_auto_level", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm", "blox_auto_chest")
+    "Auto Farm Dungeon / Raid" = @("blox_auto_level", "blox_auto_boss", "blox_mob_aura_tp", "blox_selected_mob_farm", "blox_auto_chest")
+}
+foreach ($mode in $movementModes.GetEnumerator()) {
+    $blockMatch = [regex]::Match(
+        $bloxText,
+        '(?ms)^\s{12}Name\s*=\s*"' + [regex]::Escape($mode.Key) + '".*?^\s{8}\}\)'
+    )
+    if (-not $blockMatch.Success) {
+        throw "Could not inspect movement-mode callback: $($mode.Key)"
+    }
+    foreach ($flag in $mode.Value) {
+        if ($blockMatch.Value -notmatch [regex]::Escape('"' + $flag + '"')) {
+            throw "$($mode.Key) does not disable competing movement control: $flag"
+        }
+    }
 }
 
 $bidAnimeText = Get-Content -LiteralPath (Join-Path $repo "games/bid_for_anime.lua") -Raw
@@ -503,6 +577,9 @@ Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Solix-style stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-state handoff)"
+Write-Host "Aura Kill lifecycle ownership: PASS (generation guard across yield, respawn, timeout, and override)"
+Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module cleanup)"
+Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
 Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"

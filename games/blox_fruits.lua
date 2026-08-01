@@ -205,6 +205,8 @@ return function(context)
             AuraTargetCount = 0,
             AuraMultiTargetCount = 0,
             AuraAttackPending = false,
+            AuraAttackPendingAt = 0,
+            AuraAttackGeneration = 0,
             AuraCombo = 0,
             AuraCombos = {},
             NativeFruitCombos = {},
@@ -217,6 +219,8 @@ return function(context)
             AuraAttackMode = nil,
             AuraFruitBusy = false,
             FruitDispatchPending = false,
+            FruitDispatchPendingAt = 0,
+            FruitDispatchGeneration = 0,
             LastDoubleFruitAttack = 0,
             AuraFruitInRange = nil,
             AuraFruitLastDistance = nil,
@@ -361,7 +365,20 @@ return function(context)
             OriginalCollision = setmetatable({}, {__mode = "k"}),
             GraphicsBackup = setmetatable({}, {__mode = "k"}),
             WaterPlatform = nil,
+            DamageDebugConnection = nil,
         }
+        do
+            -- Blox Fruits currently fires this debug-only event for every
+            -- credited hit without installing a client listener. Aura Kill can
+            -- otherwise fill the 512-event queue during a raid and destabilize
+            -- the client even though the combat requests themselves succeed.
+            local damageDebugEvent = Remotes and Remotes:FindFirstChild("DMGDEBUG")
+            if damageDebugEvent and damageDebugEvent:IsA("RemoteEvent") then
+                state.DamageDebugConnection = track(
+                    damageDebugEvent.OnClientEvent:Connect(function() end)
+                )
+            end
+        end
         -- PVP is player-facing combat, not a seventh junk-drawer category.
         -- Keep the existing section builders but mount them under Player.
         state.PVPPage = PlayerPage
@@ -1558,10 +1575,13 @@ return function(context)
                 or message == "the fruit M1 target left before activation"
         end
 
-        local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile, attackTargets)
+        local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile, attackTargets, attackGeneration)
             local _, changed = equipTool(tool)
             if changed then
                 task.wait(0.04)
+            end
+            if state.AuraAttackGeneration ~= attackGeneration then
+                return false, "the attack lifecycle changed before the hit window"
             end
             if not tool or tool.Parent ~= character() then
                 return false, "the combat Tool could not be equipped"
@@ -1584,10 +1604,11 @@ return function(context)
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "attack-started"
             task.wait(AURA_KILL_HIT_DELAY)
-            state.AuraStage = "hit-window"
-            if not state.Alive or not state.AuraKill then
+            if state.AuraAttackGeneration ~= attackGeneration
+                or not state.Alive or not state.AuraKill then
                 return false, "the target left before the hit window"
             end
+            state.AuraStage = "hit-window"
 
             local currentRoot = rootPart()
             if not currentRoot then
@@ -1636,10 +1657,13 @@ return function(context)
             return true, nil, registered
         end
 
-        function DoubleAttackEngine.SendSword(tool, weaponData, attackProfile)
+        function DoubleAttackEngine.SendSword(tool, weaponData, attackProfile, attackGeneration)
             local _, changed = equipTool(tool)
             if changed then
                 task.wait(0.04)
+            end
+            if state.AuraAttackGeneration ~= attackGeneration then
+                return false, "the attack lifecycle changed before the Sword hit window"
             end
             if not tool or tool.Parent ~= character() then
                 return false, "the Sword could not be equipped"
@@ -1666,7 +1690,8 @@ return function(context)
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "double-sword-started"
             task.wait(AURA_KILL_HIT_DELAY)
-            if not state.Alive or not state.AuraKill or not state.DoubleAttack then
+            if state.AuraAttackGeneration ~= attackGeneration
+                or not state.Alive or not state.AuraKill or not state.DoubleAttack then
                 return false, "the target left before the hit window"
             end
 
@@ -1800,11 +1825,16 @@ return function(context)
             until os.clock() >= deadline
         end
 
-        local function sendNativeFruitM1(tool, target, keepEquippedTool)
+        local function sendNativeFruitM1(tool, target, keepEquippedTool, attackGeneration, fruitGeneration)
             local char = character()
             local root = rootPart()
             local enemyRoot = modelRoot(target.Enemy)
             local hitPart = enemyHitPart(target.Enemy)
+            local function lifecycleChanged()
+                return character() ~= char
+                    or (attackGeneration and state.AuraAttackGeneration ~= attackGeneration)
+                    or (fruitGeneration and state.FruitDispatchGeneration ~= fruitGeneration)
+            end
             if not char or not root or not enemyRoot or not hitPart then
                 return false, "the fruit M1 target is unavailable"
             end
@@ -1822,6 +1852,9 @@ return function(context)
             silentRemote = silentRemote and silentRemote:IsA("RemoteEvent") and silentRemote or nil
 
             if silentRemote then
+                if lifecycleChanged() then
+                    return false, "the attack lifecycle changed before Fruit M1"
+                end
                 -- Solix-compatible native Fruit M1: fire the Backpack remote
                 -- with the full 3D direction and combo 1. Flattening Y made
                 -- attacks from above miss, cycling 1-5 introduced the long
@@ -1869,6 +1902,12 @@ return function(context)
                     task.wait(0.04)
                 end
             end
+            if lifecycleChanged() then
+                if keepEquippedTool and originalParent and tool.Parent ~= originalParent then
+                    tool.Parent = originalParent
+                end
+                return false, "the attack lifecycle changed before Fruit activation"
+            end
             if tool.Parent ~= char then
                 return false, "the fruit Tool could not be armed"
             end
@@ -1909,7 +1948,9 @@ return function(context)
             end
             if not activated then
                 root.CFrame = originalRootCFrame
-                state.AuraFruitBusy = false
+                if not lifecycleChanged() then
+                    state.AuraFruitBusy = false
+                end
                 return false, activationError
             end
 
@@ -1918,13 +1959,19 @@ return function(context)
             -- Pinning only the original player position and stopping newly
             -- started Action tracks preserves the no-swing/no-movement Aura.
             holdRoot(root, originalRootCFrame, NATIVE_FRUIT_SETTLE_TIME, animator, previousTracks)
+            if lifecycleChanged() then
+                return false, "the Fruit lifecycle changed during activation"
+            end
             state.AuraFruitBusy = false
             return true
         end
 
-        function DoubleAttackEngine.SendFruit(tool)
+        function DoubleAttackEngine.SendFruit(tool, fruitGeneration)
             local root = rootPart()
             local targets = DoubleAttackEngine.Targets(DoubleAttackEngine.FruitTargetLimit)
+            if fruitGeneration and state.FruitDispatchGeneration ~= fruitGeneration then
+                return false, "the Fruit dispatch lifecycle changed"
+            end
             if not tool then
                 return false, "No Blox Fruit Tool was found"
             end
@@ -1948,6 +1995,9 @@ return function(context)
                     params
                 ) ~= nil or false
                 for _, target in ipairs(targets) do
+                    if fruitGeneration and state.FruitDispatchGeneration ~= fruitGeneration then
+                        return false, "the Fruit dispatch lifecycle changed"
+                    end
                     local enemyRoot = modelRoot(target.Enemy)
                     if enemyRoot and modelAlive(target.Enemy) then
                         local direction = enemyRoot.Position - root.Position
@@ -1974,7 +2024,7 @@ return function(context)
             -- Fruits without a direct click remote retain the native fallback.
             -- It temporarily arms the Fruit beside the Sword, restores it, and
             -- suppresses the local dash/animation without moving the enemy.
-            local sent, sendError = sendNativeFruitM1(tool, targets[1], true)
+            local sent, sendError = sendNativeFruitM1(tool, targets[1], true, nil, fruitGeneration)
             return sent, sendError, sent and 1 or 0
         end
 
@@ -2044,6 +2094,15 @@ return function(context)
         end
 
         function DoubleAttackEngine.StepFruit()
+            if state.FruitDispatchPending then
+                if os.clock() - (state.FruitDispatchPendingAt or 0) < 1 then
+                    return false
+                end
+                state.FruitDispatchGeneration += 1
+                state.FruitDispatchPending = false
+                state.FruitDispatchPendingAt = 0
+                state.AuraFruitBusy = false
+            end
             if not state.Alive
                 or not state.AuraKill
                 or not state.DoubleAttack
@@ -2076,9 +2135,19 @@ return function(context)
             end
             equipTool(sword)
             state.LastDoubleFruitAttack = now
+            state.FruitDispatchGeneration += 1
+            local fruitGeneration = state.FruitDispatchGeneration
             state.FruitDispatchPending = true
+            state.FruitDispatchPendingAt = os.clock()
             task.spawn(function()
-                local operationOk, sent, message, sentCount = pcall(DoubleAttackEngine.SendFruit, fruit)
+                local operationOk, sent, message, sentCount = pcall(
+                    DoubleAttackEngine.SendFruit,
+                    fruit,
+                    fruitGeneration
+                )
+                if state.FruitDispatchGeneration ~= fruitGeneration then
+                    return
+                end
                 if operationOk and sent then
                     sentCount = math.max(tonumber(sentCount) or 1, 1)
                     state.AuraFruitRequests += sentCount
@@ -2093,15 +2162,31 @@ return function(context)
                     end
                 end
                 state.FruitDispatchPending = false
+                state.FruitDispatchPendingAt = 0
             end)
             return true
         end
 
         local function auraKillOnce()
-            if not state.AuraKill or state.AuraAttackPending or state.InventoryBusy
+            if state.AuraAttackPending then
+                if os.clock() - (state.AuraAttackPendingAt or 0) < 1 then
+                    return false
+                end
+                state.AuraAttackGeneration += 1
+                state.AuraAttackPending = false
+                state.AuraAttackPendingAt = 0
+                state.RegisterHitClosure = nil
+                state.LastRegisterHitResolve = -math.huge
+                if not state.FruitDispatchPending then
+                    state.AuraFruitBusy = false
+                end
+                state.AuraStage = "pending-timeout-recovered"
+            end
+            if not state.AuraKill or state.InventoryBusy
                 or state.ExperimentalAttackOverride then
                 return false
             end
+            local attackGeneration = state.AuraAttackGeneration
             if not busoActive() then
                 ensureBuso(true)
                 if state.BusoOwned ~= false then
@@ -2202,7 +2287,10 @@ return function(context)
                         state.AuraPendingError = "Aura Kill needs a Sword, Melee, or M1 Fruit Tool"
                         return false
                     end
-                    equipTool(plan.Tool)
+                    local _, toolChanged = equipTool(plan.Tool)
+                    if toolChanged then
+                        task.wait(0.04)
+                    end
                     local profileError
                     plan.Profile, profileError = auraAttackProfile(plan.Tool, plan.WeaponData)
                     if not plan.Profile then
@@ -2222,8 +2310,14 @@ return function(context)
             if now - state.LastAttack < plan.Cadence then
                 return false
             end
+            if state.AuraAttackGeneration ~= attackGeneration then
+                return false
+            end
 
+            state.AuraAttackGeneration += 1
+            attackGeneration = state.AuraAttackGeneration
             state.AuraAttackPending = true
+            state.AuraAttackPendingAt = os.clock()
             state.LastAttack = now
             state.AuraStage = state.DoubleAttack and "double-queued" or "queued"
             state.AuraLastRequestAt = now
@@ -2244,7 +2338,8 @@ return function(context)
                     local swordSent, swordSendError, swordHitCount = DoubleAttackEngine.SendSword(
                         plan.Sword,
                         plan.SwordData,
-                        plan.SwordProfile
+                        plan.SwordProfile,
+                        attackGeneration
                     )
                     if not swordSent then
                         if transientAuraMiss(swordSendError) then
@@ -2257,7 +2352,7 @@ return function(context)
                     dispatched += swordHitCount
                     state.AuraSwordRequests += swordHitCount
                 elseif plan.NativeFruit then
-                    local sent, sendError = sendNativeFruitM1(plan.Tool, target)
+                    local sent, sendError = sendNativeFruitM1(plan.Tool, target, nil, attackGeneration)
                     if not sent then
                         if sendError == "fruit-out-of-range" then
                             fruitOutOfRange = true
@@ -2282,7 +2377,8 @@ return function(context)
                         plan.WeaponData,
                         target,
                         plan.Profile,
-                        attackTargets
+                        attackTargets,
+                        attackGeneration
                     )
                     if not sent then
                         if transientAuraMiss(sendError) then
@@ -2300,9 +2396,17 @@ return function(context)
                     end
                 end
             end)
+            if state.AuraAttackGeneration ~= attackGeneration then
+                return false
+            end
             state.AuraAttackPending = false
+            state.AuraAttackPendingAt = 0
             state.AuraRequests += dispatched
             if not hitOk then
+                if plan.Double or not plan.NativeFruit then
+                    state.RegisterHitClosure = nil
+                    state.LastRegisterHitResolve = -math.huge
+                end
                 state.AuraPendingError = "Aura Kill attack failed: " .. tostring(hitError)
                 state.AuraStage = "error"
                 return false
@@ -5380,9 +5484,18 @@ return function(context)
                 if enabled then
                     state.AutoBoss = false
                     state.AutoRaid = false
+                    state.MobAuraTp = false
+                    state.SelectedMobFarm = false
+                    state.AutoChest = false
                     state.PositionTarget = nil
                     state.LastPositionJitterAt = 0
-                    for _, flag in ipairs({"blox_mob_aura_tp", "blox_selected_mob_farm"}) do
+                    for _, flag in ipairs({
+                        "blox_auto_boss",
+                        "blox_auto_raid",
+                        "blox_mob_aura_tp",
+                        "blox_selected_mob_farm",
+                        "blox_auto_chest",
+                    }) do
                         local control = Window.PersistentControls[flag]
                         if control and control:Get() then
                             control:Set(false)
@@ -5405,6 +5518,25 @@ return function(context)
             Default = false,
             Callback = function(enabled)
                 state.AutoChest = enabled
+                if enabled then
+                    state.AutoFarmLevel = false
+                    state.AutoBoss = false
+                    state.AutoRaid = false
+                    state.MobAuraTp = false
+                    state.SelectedMobFarm = false
+                    for _, flag in ipairs({
+                        "blox_auto_level",
+                        "blox_auto_boss",
+                        "blox_auto_raid",
+                        "blox_mob_aura_tp",
+                        "blox_selected_mob_farm",
+                    }) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
+                end
             end,
         })
 
@@ -5617,6 +5749,15 @@ return function(context)
             Flag = "blox_auto_attack",
             Default = false,
             Callback = function(enabled)
+                if state.AuraKill ~= enabled then
+                    state.AuraAttackGeneration += 1
+                    state.FruitDispatchGeneration += 1
+                    state.AuraAttackPending = false
+                    state.AuraAttackPendingAt = 0
+                    state.FruitDispatchPending = false
+                    state.FruitDispatchPendingAt = 0
+                    state.AuraFruitBusy = false
+                end
                 state.AuraKill = enabled
                 state.LastAttack = 0
                 state.LastAuraScan = 0
@@ -5690,6 +5831,13 @@ return function(context)
             Options = {"Sword", "Melee", "M1 Fruit", "Best Available"},
             Default = "Best Available",
             Callback = function(value)
+                state.AuraAttackGeneration += 1
+                state.FruitDispatchGeneration += 1
+                state.AuraAttackPending = false
+                state.AuraAttackPendingAt = 0
+                state.FruitDispatchPending = false
+                state.FruitDispatchPendingAt = 0
+                state.AuraFruitBusy = false
                 state.WeaponType = tostring(value)
                 state.AuraCombo = 0
                 table.clear(state.AuraCombos)
@@ -5708,6 +5856,15 @@ return function(context)
             Flag = "blox_double_attack",
             Default = false,
             Callback = function(enabled)
+                if state.DoubleAttack ~= enabled then
+                    state.AuraAttackGeneration += 1
+                    state.FruitDispatchGeneration += 1
+                    state.AuraAttackPending = false
+                    state.AuraAttackPendingAt = 0
+                    state.FruitDispatchPending = false
+                    state.FruitDispatchPendingAt = 0
+                    state.AuraFruitBusy = false
+                end
                 state.DoubleAttack = enabled
                 state.LastAttack = 0
                 state.LastDoubleFruitAttack = 0
@@ -5779,6 +5936,17 @@ return function(context)
                     state.AutoBoss = false
                     state.AutoRaid = false
                     state.AutoChest = false
+                    for _, flag in ipairs({
+                        "blox_auto_level",
+                        "blox_auto_boss",
+                        "blox_auto_raid",
+                        "blox_auto_chest",
+                    }) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
                     cancelMove()
                     if not state.AuraKill and auraToggle then
                         auraToggle:Set(true)
@@ -5852,6 +6020,17 @@ return function(context)
                     state.AutoBoss = false
                     state.AutoRaid = false
                     state.AutoChest = false
+                    for _, flag in ipairs({
+                        "blox_auto_level",
+                        "blox_auto_boss",
+                        "blox_auto_raid",
+                        "blox_auto_chest",
+                    }) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
                     cancelMove()
                     if not state.AuraKill and auraToggle then
                         auraToggle:Set(true)
@@ -6099,6 +6278,21 @@ return function(context)
                 if enabled then
                     state.AutoFarmLevel = false
                     state.AutoRaid = false
+                    state.MobAuraTp = false
+                    state.SelectedMobFarm = false
+                    state.AutoChest = false
+                    for _, flag in ipairs({
+                        "blox_auto_level",
+                        "blox_auto_raid",
+                        "blox_mob_aura_tp",
+                        "blox_selected_mob_farm",
+                        "blox_auto_chest",
+                    }) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
                 else
                     cancelMove()
                 end
@@ -6288,8 +6482,10 @@ return function(context)
         RaidSection:AddButton({
             Name = "Start Dungeon / Raid Once",
             Callback = function()
-                local ok, result = fireRaidButton()
-                Window:Notify("Raid", tostring(result), 3)
+                task.spawn(function()
+                    local ok, result = fireRaidButton()
+                    Window:Notify("Raid", tostring(result), 3)
+                end)
             end,
         })
         RaidSection:AddToggle({
@@ -6311,6 +6507,21 @@ return function(context)
                 if enabled then
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
+                    state.MobAuraTp = false
+                    state.SelectedMobFarm = false
+                    state.AutoChest = false
+                    for _, flag in ipairs({
+                        "blox_auto_level",
+                        "blox_auto_boss",
+                        "blox_mob_aura_tp",
+                        "blox_selected_mob_farm",
+                        "blox_auto_chest",
+                    }) do
+                        local control = Window.PersistentControls[flag]
+                        if control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
                 else
                     state.RaidIslandIndex = 0
                     state.RaidIslandName = nil
@@ -6680,6 +6891,12 @@ return function(context)
             FarmVertical.Release()
             state.LastAttack = 0
             state.LastAuraScan = 0
+            state.AuraAttackGeneration += 1
+            state.FruitDispatchGeneration += 1
+            state.AuraAttackPending = false
+            state.AuraAttackPendingAt = 0
+            state.RegisterHitClosure = nil
+            state.LastRegisterHitResolve = -math.huge
             state.LastBuso = -math.huge
             state.AuraTargetCursor = 0
             state.AuraCombo = 0
@@ -6688,6 +6905,7 @@ return function(context)
             state.FruitM1ReadyAt = 0
             state.AuraFruitBusy = false
             state.FruitDispatchPending = false
+            state.FruitDispatchPendingAt = 0
             state.LastDoubleFruitAttack = 0
             state.InventoryBusy = false
             state.AuraFruitInRange = nil
@@ -7157,12 +7375,23 @@ return function(context)
                 return
             end
             cleaned = true
+            if state.DamageDebugConnection then
+                pcall(function()
+                    state.DamageDebugConnection:Disconnect()
+                end)
+                state.DamageDebugConnection = nil
+            end
             state.Alive = false
+            state.AuraAttackGeneration += 1
+            state.FruitDispatchGeneration += 1
+            state.AuraAttackPending = false
+            state.AuraAttackPendingAt = 0
             state.AuraKill = false
             state.MobAuraTp = false
             state.SelectedMobFarm = false
             state.AuraFruitBusy = false
             state.FruitDispatchPending = false
+            state.FruitDispatchPendingAt = 0
             state.GachaBusy = false
             state.InventoryBusy = false
             state.MobAuraTarget = nil
@@ -7831,8 +8060,15 @@ return function(context)
                         local desired = enabled == true
                         if state.ExperimentalAttackOverride ~= desired then
                             state.ExperimentalAttackOverride = desired
+                            state.AuraAttackGeneration += 1
+                            state.FruitDispatchGeneration += 1
                             state.AuraAttackPending = false
                             state.FruitDispatchPending = false
+                            state.FruitDispatchPendingAt = 0
+                            state.AuraFruitBusy = false
+                        end
+                        if not state.AuraAttackPending then
+                            state.AuraAttackPendingAt = 0
                         end
                         gui:SetAttribute("BloxExperimentalAttackOverride", desired)
                     end,
