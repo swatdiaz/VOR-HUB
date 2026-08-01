@@ -132,6 +132,7 @@ return function(context)
             RaidEntryGrace = 8,
             RaidHasEntered = false,
             RaidLastInactiveAt = os.clock(),
+            RaidMovementReady = false,
             RaidCastleStart = CFrame.new(-5064, 314, -2938),
             SelectedRaid = "Flame",
             RaidIslandIndex = 0,
@@ -312,6 +313,7 @@ return function(context)
             CurrentQuestName = nil,
             MoveTween = nil,
             MoveGoal = nil,
+            MoveDeadline = 0,
             MoveToken = 0,
             MoveEffectiveSpeed = 300,
             MoveRoot = nil,
@@ -690,7 +692,8 @@ return function(context)
         end
 
         local function movementStillNeedsNoclip()
-            return state.Noclip or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
+            return state.Noclip or state.AutoFarmLevel or state.AutoBoss
+                or (state.AutoRaid and state.RaidMovementReady)
                 or state.AutoChest or state.MobAuraTp or state.SelectedMobFarm
         end
 
@@ -820,6 +823,7 @@ return function(context)
             state.MovePlatformStand = nil
             state.MoveVelocityGuard = nil
             state.MoveRootWasAnchored = false
+            state.MoveDeadline = 0
             state.Traveling = false
             gui:SetAttribute("BloxTraveling", false)
             if not movementStillNeedsNoclip() then
@@ -837,6 +841,7 @@ return function(context)
             local activeTween = state.MoveTween
             state.MoveTween = nil
             state.MoveGoal = nil
+            state.MoveDeadline = 0
             if activeTween then
                 pcall(function()
                     activeTween:Cancel()
@@ -860,7 +865,11 @@ return function(context)
                 root.CFrame = targetCFrame
                 return true
             end
-            if state.MoveGoal and (state.MoveGoal - targetCFrame.Position).Magnitude < 5 and state.MoveTween then
+            if state.MoveTween and state.MoveDeadline > 0 and os.clock() >= state.MoveDeadline then
+                gui:SetAttribute("BloxMovementWatchdog", "Recovered stalled tween")
+                cancelMove(false)
+                FarmVertical.Release()
+            elseif state.MoveGoal and (state.MoveGoal - targetCFrame.Position).Magnitude < 5 and state.MoveTween then
                 return true
             end
 
@@ -924,6 +933,7 @@ return function(context)
 
             state.MoveToken += 1
             local moveToken = state.MoveToken
+            state.MoveDeadline = os.clock() + duration + 1.25
             local activeTween = TweenService:Create(
                 root,
                 TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
@@ -936,6 +946,7 @@ return function(context)
                 end
                 state.MoveTween = nil
                 state.MoveGoal = nil
+                state.MoveDeadline = 0
                 if playbackState == Enum.PlaybackState.Completed and root.Parent then
                     root.CFrame = targetCFrame
                     root.AssemblyLinearVelocity = Vector3.zero
@@ -3431,29 +3442,39 @@ return function(context)
         local function stepRaid()
             local island = RaidRuntime.LatestIsland()
             if not island then
+                state.RaidMovementReady = false
                 state.ActiveFarmTarget = nil
                 state.ActiveFarmHeightOverride = nil
+                state.PositionTarget = nil
+                state.PositionBasis = nil
+                state.PositionAnchorY = nil
                 state.RaidIslandIndex = 0
                 state.RaidIslandName = nil
                 state.RaidTargetName = nil
                 RaidRuntime.VoidKillStep(nil)
+                cancelMove(false)
+                FarmVertical.Release()
                 raidLabel.Text = "Dungeon / Raid: Waiting to start"
                 return
             end
             local entryRemaining = state.RaidEntryGrace - (os.clock() - state.RaidEnteredAt)
             if state.RaidEnteredAt > 0 and entryRemaining > 0 then
+                state.RaidMovementReady = false
                 state.ActiveFarmTarget = nil
                 state.ActiveFarmHeightOverride = nil
                 state.RaidIslandIndex = 0
                 state.RaidIslandName = nil
                 state.RaidTargetName = nil
                 RaidRuntime.VoidKillStep(nil)
+                cancelMove(false)
+                FarmVertical.Release()
                 raidLabel.Text = string.format(
                     "Dungeon / Raid: Waiting for server teleport | %.1fs",
                     entryRemaining
                 )
                 return
             end
+            state.RaidMovementReady = true
             state.RaidIslandIndex = island.Index
             state.RaidIslandName = island.Name
             local safeHeight = math.max(state.RaidSafeHeight, tonumber(state.MobAuraHeight) or 20)
@@ -6513,6 +6534,7 @@ return function(context)
             Default = false,
             Callback = function(enabled)
                 state.AutoRaid = enabled
+                state.RaidMovementReady = false
                 state.ActiveFarmTarget = nil
                 state.PositionTarget = nil
                 if enabled then
@@ -6900,6 +6922,7 @@ return function(context)
         track(LocalPlayer.CharacterAdded:Connect(function(newCharacter)
             cancelMove(false)
             FarmVertical.Release()
+            state.RaidMovementReady = false
             state.LastAttack = 0
             state.LastAuraScan = 0
             state.AuraAttackGeneration += 1
@@ -7009,7 +7032,8 @@ return function(context)
                 end
                 auraKillOnce()
             end
-            local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or state.AutoRaid
+            local raidFarmEnabled = state.AutoRaid and state.RaidMovementReady and RaidRuntime.Active()
+            local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or raidFarmEnabled
                 or state.ThirdSeaFarmActive
             FarmVertical.SetAntiRagdoll(combatFarmEnabled)
             FarmVertical.SetCalmPose(state.AuraKill and (
@@ -8241,6 +8265,8 @@ return function(context)
                     Character = character,
                     RootPart = rootPart,
                     Humanoid = humanoid,
+                    RaidActive = RaidRuntime.Active,
+                    RaidChip = RaidRuntime.RaidChip,
                     TeleportToNpc = teleportToNpc,
                     TeleportToLocation = teleportToLocation,
                     PrepareManualTravel = prepareManualTravel,

@@ -184,6 +184,26 @@ if (-not $raidFruitInventory) {
     throw "Raid fruit loading must use exact owned tiles, cheapest-first selection, serialized work, and verified Tool replication"
 }
 
+$raidFruitCycle = (
+    $bloxText -match 'RaidMovementReady\s*=\s*false' -and
+    $bloxText -match 'MoveDeadline\s*=\s*0' -and
+    $bloxText -match 'state\.MoveDeadline\s*=\s*os\.clock\(\)\s*\+\s*duration\s*\+\s*1\.25' -and
+    $bloxText -match 'BloxMovementWatchdog' -and
+    $bloxText -match '(?s)if not island then\s+state\.RaidMovementReady = false.*?cancelMove\(false\).*?FarmVertical\.Release\(\)' -and
+    $bloxText -match 'local raidFarmEnabled = state\.AutoRaid and state\.RaidMovementReady and RaidRuntime\.Active\(\)' -and
+    $bloxText -match 'RaidActive = RaidRuntime\.Active' -and
+    $bloxText -match 'RaidChip = RaidRuntime\.RaidChip' -and
+    $parityText -match 'RaidFruitReserved\s*=\s*false' -and
+    $parityText -match 'RaidFruitSawActive\s*=\s*false' -and
+    $parityText -match '(?s)if raidActive\(\) then.*?RaidFruitSawActive = true.*?next fruit waits until it finishes' -and
+    $parityText -match '(?s)if raidChip\(\) then.*?no extra fruit withdrawn' -and
+    $parityText -match '(?s)elseif runtime\.RaidFruitSawActive then\s+runtime\.RaidFruitReserved = false\s+runtime\.RaidFruitSawActive = false' -and
+    $parityText -match '(?s)runtime\.AutoRaidFruit and not activeRaid and not chip\s+and not runtime\.RaidFruitReserved'
+)
+if (-not $raidFruitCycle) {
+    throw "Raid fruit automation must reserve one fruit per completed raid and recover stalled raid movement"
+}
+
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
@@ -597,6 +617,7 @@ Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFla
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid fruit inventory: PASS (owned React tiles, cheapest-first, serialized verified load)"
+Write-Host "Blox Fruits raid cycle: PASS (one fruit per raid, completion reset, movement watchdog)"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
 Write-Host "Visible semantic version: PASS ($($semanticVersionMatch.Groups['version'].Value))"

@@ -50,6 +50,8 @@ return function(context)
         RaidFruitRequestedDisplayName = nil,
         RaidFruitPreexistingTools = setmetatable({}, {__mode = "k"}),
         RaidFruitOwnsInventoryBusy = nil,
+        RaidFruitReserved = false,
+        RaidFruitSawActive = false,
         LastLaw = 0,
         LastGrab = 0,
         LastProfileProgress = 0,
@@ -72,6 +74,14 @@ return function(context)
         return pcall(function()
             return remotes.CommF:InvokeServer(command, table.unpack(arguments, 1, arguments.n))
         end)
+    end
+
+    local function raidActive()
+        return type(helpers.RaidActive) == "function" and helpers.RaidActive() == true
+    end
+
+    local function raidChip()
+        return type(helpers.RaidChip) == "function" and helpers.RaidChip() or nil
     end
 
     local function bypassWarp(targetCFrame)
@@ -540,6 +550,7 @@ return function(context)
                 runtime.RaidFruitPreexistingTools
             )
             if existingTool then
+                runtime.RaidFruitReserved = true
                 runtime.RaidFruitLoadRequested = false
                 runtime.RaidFruitRequestedName = nil
                 runtime.RaidFruitRequestedDisplayName = nil
@@ -550,7 +561,20 @@ return function(context)
         end
         local carriedFruit = fruitTool(nil, nil, nil)
         if carriedFruit then
+            runtime.RaidFruitReserved = true
             return true, carriedFruit.Name
+        end
+        if raidActive() then
+            runtime.RaidFruitReserved = true
+            runtime.RaidFruitSawActive = true
+            return false, "Raid is active; next fruit waits until it finishes"
+        end
+        if raidChip() then
+            runtime.RaidFruitReserved = true
+            return false, "A raid chip is already ready; no extra fruit withdrawn"
+        end
+        if runtime.RaidFruitReserved then
+            return false, "One fruit was already reserved for this raid"
         end
         if runtime.RaidFruitBusy then
             return false, "Raid fruit inventory is already being checked"
@@ -745,6 +769,7 @@ return function(context)
                 runtime.RaidFruitPreexistingTools
             )
             if loadedTool then
+                runtime.RaidFruitReserved = true
                 runtime.RaidFruitLoadRequested = false
                 runtime.RaidFruitRequestedName = nil
                 runtime.RaidFruitRequestedDisplayName = nil
@@ -808,7 +833,27 @@ return function(context)
             end
             gui:SetAttribute("BloxRaidFruitStatus", "Timed out safely; no second fruit was requested")
         end
-        if runtime.AutoRaidFruit and not runtime.RaidFruitBusy
+        local activeRaid = raidActive()
+        local chip = raidChip()
+        if activeRaid then
+            runtime.RaidFruitReserved = true
+            runtime.RaidFruitSawActive = true
+            gui:SetAttribute("BloxRaidFruitStatus", "Raid active; waiting for completion")
+        elseif runtime.RaidFruitSawActive then
+            runtime.RaidFruitReserved = false
+            runtime.RaidFruitSawActive = false
+            runtime.LastRaidFruit = -math.huge
+            gui:SetAttribute("BloxRaidFruitStatus", "Raid finished; next fruit is now allowed")
+        elseif chip then
+            runtime.RaidFruitReserved = true
+            gui:SetAttribute("BloxRaidFruitStatus", "Raid chip ready; no extra fruit withdrawn")
+        elseif runtime.RaidFruitReserved then
+            gui:SetAttribute("BloxRaidFruitStatus", "One fruit reserved; waiting for this raid cycle")
+        end
+        gui:SetAttribute("BloxRaidFruitReserved", runtime.RaidFruitReserved)
+        gui:SetAttribute("BloxRaidFruitSawActive", runtime.RaidFruitSawActive)
+        if runtime.AutoRaidFruit and not activeRaid and not chip
+            and not runtime.RaidFruitReserved and not runtime.RaidFruitBusy
             and os.clock() - runtime.LastRaidFruit >= 10 then
             runtime.LastRaidFruit = os.clock()
             task.spawn(function()
@@ -1128,7 +1173,15 @@ return function(context)
             Name = "Auto Get Raid Fruit",
             Flag = "blox_raid_auto_get_fruit",
             Default = false,
-            Callback = function(enabled) runtime.AutoRaidFruit = enabled == true end,
+            Callback = function(enabled)
+                runtime.AutoRaidFruit = enabled == true
+                if not runtime.AutoRaidFruit then
+                    runtime.RaidFruitReserved = false
+                    runtime.RaidFruitSawActive = false
+                else
+                    runtime.LastRaidFruit = -math.huge
+                end
+            end,
         })
         section:AddToggle({
             Name = "Better Auto Awakening",
