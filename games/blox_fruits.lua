@@ -345,6 +345,8 @@ return function(context)
             AutoStoreFruit = false,
             LastStore = 0,
             InventoryBusy = false,
+            InventoryBusyOwner = nil,
+            InventoryGeneration = 0,
             FruitsStored = 0,
             StoreStatus = "Waiting for a physical fruit",
             SelectedLocation = "None",
@@ -4815,7 +4817,11 @@ return function(context)
                 return 0, state.StoreStatus
             end
 
+            state.InventoryGeneration += 1
+            local inventoryGeneration = state.InventoryGeneration
+            local inventoryOwner = "auto-store:" .. tostring(inventoryGeneration)
             state.InventoryBusy = true
+            state.InventoryBusyOwner = inventoryOwner
             local stored = 0
             local lastMessage = nil
             local operationOk, operationError = xpcall(function()
@@ -4878,7 +4884,12 @@ return function(context)
                     end
                 end
             end, tracebackError)
+            if state.InventoryGeneration ~= inventoryGeneration
+                or state.InventoryBusyOwner ~= inventoryOwner then
+                return stored, "Fruit storage was cancelled by an inventory lifecycle change"
+            end
             state.InventoryBusy = false
+            state.InventoryBusyOwner = nil
             if not operationOk then
                 state.StoreStatus = "Storage failed: " .. tostring(operationError)
                 return stored, state.StoreStatus
@@ -6907,7 +6918,9 @@ return function(context)
             state.FruitDispatchPending = false
             state.FruitDispatchPendingAt = 0
             state.LastDoubleFruitAttack = 0
+            state.InventoryGeneration += 1
             state.InventoryBusy = false
+            state.InventoryBusyOwner = nil
             state.AuraFruitInRange = nil
             state.AuraFruitLastDistance = nil
             state.OriginalFruitTapCooldown = tonumber(newCharacter:GetAttribute("FruitTAPCooldown")) or 0
@@ -7393,7 +7406,9 @@ return function(context)
             state.FruitDispatchPending = false
             state.FruitDispatchPendingAt = 0
             state.GachaBusy = false
+            state.InventoryGeneration += 1
             state.InventoryBusy = false
+            state.InventoryBusyOwner = nil
             state.MobAuraTarget = nil
             state.MobAuraAnchorTarget = nil
             state.MobAuraStableAnchor = nil

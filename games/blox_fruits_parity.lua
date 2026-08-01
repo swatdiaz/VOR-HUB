@@ -42,6 +42,14 @@ return function(context)
         LastSwordSwitch = 0,
         LastKeyUse = 0,
         LastRaidFruit = 0,
+        RaidFruitBusy = false,
+        RaidFruitBusyAt = 0,
+        RaidFruitGeneration = 0,
+        RaidFruitLoadRequested = false,
+        RaidFruitRequestedName = nil,
+        RaidFruitRequestedDisplayName = nil,
+        RaidFruitPreexistingTools = setmetatable({}, {__mode = "k"}),
+        RaidFruitOwnsInventoryBusy = nil,
         LastLaw = 0,
         LastGrab = 0,
         LastProfileProgress = 0,
@@ -481,27 +489,278 @@ return function(context)
         end
     end
 
-    local function fruitPrice(item)
-        return tonumber(item and (item.Price or item.Value or item.Cost or item.FruitValue)) or math.huge
-    end
-
     local function loadCheapRaidFruit()
-        for _, item in pairs(inventory()) do
-            if type(item) == "table" and tostring(item.Type):lower():find("fruit", 1, true) then
-                local price = fruitPrice(item)
-                if price <= runtime.RaidFruitValue then
-                    local name = tostring(item.Name or item.ItemName or "")
-                    if name ~= "" then
-                        local ok = rawInvoke("LoadFruit", name)
-                        if ok then
-                            gui:SetAttribute("BloxRaidLoadedFruit", name)
-                            return true, name
+        local function normalizeName(value)
+            return string.lower(tostring(value or "")):gsub("[^%w]", "")
+        end
+        local function fruitTool(expectedName, expectedDisplayName, excludedTools)
+            local expected = {}
+            for _, alias in pairs({expectedName, expectedDisplayName}) do
+                local key = normalizeName(alias)
+                if key ~= "" then
+                    expected[key] = true
+                end
+                if type(alias) == "string" and alias ~= "" then
+                    expected[normalizeName(alias .. " Fruit")] = true
+                end
+            end
+            for _, tool in ipairs(allTools()) do
+                local originalName = tool:GetAttribute("OriginalName")
+                local physical = isFruitTool(tool) and (
+                    string.find(string.lower(tool.Name), "fruit", 1, true) ~= nil
+                    or originalName ~= nil
+                )
+                if physical and (not excludedTools or not excludedTools[tool]) then
+                    if next(expected) == nil or expected[normalizeName(tool.Name)]
+                        or expected[normalizeName(originalName)] then
+                        return tool
+                    end
+                end
+            end
+            return nil
+        end
+        local function release(generation)
+            if runtime.RaidFruitGeneration ~= generation then
+                return
+            end
+            runtime.RaidFruitBusy = false
+            runtime.RaidFruitBusyAt = 0
+            local inventoryOwner = runtime.RaidFruitOwnsInventoryBusy
+            runtime.RaidFruitOwnsInventoryBusy = nil
+            if inventoryOwner and sharedState.InventoryBusyOwner == inventoryOwner then
+                sharedState.InventoryBusyOwner = nil
+                sharedState.InventoryBusy = false
+            end
+        end
+
+        if runtime.RaidFruitLoadRequested then
+            local existingTool = fruitTool(
+                runtime.RaidFruitRequestedName,
+                runtime.RaidFruitRequestedDisplayName,
+                runtime.RaidFruitPreexistingTools
+            )
+            if existingTool then
+                runtime.RaidFruitLoadRequested = false
+                runtime.RaidFruitRequestedName = nil
+                runtime.RaidFruitRequestedDisplayName = nil
+                table.clear(runtime.RaidFruitPreexistingTools)
+                return true, existingTool.Name
+            end
+            return false, "A previous raid fruit request is still awaiting server confirmation"
+        end
+        local carriedFruit = fruitTool(nil, nil, nil)
+        if carriedFruit then
+            return true, carriedFruit.Name
+        end
+        if runtime.RaidFruitBusy then
+            return false, "Raid fruit inventory is already being checked"
+        end
+        if sharedState.InventoryBusy or sharedState.AuraAttackPending
+            or sharedState.FruitDispatchPending or sharedState.AuraFruitBusy then
+            return false, "Combat or inventory work is still finishing"
+        end
+
+        runtime.RaidFruitGeneration += 1
+        local generation = runtime.RaidFruitGeneration
+        runtime.RaidFruitBusy = true
+        runtime.RaidFruitBusyAt = os.clock()
+        local inventoryOwner = "raid-fruit:" .. tostring(generation)
+        runtime.RaidFruitOwnsInventoryBusy = inventoryOwner
+        sharedState.InventoryBusyOwner = inventoryOwner
+        sharedState.InventoryBusy = true
+        local startingCharacter = helpers.Character()
+        local function active()
+            return runtime.Alive and runtime.RaidFruitGeneration == generation
+                and helpers.Character() == startingCharacter
+                and gui.Parent ~= nil and not Window.Destroyed
+        end
+
+        -- GetFruits is catalog metadata only. Ownership is joined to it later
+        -- through exact normalized aliases; a catalog entry alone is never a
+        -- stored-fruit candidate.
+        local catalog, catalogTables = {}, {}
+        local catalogOk, catalogResult = rawInvoke("GetFruits")
+        if not active() then
+            return false, "Raid fruit check was cancelled"
+        end
+        if catalogOk and type(catalogResult) == "table" then
+            for _, item in pairs(catalogResult) do
+                if type(item) == "table" then
+                    catalogTables[item] = true
+                    local internalName = tostring(item.Name or item.ItemName or "")
+                    local price = tonumber(item.Price or item.Value or item.Cost or item.FruitValue)
+                    if internalName ~= "" and price then
+                        local displayName = item.DisplayName or item.Title or item.OriginalName
+                        local entry = {
+                            Name = internalName,
+                            DisplayName = type(displayName) == "string" and displayName or nil,
+                            Price = price,
+                        }
+                        catalog[normalizeName(internalName)] = entry
+                        for _, alias in pairs({item.DisplayName, item.Title, item.OriginalName}) do
+                            if type(alias) == "string" and alias ~= "" then
+                                catalog[normalizeName(alias)] = entry
+                            end
+                        end
+                        local searchAt = 1
+                        while true do
+                            local splitAt = string.find(internalName, "-", searchAt, true)
+                            if not splitAt then
+                                break
+                            end
+                            local left = internalName:sub(1, splitAt - 1)
+                            local right = internalName:sub(splitAt + 1)
+                            if normalizeName(left) == normalizeName(right) then
+                                catalog[normalizeName(left)] = entry
+                                entry.DisplayName = entry.DisplayName or left
+                                break
+                            end
+                            searchAt = splitAt + 1
                         end
                     end
                 end
             end
         end
-        return false, "No stored fruit under the value cap"
+
+        local candidates = {}
+        local function addCandidate(rawName, rawPrice, rawCount)
+            local entry = catalog[normalizeName(rawName)]
+            local count = tonumber(rawCount) or 1
+            local price = entry and entry.Price or tonumber(rawPrice)
+            if entry and count > 0 and price and price <= runtime.RaidFruitValue then
+                candidates[entry.Name] = {
+                    Name = entry.Name,
+                    DisplayName = entry.DisplayName,
+                    Price = price,
+                }
+            end
+        end
+
+        -- Current servers return weapons from getInventoryWeapons, but older
+        -- layouts exposed fruits here. Keep the ownership probes independent
+        -- from the weapon cache so one successful weapon response cannot hide
+        -- the stored-fruit sources.
+        for _, command in ipairs({"getInventoryFruits", "getInventory", "getInventoryWeapons"}) do
+            local ok, result = rawInvoke(command)
+            if not active() then
+                return false, "Raid fruit check was cancelled"
+            end
+            if ok and type(result) == "table" then
+                for _, item in pairs(result) do
+                    if type(item) == "table" then
+                        local category = string.lower(tostring(item.Type or item.Category or item.ItemType or ""))
+                        if string.find(category, "fruit", 1, true) then
+                            addCandidate(
+                                item.Name or item.ItemName or item.Title,
+                                item.Price or item.Value or item.Cost or item.FruitValue,
+                                item.Count or item.Quantity or item.Amount
+                            )
+                        end
+                    end
+                end
+            end
+        end
+
+        -- The current React treasure inventory retains authoritative tile-props
+        -- tables after rendering even though CommF_ no longer returns fruits.
+        -- Require the exact owned-storage shape observed in the live client;
+        -- never recurse, invoke callbacks, or accept permanent/shop tiles.
+        if type(getgc) == "function" then
+            local gcOk, objects = pcall(getgc, true)
+            if not active() then
+                return false, "Raid fruit check was cancelled"
+            end
+            if gcOk and type(objects) == "table" then
+                for _, object in ipairs(objects) do
+                    if type(object) == "table" and not catalogTables[object] then
+                        local category = rawget(object, "Category")
+                        local title = rawget(object, "Title")
+                        local quantity = tonumber(rawget(object, "Quantity"))
+                        if category == "Blox Fruit" and type(title) == "string"
+                            and rawget(object, "IsPurchase") == false
+                            and rawget(object, "IsPermanent") == false
+                            and rawget(object, "Selectable") == true
+                            and type(rawget(object, "TileRarity")) == "string"
+                            and quantity and quantity > 0 then
+                            addCandidate(title, nil, quantity)
+                        end
+                    end
+                end
+            end
+        end
+
+        local ordered = {}
+        for _, candidate in pairs(candidates) do
+            table.insert(ordered, candidate)
+        end
+        table.sort(ordered, function(left, right)
+            if left.Price == right.Price then
+                return left.Name < right.Name
+            end
+            return left.Price < right.Price
+        end)
+        if not active() then
+            return false, "Raid fruit check was cancelled"
+        end
+        gui:SetAttribute("BloxRaidFruitCandidateCount", #ordered)
+        if #ordered == 0 then
+            release(generation)
+            return false, "No stored fruit under the value cap"
+        end
+
+        -- Send exactly one destructive request. If replication is ambiguous,
+        -- keep the request latched for this module lifetime instead of trying a
+        -- second fruit and possibly withdrawing multiple stored items.
+        local candidate = ordered[1]
+        table.clear(runtime.RaidFruitPreexistingTools)
+        for _, tool in ipairs(allTools()) do
+            runtime.RaidFruitPreexistingTools[tool] = true
+        end
+        runtime.RaidFruitLoadRequested = true
+        runtime.RaidFruitRequestedName = candidate.Name
+        runtime.RaidFruitRequestedDisplayName = candidate.DisplayName
+        local invoked, result = rawInvoke("LoadFruit", candidate.Name)
+        if not active() then
+            return false, "Raid fruit check was cancelled"
+        end
+        if not invoked then
+            release(generation)
+            return false, "Load request for " .. candidate.Name
+                .. " lost its reply; awaiting server confirmation"
+        end
+        if result == false then
+            runtime.RaidFruitLoadRequested = false
+            runtime.RaidFruitRequestedName = nil
+            runtime.RaidFruitRequestedDisplayName = nil
+            table.clear(runtime.RaidFruitPreexistingTools)
+            release(generation)
+            return false, "The server rejected " .. candidate.Name
+        end
+
+        local deadline = os.clock() + 2.5
+        repeat
+            local loadedTool = fruitTool(
+                candidate.Name,
+                candidate.DisplayName,
+                runtime.RaidFruitPreexistingTools
+            )
+            if loadedTool then
+                runtime.RaidFruitLoadRequested = false
+                runtime.RaidFruitRequestedName = nil
+                runtime.RaidFruitRequestedDisplayName = nil
+                table.clear(runtime.RaidFruitPreexistingTools)
+                gui:SetAttribute("BloxRaidLoadedFruit", loadedTool.Name)
+                gui:SetAttribute("BloxRaidLoadedFruitValue", candidate.Price)
+                release(generation)
+                return true, loadedTool.Name
+            end
+            task.wait(0.05)
+            if not active() then
+                return false, "Raid fruit check was cancelled"
+            end
+        until os.clock() >= deadline
+        release(generation)
+        return false, "Load requested for " .. candidate.Name .. "; awaiting server confirmation"
     end
 
     local function lawRaidButton()
@@ -537,9 +796,27 @@ return function(context)
     end
 
     local function stepRaidExtras()
-        if runtime.AutoRaidFruit and os.clock() - runtime.LastRaidFruit >= 10 then
+        if runtime.RaidFruitBusy and os.clock() - runtime.RaidFruitBusyAt >= 15 then
+            runtime.RaidFruitGeneration += 1
+            runtime.RaidFruitBusy = false
+            runtime.RaidFruitBusyAt = 0
+            local inventoryOwner = runtime.RaidFruitOwnsInventoryBusy
+            runtime.RaidFruitOwnsInventoryBusy = nil
+            if inventoryOwner and sharedState.InventoryBusyOwner == inventoryOwner then
+                sharedState.InventoryBusyOwner = nil
+                sharedState.InventoryBusy = false
+            end
+            gui:SetAttribute("BloxRaidFruitStatus", "Timed out safely; no second fruit was requested")
+        end
+        if runtime.AutoRaidFruit and not runtime.RaidFruitBusy
+            and os.clock() - runtime.LastRaidFruit >= 10 then
             runtime.LastRaidFruit = os.clock()
-            loadCheapRaidFruit()
+            task.spawn(function()
+                local ok, message = loadCheapRaidFruit()
+                if runtime.Alive and gui.Parent then
+                    gui:SetAttribute("BloxRaidFruitStatus", ok and ("Loaded " .. tostring(message)) or message)
+                end
+            end)
         end
         if os.clock() - runtime.LastLaw < 4 then
             return
@@ -841,8 +1118,10 @@ return function(context)
         section:AddButton({
             Name = "Get Cheap Fruit From Inventory",
             Callback = function()
-                local ok, message = loadCheapRaidFruit()
-                notify("Raid Fruit", ok and ("Loaded " .. tostring(message)) or message)
+                task.spawn(function()
+                    local ok, message = loadCheapRaidFruit()
+                    notify("Raid Fruit", ok and ("Loaded " .. tostring(message)) or message)
+                end)
             end,
         })
         section:AddToggle({
@@ -1064,6 +1343,31 @@ return function(context)
             end
         end))
     end
+
+    track(gui.Destroying:Connect(function()
+        runtime.Alive = false
+        runtime.RaidFruitGeneration += 1
+        runtime.RaidFruitBusy = false
+        runtime.RaidFruitBusyAt = 0
+        local inventoryOwner = runtime.RaidFruitOwnsInventoryBusy
+        runtime.RaidFruitOwnsInventoryBusy = nil
+        if inventoryOwner and sharedState.InventoryBusyOwner == inventoryOwner then
+            sharedState.InventoryBusyOwner = nil
+            sharedState.InventoryBusy = false
+        end
+    end))
+
+    track(LocalPlayer.CharacterAdded:Connect(function()
+        runtime.RaidFruitGeneration += 1
+        runtime.RaidFruitBusy = false
+        runtime.RaidFruitBusyAt = 0
+        local inventoryOwner = runtime.RaidFruitOwnsInventoryBusy
+        runtime.RaidFruitOwnsInventoryBusy = nil
+        if inventoryOwner and sharedState.InventoryBusyOwner == inventoryOwner then
+            sharedState.InventoryBusyOwner = nil
+            sharedState.InventoryBusy = false
+        end
+    end))
 
     track(RunService.Heartbeat:Connect(function()
         if not runtime.Alive or os.clock() - runtime.LastLoop < 0.15 then

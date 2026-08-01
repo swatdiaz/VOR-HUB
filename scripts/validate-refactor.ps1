@@ -155,6 +155,35 @@ foreach ($check in $routingChecks) {
     }
 }
 
+$raidFruitInventory = (
+    $parityText -match 'rawInvoke\("GetFruits"\)' -and
+    $parityText -match '\{"getInventoryFruits", "getInventory", "getInventoryWeapons"\}' -and
+    $parityText -match 'category == "Blox Fruit"' -and
+    $parityText -match 'rawget\(object, "IsPurchase"\) == false' -and
+    $parityText -match 'rawget\(object, "IsPermanent"\) == false' -and
+    $parityText -match 'rawget\(object, "Selectable"\) == true' -and
+    $parityText -match 'table\.sort\(ordered, function\(left, right\)' -and
+    $parityText -match '(?s)local candidate = ordered\[1\].*?runtime\.RaidFruitLoadRequested = true.*?rawInvoke\("LoadFruit", candidate\.Name\)' -and
+    $parityText -match '(?s)if not invoked then\s+release\(generation\)\s+return false, "Load request for " .*?" lost its reply; awaiting server confirmation"\s+end\s+if result == false then\s+runtime\.RaidFruitLoadRequested = false' -and
+    $parityText -match '(?s)if runtime\.RaidFruitLoadRequested then\s+local existingTool = fruitTool\(\s*runtime\.RaidFruitRequestedName,\s*runtime\.RaidFruitRequestedDisplayName,\s*runtime\.RaidFruitPreexistingTools\s*\)' -and
+    $parityText -match '(?s)table\.clear\(runtime\.RaidFruitPreexistingTools\)\s+for _, tool in ipairs\(allTools\(\)\) do\s+runtime\.RaidFruitPreexistingTools\[tool\] = true\s+end\s+runtime\.RaidFruitLoadRequested = true' -and
+    $parityText -match '(?s)local loadedTool = fruitTool\(\s*candidate\.Name,\s*candidate\.DisplayName,\s*runtime\.RaidFruitPreexistingTools\s*\).*?gui:SetAttribute\("BloxRaidLoadedFruit", loadedTool\.Name\)' -and
+    $parityText -match '(?s)local physical = isFruitTool\(tool\).*?string\.find\(string\.lower\(tool\.Name\), "fruit", 1, true\).*?or originalName ~= nil' -and
+    $parityText -match 'runtime\.RaidFruitGeneration ~= generation' -and
+    $parityText -match 'local startingCharacter = helpers\.Character\(\)' -and
+    $parityText -match 'helpers\.Character\(\) == startingCharacter' -and
+    $parityText -match 'sharedState\.InventoryBusy = true' -and
+    $parityText -match 'sharedState\.InventoryBusyOwner == inventoryOwner' -and
+    $bloxText -match 'InventoryBusyOwner\s*=\s*nil' -and
+    $bloxText -match 'state\.InventoryBusyOwner = inventoryOwner' -and
+    $parityText -match 'track\(gui\.Destroying:Connect\(function\(\)' -and
+    $parityText -match '(?s)track\(LocalPlayer\.CharacterAdded:Connect\(function\(\).*?runtime\.RaidFruitGeneration \+= 1.*?sharedState\.InventoryBusyOwner == inventoryOwner' -and
+    $parityText -match '(?s)Name\s*=\s*"Get Cheap Fruit From Inventory".*?Callback\s*=\s*function\(\)\s+task\.spawn\(function\(\)'
+)
+if (-not $raidFruitInventory) {
+    throw "Raid fruit loading must use exact owned tiles, cheapest-first selection, serialized work, and verified Tool replication"
+}
+
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
@@ -567,6 +596,7 @@ Write-Host "Game builder contract: PASS (9/9)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
+Write-Host "Blox Fruits raid fruit inventory: PASS (owned React tiles, cheapest-first, serialized verified load)"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
 Write-Host "Submerged water support: PASS"
 Write-Host "Visible semantic version: PASS ($($semanticVersionMatch.Groups['version'].Value))"
