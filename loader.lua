@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "e6be97506c2814b9e8dfa26885986abbfc1fd900"
+local COMMIT = "410163af4ec7224986ae19906d42751822a66d3a"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function detectExecutor()
