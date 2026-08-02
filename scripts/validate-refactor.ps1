@@ -560,6 +560,7 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'Name\s*=\s*"Vertical Perfect Offset"' -and
     $practicalBasketballText -match 'PerfectTravels\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*1\.35' -and
+    $practicalBasketballText -match 'targetTravel\s*=\s*\(targetOffset\s*-\s*state\.ShotStartOffset\):Dot\(state\.ShotDirection\)' -and
     $practicalBasketballText -match 'state\.ShotTravel\s*>=\s*targetTravel' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
     $practicalBasketballText -match 'local travelCorrection\s*=\s*\(\{' -and

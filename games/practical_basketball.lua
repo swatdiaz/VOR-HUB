@@ -1210,8 +1210,14 @@ return function(context)
             state.LastMeterSampleOffset = offset
 
             local reachedTarget = false
-            local targetTravel = state.PerfectTravels[state.MeterName]
-            if targetTravel and state.ShotDirection then
+            local targetOffset = state.PerfectOffsets[state.MeterName]
+            local targetTravel
+            if typeof(targetOffset) == "Vector2" and state.ShotDirection then
+                -- Shot travel starts from this shot's live initial offset (about
+                -- -0.24 in the current Vertical meter), not from Vector2.zero.
+                -- Recompute every shot so the target can never be unreachable.
+                targetTravel = (targetOffset - state.ShotStartOffset):Dot(state.ShotDirection)
+                state.PerfectTravels[state.MeterName] = targetTravel
                 reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
             end
 
