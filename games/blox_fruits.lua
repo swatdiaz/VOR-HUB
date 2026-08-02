@@ -233,6 +233,8 @@ return function(context)
             AuraFruitLastDistance = nil,
             FruitM1ReadyAt = 0,
             DoubleAttack = false,
+            DoubleAttackWeapon = "Sword",
+            NativeCombatBusyAt = 0,
             FruitM1CooldownReduction = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
             OriginalFruitTapCooldown = nil,
             MobAuraTp = false,
@@ -289,7 +291,7 @@ return function(context)
             ExperimentalMagnetBoost = false,
             DragonstormOwned = nil,
             LastDragonstormOwnershipCheck = 0,
-            MagnetRange = 300,
+            MagnetRange = 100,
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
             MagnetAnchorName = nil,
@@ -1366,14 +1368,19 @@ return function(context)
             state.AuraAttackMode = mode
         end
 
+        state.DoubleAttackWeaponSelection = function()
+            return state.DoubleAttackWeapon == "Melee" and "Melee" or "Sword"
+        end
+
         local function equipSelectedTool()
             if state.DoubleAttack then
-                local sword = toolForSelection("Sword")
+                local weaponSelection = state.DoubleAttackWeaponSelection()
+                local sword = toolForSelection(weaponSelection)
                 local fruit = toolForSelection("M1 Fruit")
                 equipTool(sword)
                 state.AuraWeaponName = sword and fruit and (sword.Name .. " + " .. fruit.Name) or nil
-                state.AuraWeaponType = sword and fruit and "Sword + Blox Fruit" or nil
-                state.AuraAttackMode = "Double Attack"
+                state.AuraWeaponType = sword and fruit and (weaponSelection .. " + Blox Fruit") or nil
+                state.AuraAttackMode = "Double Attack: " .. weaponSelection
                 return sword
             end
             local tool = selectedTool()
@@ -1435,19 +1442,11 @@ return function(context)
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
             end
-            -- Current servers reject the whole registered hit when an extra
-            -- Magnet rig exists only at the pile CFrame on this client. Keep
-            -- the visual/frozen pile, but submit the real active farm rig for
-            -- credited combat. Each replacement is restored and promoted in
-            -- stepMobAuraTp after the active one dies.
-            local creditedMagnetTarget = state.AutoMagnet and not state.GatherEnemies
-                and (state.MobAuraTarget or state.ActiveFarmTarget) or nil
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
                 local hitPart = enemyHitPart(enemy)
                 local matchesTarget = state.ThirdSeaEnemyAllowed(enemy)
                     and (not selectedFilter or enemyMatches(enemy, selectedFilter))
-                    and (not creditedMagnetTarget or enemy == creditedMagnetTarget)
                 if enemyRoot and hitPart and modelAlive(enemy) and matchesTarget then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance <= state.AuraRange then
@@ -1541,11 +1540,13 @@ return function(context)
             if type(setIdentity) ~= "function" then
                 return false, "thread identity control is unavailable"
             end
-            if state.NativeCombatBusy then
+            if state.NativeCombatBusy
+                and os.clock() - (state.NativeCombatBusyAt or 0) < 1 then
                 state.AuraStage = "native-controller-busy"
-                return true
+                return false, "native-controller-busy"
             end
             state.NativeCombatBusy = true
+            state.NativeCombatBusyAt = os.clock()
 
             local char = character()
             local body = humanoid()
@@ -1558,28 +1559,14 @@ return function(context)
             end
 
             -- Native hit detection owns the new server token/coroutine path.
-            -- Give it one narrow, invisible blade volume reaching the active
+            -- Give it one narrow, invisible weapon volume reaching the active
             -- farm target so shared Position Y remains usable without moving
             -- the character down for every swing.
             local temporaryHitbox = nil
-            local queryBackups = {}
             local activeEnemy = state.MobAuraTarget or state.ActiveFarmTarget
             local playerRoot = rootPart()
             local targetRoot = modelRoot(activeEnemy)
             if tool and playerRoot and targetRoot then
-                if state.AutoMagnet then
-                    local enemies = workspace:FindFirstChild("Enemies")
-                    for _, enemy in ipairs(enemies and enemies:GetChildren() or {}) do
-                        if enemy ~= activeEnemy then
-                            for _, descendant in ipairs(enemy:GetDescendants()) do
-                                if descendant:IsA("BasePart") then
-                                    queryBackups[descendant] = descendant.CanQuery
-                                    descendant.CanQuery = false
-                                end
-                            end
-                        end
-                    end
-                end
                 local delta = targetRoot.Position - playerRoot.Position
                 local distance = delta.Magnitude
                 if distance > 4 then
@@ -1595,7 +1582,12 @@ return function(context)
                     temporaryHitbox.CanCollide = false
                     temporaryHitbox.CanTouch = false
                     temporaryHitbox.CanQuery = false
-                    temporaryHitbox.Parent = tool
+                    local hitboxParent = char and char:FindFirstChild("EquippedWeapon")
+                    local equippedPointer = tool and tool:FindFirstChild("LocalEquippedWeaponPointer")
+                    if not hitboxParent and equippedPointer and equippedPointer:IsA("ObjectValue") then
+                        hitboxParent = equippedPointer.Value
+                    end
+                    temporaryHitbox.Parent = hitboxParent or tool
                     CollectionService:AddTag(temporaryHitbox, "WeaponHitbox")
                 end
             end
@@ -1625,13 +1617,8 @@ return function(context)
                 end
             end
             task.delay(0.45, function()
-                for part, canQuery in pairs(queryBackups) do
-                    if part and part.Parent then
-                        pcall(function()
-                            part.CanQuery = canQuery
-                        end)
-                    end
-                end
+                state.NativeCombatBusy = false
+                state.NativeCombatBusyAt = 0
                 if temporaryHitbox and temporaryHitbox.Parent then
                     pcall(function()
                         CollectionService:RemoveTag(temporaryHitbox, "WeaponHitbox")
@@ -1645,9 +1632,10 @@ return function(context)
                         end
                     end
                 end
-                state.NativeCombatBusy = false
             end)
             if not attackOk then
+                state.NativeCombatBusy = false
+                state.NativeCombatBusyAt = 0
                 return false, tostring(attackError)
             end
             state.AuraStage = "native-controller-sent"
@@ -1785,6 +1773,7 @@ return function(context)
             return message == "the target left before the hit window"
                 or message == "the target left Aura range"
                 or message == "the fruit M1 target left before activation"
+                or message == "native-controller-busy"
         end
 
         local function sendRegisteredAuraHit(tool, weaponData, target, attackProfile, attackTargets, attackGeneration)
@@ -1810,6 +1799,9 @@ return function(context)
             if nativeSent then
                 state.AuraMultiTargetCount = 1
                 return true, nil, 1
+            end
+            if nativeError == "native-controller-busy" then
+                return false, nativeError
             end
 
             local registerHit = resolveRegisterHitClosure()
@@ -1901,6 +1893,9 @@ return function(context)
             if nativeSent then
                 state.AuraMultiTargetCount = 1
                 return true, nil, 1
+            end
+            if nativeError == "native-controller-busy" then
+                return false, nativeError
             end
 
             local registerHit = resolveRegisterHitClosure()
@@ -2310,7 +2305,7 @@ return function(context)
             if originalParent and gun.Parent ~= originalParent then
                 gun.Parent = originalParent
             end
-            local sword = toolForSelection("Sword")
+            local sword = toolForSelection(state.DoubleAttackWeaponSelection())
             if sword then
                 equipTool(sword)
             end
@@ -2352,7 +2347,7 @@ return function(context)
                 return false
             end
 
-            local sword = toolForSelection("Sword")
+            local sword = toolForSelection(state.DoubleAttackWeaponSelection())
             local fruit = toolForSelection("M1 Fruit")
             if not sword or not fruit then
                 return false
@@ -2464,15 +2459,18 @@ return function(context)
             local plan = {Double = state.DoubleAttack}
 
             if state.DoubleAttack then
-                plan.Sword = toolForSelection("Sword")
+                plan.SwordSelection = state.DoubleAttackWeaponSelection()
+                plan.Sword = toolForSelection(plan.SwordSelection)
                 plan.Fruit = toolForSelection("M1 Fruit")
                 if not plan.Sword or not plan.Fruit then
-                    state.AuraPendingError = "Double Attack requires both a Sword and a Blox Fruit Tool"
+                    state.AuraPendingError = "Double Attack requires both a "
+                        .. plan.SwordSelection .. " and a Blox Fruit Tool"
                     return false
                 end
                 plan.SwordData = weaponDataForTool(plan.Sword)
                 if not hasRegisteredBasicMoveset(plan.SwordData) then
-                    state.AuraPendingError = "Double Attack could not resolve the Sword M1 moveset"
+                    state.AuraPendingError = "Double Attack could not resolve the "
+                        .. plan.SwordSelection .. " M1 moveset"
                     return false
                 end
                 local _, swordChanged = equipTool(plan.Sword)
@@ -2481,7 +2479,8 @@ return function(context)
                 end
                 local swordProfile, swordError = DoubleAttackEngine.SwordProfile(plan.Sword, plan.SwordData)
                 if not swordProfile then
-                    state.AuraPendingError = "Double Attack could not read the Sword: " .. tostring(swordError)
+                    state.AuraPendingError = "Double Attack could not read the "
+                        .. plan.SwordSelection .. ": " .. tostring(swordError)
                     return false
                 end
                 plan.SwordProfile = swordProfile
@@ -2490,8 +2489,8 @@ return function(context)
                     and hasRegisteredBasicMoveset(plan.FruitData)
                 plan.Cadence = AURA_KILL_HIT_DELAY + extraDelay
                 state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Fruit.Name
-                state.AuraWeaponType = "Sword + Blox Fruit"
-                state.AuraAttackMode = "Double Attack"
+                state.AuraWeaponType = plan.SwordSelection .. " + Blox Fruit"
+                state.AuraAttackMode = "Double Attack: " .. plan.SwordSelection
             else
                 plan.Tool = selectedTool()
                 if not plan.Tool then
@@ -2753,45 +2752,30 @@ return function(context)
             end
 
             local liveAnchor = targetRoot.Position
-            -- Auto Magnet can move an unowned NPC only on this client. The
-            -- combat server still validates that rig at its replicated world
-            -- position, so drive the player from the saved pre-magnet CFrame.
-            -- This keeps target swaps server-creditable without a priming tour.
-            local gatheredOriginal = state.AutoMagnet and state.GatherOriginalStates[target]
-            local serverAnchor = gatheredOriginal and typeof(gatheredOriginal.CFrame) == "CFrame"
-                and gatheredOriginal.CFrame.Position or liveAnchor
-            if gatheredOriginal and state.RestoreGatherEnemy then
-                -- A secondary pile member can become the next active target.
-                -- Restore its replicated location before giving the hard pin
-                -- ownership so combat never attacks a client-only ghost CFrame.
-                state.RestoreGatherEnemy(target, true)
-                targetRoot = modelRoot(target) or targetRoot
-                liveAnchor = targetRoot.Position
-            end
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
             local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
             if singleFallback then
                 state.MobAuraAnchorTarget = target
-                state.MobAuraStableAnchor = serverAnchor
+                state.MobAuraStableAnchor = liveAnchor
             elseif state.MobAuraAnchorTarget ~= target then
                 state.MobAuraAnchorTarget = target
                 -- A replacement target may already be inside the grabbed pile.
                 -- Retain the original ground anchor across target swaps or the
                 -- new, raised NPC position feeds height back into the player.
                 if not state.GatherEnemies or not state.MobAuraStableAnchor then
-                    state.MobAuraStableAnchor = serverAnchor
+                    state.MobAuraStableAnchor = liveAnchor
                 end
             elseif (not state.GatherEnemies and not fixedPosition) or not state.MobAuraStableAnchor then
-                state.MobAuraStableAnchor = serverAnchor
+                state.MobAuraStableAnchor = liveAnchor
             end
             if fixedPosition and state.MobAuraStableAnchor then
                 local reacquireDistance = math.max(
                     12,
                     math.min(50, (tonumber(state.AuraRange) or 70) * 0.65)
                 )
-                if (serverAnchor - state.MobAuraStableAnchor).Magnitude > reacquireDistance then
-                    state.MobAuraStableAnchor = serverAnchor
+                if (liveAnchor - state.MobAuraStableAnchor).Magnitude > reacquireDistance then
+                    state.MobAuraStableAnchor = liveAnchor
                 end
             end
             -- Once Multi Grab moves the target underneath the player, keep
@@ -2800,8 +2784,8 @@ return function(context)
             local anchor = ((state.GatherEnemies and not singleFallback) or fixedPosition)
                 and state.MobAuraStableAnchor or liveAnchor
             if state.AutoMagnet then
-                if state.PinMobAuraTarget then
-                    state.PinMobAuraTarget(target, serverAnchor)
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(false)
                 end
             elseif state.PinMobAuraTarget then
                 state.PinMobAuraTarget(target, state.MobAuraStableAnchor or liveAnchor)
@@ -4104,10 +4088,7 @@ return function(context)
                     or state.MagnetAnchorName ~= targetName
                     or typeof(state.MagnetAnchorCFrame) ~= "CFrame" then
                     state.MagnetAnchorTarget = anchorCandidate.Enemy
-                    local anchorOriginal = state.GatherOriginalStates[anchorCandidate.Enemy]
-                    state.MagnetAnchorCFrame = anchorOriginal
-                        and typeof(anchorOriginal.CFrame) == "CFrame"
-                        and anchorOriginal.CFrame or anchorCandidate.Root.CFrame
+                    state.MagnetAnchorCFrame = anchorCandidate.Root.CFrame
                     state.MagnetAnchorName = targetName
                 end
                 targetCFrame = CFrame.new(state.MagnetAnchorCFrame.Position)
@@ -4148,20 +4129,6 @@ return function(context)
                 end
                 local enemyBody = candidate.Enemy:FindFirstChildOfClass("Humanoid")
                 if enemyBody then
-                    local isActiveMagnetTarget = not multiGrabEnabled and (
-                        candidate.Enemy == state.MobAuraTarget
-                            or candidate.Enemy == state.ActiveFarmTarget
-                    )
-                    if isActiveMagnetTarget then
-                        -- The active NPC is hard-pinned by Mob Aura at its real
-                        -- server anchor. Rewriting it inside Magnet invalidates
-                        -- otherwise credited hits after the current game update.
-                        if state.GatherOriginalStates[candidate.Enemy] then
-                            state.RestoreGatherEnemy(candidate.Enemy, true)
-                        end
-                        gathered += 1
-                        continue
-                    end
                     if state.GatherOriginalStates[candidate.Enemy] == nil then
                         state.GatherOriginalStates[candidate.Enemy] = {
                             CFrame = candidate.Root.CFrame,
@@ -4196,6 +4163,7 @@ return function(context)
                         candidate.Root.CFrame = targetCFrame
                         candidate.Root.AssemblyLinearVelocity = Vector3.zero
                         candidate.Root.AssemblyAngularVelocity = Vector3.zero
+                        candidate.Root.Size = Vector3.new(60, 60, 60)
                         candidate.Root.CanCollide = false
                         enemyBody.WalkSpeed = 0
                         enemyBody.JumpPower = 0
@@ -6217,14 +6185,14 @@ return function(context)
         })
         ExploitSection:AddSlider({
             Name = "Magnet Range",
-            Description = "Pull matching NPCs from 0 to 500 studs around the current farm target",
+            Description = "Pull matching NPCs from 0 to 100 studs around the current farm target",
             Flag = "blox_magnet_range",
             Min = 0,
-            Max = 500,
+            Max = 100,
             Step = 10,
-            Default = 300,
+            Default = 100,
             Callback = function(value)
-                state.MagnetRange = math.clamp(tonumber(value) or 300, 0, 500)
+                state.MagnetRange = math.clamp(tonumber(value) or 100, 0, 100)
                 state.LastGatherScan = 0
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
@@ -6462,9 +6430,47 @@ return function(context)
             end,
         })
         weaponStatusLabel = AttackSection:AddLabel("Weapon: waiting for selection")
+        AttackSection:AddDropdown({
+            Name = "Double Attack Weapon",
+            Description = "Choose the physical M1 paired with Fruit M1",
+            Flag = "blox_double_attack_weapon",
+            Options = {"Sword", "Melee"},
+            Default = "Sword",
+            Callback = function(value)
+                local selection = tostring(value) == "Melee" and "Melee" or "Sword"
+                if state.DoubleAttackWeapon ~= selection then
+                    state.DoubleAttackWeapon = selection
+                    state.AuraAttackGeneration += 1
+                    state.FruitDispatchGeneration += 1
+                    state.AuraAttackPending = false
+                    state.AuraAttackPendingAt = 0
+                    state.FruitDispatchPending = false
+                    state.FruitDispatchPendingAt = 0
+                    state.AuraFruitBusy = false
+                    state.NativeCombatBusy = false
+                    state.NativeCombatBusyAt = 0
+                    state.LastAttack = 0
+                    state.LastDoubleFruitAttack = 0
+                    table.clear(state.AuraCombos)
+                end
+                gui:SetAttribute("BloxDoubleAttackWeapon", selection)
+                if state.DoubleAttack then
+                    local weapon = toolForSelection(selection)
+                    local fruit = toolForSelection("M1 Fruit")
+                    if weapon and fruit then
+                        state.AuraWeaponName = weapon.Name .. " + " .. fruit.Name
+                        state.AuraWeaponType = selection .. " + Blox Fruit"
+                        state.AuraAttackMode = "Double Attack: " .. selection
+                    else
+                        state.AuraPendingError = "Double Attack requires both a "
+                            .. selection .. " and a Blox Fruit Tool"
+                    end
+                end
+            end,
+        })
         AttackSection:AddToggle({
-            Name = "Double Attack (Sword + Fruit M1)",
-            Description = "Dungeon-style engine: silent 12-target Sword batches plus independent 3-target Fruit M1",
+            Name = "Double Attack (Weapon + Fruit M1)",
+            Description = "Pairs the selected Sword or Melee M1 with an independent Fruit M1",
             Flag = "blox_double_attack",
             Default = false,
             Callback = function(enabled)
@@ -6480,20 +6486,24 @@ return function(context)
                 state.DoubleAttack = enabled
                 state.LastAttack = 0
                 state.LastDoubleFruitAttack = 0
+                state.NativeCombatBusy = false
+                state.NativeCombatBusyAt = 0
                 table.clear(state.AuraCombos)
                 -- Write executor-owned GUI telemetry before touching live Tool
                 -- Instances. Some executors downgrade the resumed coroutine's
                 -- UI capability after crossing back into game-owned objects.
                 gui:SetAttribute("BloxDoubleAttack", enabled)
                 if enabled then
-                    local sword = toolForSelection("Sword")
+                    local weaponSelection = state.DoubleAttackWeaponSelection()
+                    local sword = toolForSelection(weaponSelection)
                     local fruit = toolForSelection("M1 Fruit")
                     if sword and fruit then
                         state.AuraWeaponName = sword.Name .. " + " .. fruit.Name
-                        state.AuraWeaponType = "Sword + Blox Fruit"
-                        state.AuraAttackMode = "Double Attack"
+                        state.AuraWeaponType = weaponSelection .. " + Blox Fruit"
+                        state.AuraAttackMode = "Double Attack: " .. weaponSelection
                     else
-                        state.AuraPendingError = "Double Attack requires both a Sword and a Blox Fruit Tool"
+                        state.AuraPendingError = "Double Attack requires both a "
+                            .. weaponSelection .. " and a Blox Fruit Tool"
                     end
                 else
                     local tool = selectedTool()

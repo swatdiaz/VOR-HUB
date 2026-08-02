@@ -261,19 +261,16 @@ $mobAuraEnemyHold = (
     $bloxText -match 'enemyBody:ChangeState\(Enum\.HumanoidStateType\.Physics\)' -and
     $bloxText -match 'SwordTargetLimit = 35' -and
     $bloxText -match 'FruitTargetLimit = 35' -and
-    $bloxText -match 'local serverAnchor = gatheredOriginal' -and
-    $bloxText -match 'state\.RestoreGatherEnemy\(target, true\)' -and
-    $bloxText -match 'local isActiveMagnetTarget = not multiGrabEnabled' -and
-    $bloxText -match 'state\.PinMobAuraTarget\(target, serverAnchor\)' -and
-    $bloxText -match 'local creditedMagnetTarget = state\.AutoMagnet and not state\.GatherEnemies' -and
-    $bloxText -match 'not creditedMagnetTarget or enemy == creditedMagnetTarget' -and
     $bloxText -match 'state\.SendNativeControllerAttack = function\(tool\)' -and
     $bloxText -match 'setIdentity\(2\)' -and
     $bloxText -match 'combatController:Attack\(tool, nil, nil\)' -and
     $bloxText -match 'VOR_NativeWeaponHitbox' -and
+    $bloxText -match 'temporaryHitbox\.Parent = hitboxParent or tool' -and
+    $bloxText -match 'char and char:FindFirstChild\("EquippedWeapon"\)' -and
+    $bloxText -match 'os\.clock\(\) - \(state\.NativeCombatBusyAt or 0\) < 1' -and
     $bloxText -match 'state\.NativeCombatBusy = true' -and
     $bloxText -match 'state\.NativeCombatBusy = false' -and
-    $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
+    $bloxText -match 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {
     throw "Mob Aura must pin its active NPC while Magnet exposes every piled target to the attack hitbox"
@@ -376,7 +373,7 @@ if (-not ($manualFruitMaxOk -and $automaticFruitCadenceOk)) {
 
 $magnetOwnershipGateRemoved = $bloxText -notmatch 'local networkOwned\s*=.*isnetworkowner'
 $magnetSimulationRadius = $bloxText -match 'setsimulationradius\(math\.huge, math\.huge\)'
-$magnetRangeCapped = $bloxText -match '(?s)Name\s*=\s*"Magnet Range".*?Min\s*=\s*0.*?Max\s*=\s*500.*?state\.MagnetRange\s*=\s*math\.clamp\([^\r\n]+, 0, 500\)'
+$magnetRangeCapped = $bloxText -match '(?s)Name\s*=\s*"Magnet Range".*?Min\s*=\s*0.*?Max\s*=\s*100.*?Default\s*=\s*100.*?state\.MagnetRange\s*=\s*math\.clamp\([^\r\n]+, 0, 100\)'
 $typedMobSearchCount = ([regex]::Matches(
     $bloxText,
     '(?s)MobFarmSection:AddInput\(\{\s*Name\s*=\s*"(?:Mob Aura|Selected Mob) Search Distance"'
@@ -400,7 +397,7 @@ $mobAuraSameTypeGather = $bloxText -match 'local targetName\s*=\s*raidGatherEnab
 $stickyMagnetCapture = $bloxText -match 'local captured\s*=\s*state\.AutoMagnet and state\.GatherOriginalStates\[enemy\] ~= nil'
 $oldTypeRelease = $bloxText -match 'targetName and not enemyMatches\(enemy, targetName\)'
 $animationFreeze = $bloxText -match 'state\.FreezeGatherAnimations = function\(enemy, enemyBody\)'
-$rootFreeze = $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)' -and
+$rootFreeze = $bloxText -match 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)' -and
     $bloxText -match 'Size = candidate\.Root\.Size' -and
     $bloxText -match 'enemyBody\.PlatformStand = true' -and
     $bloxText -match 'enemyRoot\.Size = original\.Size'
@@ -454,7 +451,7 @@ if (-not $fruitGenerationOwned) {
 
 $doubleToggleBlock = [regex]::Match(
     $bloxText,
-    '(?ms)^\s{12}Name\s*=\s*"Double Attack \(Sword \+ Fruit M1\)".*?^\s{8}\}\)'
+    '(?ms)^\s{12}Name\s*=\s*"Double Attack \(Weapon \+ Fruit M1\)".*?^\s{8}\}\)'
 )
 $doubleToggleInvalidatesBoth = (
     $doubleToggleBlock.Success -and
@@ -466,6 +463,19 @@ $doubleToggleInvalidatesBoth = (
 )
 if (-not $doubleToggleInvalidatesBoth) {
     throw "Double Attack mode changes must invalidate both Aura dispatch lifecycles"
+}
+
+$doubleAttackWeaponModes = (
+    $bloxText -match 'Name\s*=\s*"Double Attack Weapon"' -and
+    $bloxText -match 'Options\s*=\s*\{"Sword", "Melee"\}' -and
+    $bloxText -match 'Flag\s*=\s*"blox_double_attack_weapon"' -and
+    $bloxText -match 'state\.DoubleAttackWeaponSelection = function\(\)' -and
+    ([regex]::Matches($bloxText, 'toolForSelection\(state\.DoubleAttackWeaponSelection\(\)\)')).Count -ge 2 -and
+    $bloxText -match 'plan\.SwordSelection = state\.DoubleAttackWeaponSelection\(\)' -and
+    $bloxText -match 'gui:SetAttribute\("BloxDoubleAttackWeapon", selection\)'
+)
+if (-not $doubleAttackWeaponModes) {
+    throw "Double Attack must support explicit Sword plus Fruit and Melee plus Fruit modes"
 }
 
 $auraTimeoutReleasesFruitBusy = $bloxText -match '(?s)if state\.AuraAttackPending then\s+if os\.clock\(\) - \(state\.AuraAttackPendingAt or 0\) < 1 then\s+return false\s+end.*?state\.LastRegisterHitResolve = -math\.huge\s+if not state\.FruitDispatchPending then\s+state\.AuraFruitBusy = false\s+end\s+state\.AuraStage = "pending-timeout-recovered"'
@@ -868,7 +878,7 @@ Write-Host "Visible semantic version: PASS ($($semanticVersionMatch.Groups['vers
 Write-Host "Xeno compatibility: PASS (executor identity, HTTP retry/fallback, teleport resume)"
 Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
-Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
+Write-Host "Auto Magnet range: PASS (0-100 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-state handoff)"
@@ -878,7 +888,7 @@ Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclu
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
 Write-Host "Mob Aura enemy hold: PASS (fixed ground anchor, stopped animation and physics)"
-Write-Host "Magnet hit registration: PASS (35 targets, server-anchor routing, normal hit roots)"
+Write-Host "Magnet hit registration: PASS (35 normal-sea targets, original grouped routing)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Sea-wide berry automation: PASS (live-spawn claim, empty-server hop, stay after collection)"
 Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"
