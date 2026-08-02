@@ -1046,27 +1046,21 @@ return function(context)
         return best, center
     end
 
-    local function equipTyrantSkillTool()
-        local char = helpers.Character()
-        local body = char and char:FindFirstChildOfClass("Humanoid")
-        if not char or not body then
+    local function equipTyrantSkillTool(selection)
+        local tool = type(api.ToolForSelection) == "function" and api.ToolForSelection(selection) or nil
+        if not tool then
             return nil
         end
-        for _, child in ipairs(char:GetChildren()) do
-            if child:IsA("Tool") then
-                return child
+        if type(api.EquipTool) == "function" then
+            api.EquipTool(tool)
+        else
+            local char = helpers.Character()
+            local body = char and char:FindFirstChildOfClass("Humanoid")
+            if body and tool.Parent ~= char then
+                body:EquipTool(tool)
             end
         end
-        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        if backpack then
-            for _, tool in ipairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name ~= "Holy Torch" and tool.Name ~= "God's Chalice" then
-                    body:EquipTool(tool)
-                    return tool
-                end
-            end
-        end
-        return nil
+        return tool
     end
 
     local function useTyrantPotSkill(pot)
@@ -1085,20 +1079,38 @@ return function(context)
             return
         end
         api.MoveTo(destination)
-        if not equipTyrantSkillTool() or os.clock() - runtime.TyrantLastSkill < 0.22 then
+        if os.clock() - runtime.TyrantLastSkill < 0.22 then
+            return
+        end
+        local toolSelections = {"Blox Fruit", "Melee", "Sword"}
+        local allowedSkills = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.F}
+        local cycleLength = #toolSelections * #allowedSkills
+        local tool = nil
+        local selection = nil
+        local keyCode = nil
+        for _ = 1, cycleLength do
+            runtime.TyrantSkillIndex = runtime.TyrantSkillIndex % cycleLength + 1
+            local toolIndex = math.floor((runtime.TyrantSkillIndex - 1) / #allowedSkills) + 1
+            local skillIndex = (runtime.TyrantSkillIndex - 1) % #allowedSkills + 1
+            selection = toolSelections[toolIndex]
+            keyCode = allowedSkills[skillIndex]
+            tool = equipTyrantSkillTool(selection)
+            if tool then
+                break
+            end
+        end
+        if not tool or not keyCode then
+            gui:SetAttribute("BloxTyrantLastSkill", "No Fruit/Melee/Sword tool")
             return
         end
         runtime.TyrantLastSkill = os.clock()
-        local allowedSkills = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.F}
-        runtime.TyrantSkillIndex = runtime.TyrantSkillIndex % #allowedSkills + 1
-        local keyCode = allowedSkills[runtime.TyrantSkillIndex]
         pcall(function()
             VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
             task.delay(0.07, function()
                 VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
             end)
         end)
-        gui:SetAttribute("BloxTyrantLastSkill", keyCode.Name)
+        gui:SetAttribute("BloxTyrantLastSkill", selection .. " " .. keyCode.Name)
     end
 
     local function recoverTyrantTeam()
