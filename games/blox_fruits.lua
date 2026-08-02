@@ -565,10 +565,40 @@ return function(context)
         local function normalizeEnemyName(value)
             local name = tostring(value or "")
             name = name:gsub("%s*%[Lv[^%]]*%]", "")
-            name = name:gsub("%s*%[Boss%]", "")
+            name = name:gsub("%s*%[[Rr][Aa][Ii][Dd]%s+[Bb][Oo][Ss][Ss]%]", "")
+            name = name:gsub("%s*%[[Bb][Oo][Ss][Ss]%]", "")
             name = name:gsub("%s+$", "")
             return name
         end
+
+        state.IsBossEnemyName = function(value)
+            local lowered = string.lower(tostring(value or ""))
+            return string.find(lowered, "[boss]", 1, true) ~= nil
+                or string.find(lowered, "[raid boss]", 1, true) ~= nil
+        end
+
+        state.RaidBossFallbacks = {
+            [2753915549] = {
+                "Greybeard",
+            },
+            [4442272183] = {
+                "Darkbeard",
+                "Order",
+                "Cursed Captain",
+            },
+            [7449423635] = {
+                "Cake Prince",
+                "Dough King",
+                "Soul Reaper",
+                "rip_indra True Form",
+            },
+            [100117331123089] = {
+                "Cake Prince",
+                "Dough King",
+                "Soul Reaper",
+                "rip_indra True Form",
+            },
+        }
 
         local function modelRoot(model)
             if not model or not model.Parent then
@@ -3106,30 +3136,40 @@ return function(context)
         local function bossNames()
             local names = {"None"}
             local seen = {None = true}
+            local function addBoss(value)
+                local name = normalizeEnemyName(value)
+                if name ~= "" and not seen[name] then
+                    seen[name] = true
+                    table.insert(names, name)
+                end
+            end
             local origin = workspace:FindFirstChild("_WorldOrigin")
             local spawns = origin and origin:FindFirstChild("EnemySpawns")
             if spawns then
                 for _, descendant in ipairs(spawns:GetDescendants()) do
-                    if descendant:IsA("BasePart") and string.find(descendant.Name, "[Boss]", 1, true) then
-                        local name = normalizeEnemyName(descendant.Name)
-                        if name ~= "" and not seen[name] then
-                            seen[name] = true
-                            table.insert(names, name)
-                        end
+                    if descendant:IsA("BasePart") and state.IsBossEnemyName(descendant.Name) then
+                        addBoss(descendant.Name)
                     end
                 end
             end
             local enemies = workspace:FindFirstChild("Enemies")
             if enemies then
                 for _, enemy in ipairs(enemies:GetChildren()) do
-                    if string.find(enemy.Name, "[Boss]", 1, true) then
-                        local name = normalizeEnemyName(enemy.Name)
-                        if name ~= "" and not seen[name] then
-                            seen[name] = true
-                            table.insert(names, name)
-                        end
+                    if state.IsBossEnemyName(enemy.Name) then
+                        addBoss(enemy.Name)
                     end
                 end
+            end
+            local replicatedEnemies = ReplicatedStorage:FindFirstChild("Enemies")
+            if replicatedEnemies then
+                for _, enemy in ipairs(replicatedEnemies:GetDescendants()) do
+                    if state.IsBossEnemyName(enemy.Name) then
+                        addBoss(enemy.Name)
+                    end
+                end
+            end
+            for _, raidBoss in ipairs(state.RaidBossFallbacks[game.PlaceId] or {}) do
+                addBoss(raidBoss)
             end
             table.sort(names, function(left, right)
                 if left == "None" then

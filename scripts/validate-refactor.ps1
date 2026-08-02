@@ -155,6 +155,19 @@ foreach ($check in $routingChecks) {
     }
 }
 
+$raidBossSelection = (
+    $bloxText -match 'state\.IsBossEnemyName\s*=\s*function\(value\)' -and
+    $bloxText -match '"\[raid boss\]"' -and
+    $bloxText -match 'name:gsub\("%s\*%\[\[Rr\]\[Aa\]\[Ii\]\[Dd\]%s\+\[Bb\]\[Oo\]\[Ss\]\[Ss\]%\]"' -and
+    $bloxText -match 'ReplicatedStorage:FindFirstChild\("Enemies"\)' -and
+    $bloxText -match 'state\.RaidBossFallbacks\s*=\s*\{' -and
+    $bloxText -match '\[2753915549\]\s*=\s*\{\s*"Greybeard"' -and
+    $bloxText -match 'if state\.IsBossEnemyName\(enemy\.Name\) then\s*addBoss\(enemy\.Name\)'
+)
+if (-not $raidBossSelection) {
+    throw "Blox Fruits boss selection must include active, replicated, and despawned raid bosses"
+}
+
 $raidFruitInventory = (
     $parityText -match 'rawInvoke\("GetFruits"\)' -and
     $parityText -match '\{"getInventoryFruits", "getInventory", "getInventoryWeapons"\}' -and
@@ -713,6 +726,7 @@ Write-Host "Game builder contract: PASS (9/9)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
+Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"
 Write-Host "Blox Fruits raid fruit inventory: PASS (owned React tiles, cheapest-first, serialized verified load)"
 Write-Host "Blox Fruits raid cycle: PASS (one fruit per raid, completion reset, movement watchdog)"
 Write-Host "Fruit M1 native remote shape: PASS (2/2)"
