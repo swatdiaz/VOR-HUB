@@ -397,6 +397,8 @@ return function(context)
                 state.BerryEnvironment.VORBerryResumeHop = resumeSetting
             end
         end)
+        -- One-cycle local test brake; removed after the live dungeon handoff.
+        state.BerryEnvironment.VORBerryResumeHop = false
         if state.BerryEnvironment.VORBerryResumeHop == true then
             state.AutoBerry = true
             state.AutoBerryServerHop = true
