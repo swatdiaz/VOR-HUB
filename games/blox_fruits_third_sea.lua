@@ -62,7 +62,33 @@ return function(context)
         TyrantLastPhase = nil,
         TyrantLastNotifiedEyes = -1,
         TyrantBossActive = false,
+        TyrantHeldRoot = nil,
+        TyrantHeldRootWasAnchored = false,
     }
+
+    local function setTyrantPotHold(enabled)
+        local root = api.RootPart()
+        if not enabled then
+            local held = runtime.TyrantHeldRoot
+            if held and held.Parent then
+                held.Anchored = runtime.TyrantHeldRootWasAnchored
+            end
+            runtime.TyrantHeldRoot = nil
+            runtime.TyrantHeldRootWasAnchored = false
+            return
+        end
+        if not root then
+            return
+        end
+        if runtime.TyrantHeldRoot ~= root then
+            setTyrantPotHold(false)
+            runtime.TyrantHeldRoot = root
+            runtime.TyrantHeldRootWasAnchored = root.Anchored
+        end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.Anchored = true
+    end
 
     local taskNames = {
         pirate = "Pirate Raid",
@@ -313,6 +339,9 @@ return function(context)
         if not enabled then
             if runtime.Active == key then
                 runtime.Active = nil
+                if key == "tyrant" then
+                    setTyrantPotHold(false)
+                end
                 api.Stop()
                 setStatus("Stopped", "Automation stopped")
             end
@@ -1062,10 +1091,12 @@ return function(context)
         local distance = (root.Position - potPosition).Magnitude
         local destination = CFrame.lookAt(potPosition + Vector3.new(0, 7, 12), potPosition)
         if distance > 24 then
+            setTyrantPotHold(false)
             api.MoveTo(destination)
             return
         end
         api.MoveTo(destination)
+        setTyrantPotHold(true)
         if os.clock() - runtime.TyrantLastSkill < 0.22 then
             return
         end
@@ -1132,6 +1163,7 @@ return function(context)
         end
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
+            setTyrantPotHold(false)
             api.SetCombat(true)
             runtime.TyrantBossActive = true
             runtime.TyrantPotRound = 0
@@ -1151,6 +1183,7 @@ return function(context)
         trackTikiDeaths()
         local eyes, eyeParts = tyrantEyeProgress()
         if eyes < 4 then
+            setTyrantPotHold(false)
             api.SetCombat(true)
             local confirmedKills = math.max(runtime.TyrantSessionKills, eyes * 75)
             local remaining = math.max(300 - confirmedKills, 0)
@@ -1189,6 +1222,7 @@ return function(context)
             useTyrantPotSkill(pot)
             return
         end
+        setTyrantPotHold(false)
         if runtime.TyrantLastPotSeen > 0 and os.clock() - runtime.TyrantLastPotSeen >= 2
             and os.clock() - runtime.TyrantLastEmptyRoundAt >= 2 then
             runtime.TyrantPotRound = math.min(runtime.TyrantPotRound + 1, 3)
