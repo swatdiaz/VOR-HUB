@@ -109,8 +109,17 @@ return function(context)
             CurrentSeaMaximumLevel = 0,
             AutoChest = false,
             AutoBerry = false,
+            AutoBerryServerHop = false,
             LastBerryClaim = 0,
             BerriesClaimed = 0,
+            BerryScanTarget = nil,
+            BerryScanArrivedAt = 0,
+            BerrySweepCompletedAt = 0,
+            BerryRescanAt = 0,
+            BerryHopBusy = false,
+            BerryHopStatus = "Idle",
+            BerryScannedBushes = setmetatable({}, {__mode = "k"}),
+            BerryVisitedServers = {[game.JobId] = true},
             AutoBoss = false,
             SelectedBoss = "None",
             AutoRaid = false,
@@ -286,6 +295,13 @@ return function(context)
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
             MagnetAnchorName = nil,
+            MagnetPrimeName = nil,
+            MagnetPrimeOrigin = nil,
+            MagnetPrimeTarget = nil,
+            MagnetPrimeStartedAt = 0,
+            MagnetPrimeStartHealth = nil,
+            MagnetPrimingComplete = false,
+            MagnetPrimedTargets = setmetatable({}, {__mode = "k"}),
             MagnetTweens = setmetatable({}, {__mode = "k"}),
             ThirdSeaFarmActive = false,
             ThirdSeaUsesMobAura = false,
@@ -748,7 +764,8 @@ return function(context)
         local function movementStillNeedsNoclip()
             return state.Noclip or state.AutoFarmLevel or state.AutoBoss
                 or (state.AutoRaid and state.RaidMovementReady)
-                or state.AutoChest or state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
+                or state.AutoChest or state.AutoBerry or state.MobAuraTp
+                or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
         end
 
         local FarmVertical = {}
@@ -2581,6 +2598,96 @@ return function(context)
                 return false
             end
 
+            -- A locally stacked NPC can look perfect while the server still
+            -- remembers its old position and rejects damage. Prime every
+            -- living copy of the current NPC type with one real close-range
+            -- hit before Magnet groups them. This also gives the client a fair
+            -- chance to obtain network ownership instead of counting fake hits.
+            if state.AutoMagnet then
+                local primeName = normalizeEnemyName(target.Name)
+                if state.MagnetPrimeName ~= primeName then
+                    state.MagnetPrimeName = primeName
+                    state.MagnetPrimeOrigin = targetRoot.Position
+                    state.MagnetPrimeTarget = nil
+                    state.MagnetPrimeStartedAt = 0
+                    state.MagnetPrimeStartHealth = nil
+                    state.MagnetPrimingComplete = false
+                    table.clear(state.MagnetPrimedTargets)
+                end
+                local primeTarget = state.MagnetPrimeTarget
+                local primeBody = primeTarget and primeTarget:FindFirstChildOfClass("Humanoid")
+                local primeRoot = modelRoot(primeTarget)
+                if primeTarget and (not primeBody or primeBody.Health <= 0 or not primeRoot) then
+                    state.MagnetPrimedTargets[primeTarget] = true
+                    primeTarget = nil
+                elseif primeTarget then
+                    local damaged = type(state.MagnetPrimeStartHealth) == "number"
+                        and primeBody.Health < state.MagnetPrimeStartHealth
+                    if damaged then
+                        state.MagnetPrimedTargets[primeTarget] = true
+                        primeTarget = nil
+                    elseif os.clock() - state.MagnetPrimeStartedAt >= 3 then
+                        -- Do not deadlock the farm if one NPC is temporarily
+                        -- invulnerable; revisit it during the next rotation.
+                        state.MagnetPrimedTargets[primeTarget] = "retry"
+                        primeTarget = nil
+                    end
+                end
+                if not primeTarget then
+                    local nearestPrime = nil
+                    local nearestPrimeDistance = math.huge
+                    local retryPrime = nil
+                    local retryDistance = math.huge
+                    for _, candidate in ipairs(loadedEnemies()) do
+                        local candidateRoot = modelRoot(candidate)
+                        if candidateRoot and modelAlive(candidate)
+                            and enemyMatches(candidate, primeName)
+                            and state.ThirdSeaEnemyAllowed(candidate)
+                            and (not state.MagnetPrimeOrigin
+                                or (candidateRoot.Position - state.MagnetPrimeOrigin).Magnitude <= state.MagnetRange) then
+                            local distance = (candidateRoot.Position - root.Position).Magnitude
+                            local primeState = state.MagnetPrimedTargets[candidate]
+                            if primeState == nil and distance < nearestPrimeDistance then
+                                nearestPrime = candidate
+                                nearestPrimeDistance = distance
+                            elseif primeState == "retry" and distance < retryDistance then
+                                retryPrime = candidate
+                                retryDistance = distance
+                            end
+                        end
+                    end
+                    primeTarget = nearestPrime or retryPrime
+                    if primeTarget then
+                        state.MagnetPrimedTargets[primeTarget] = nil
+                        local body = primeTarget:FindFirstChildOfClass("Humanoid")
+                        state.MagnetPrimeTarget = primeTarget
+                        state.MagnetPrimeStartedAt = os.clock()
+                        state.MagnetPrimeStartHealth = body and body.Health or nil
+                        state.MagnetPrimingComplete = false
+                    else
+                        state.MagnetPrimeTarget = nil
+                        state.MagnetPrimeStartHealth = nil
+                        state.MagnetPrimingComplete = true
+                    end
+                end
+                if primeTarget then
+                    target = primeTarget
+                    targetRoot = modelRoot(target)
+                    state.MobAuraTarget = target
+                    if not targetRoot then
+                        return false
+                    end
+                end
+            else
+                state.MagnetPrimeName = nil
+                state.MagnetPrimeOrigin = nil
+                state.MagnetPrimeTarget = nil
+                state.MagnetPrimeStartedAt = 0
+                state.MagnetPrimeStartHealth = nil
+                state.MagnetPrimingComplete = false
+                table.clear(state.MagnetPrimedTargets)
+            end
+
             local liveAnchor = targetRoot.Position
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
@@ -2713,6 +2820,11 @@ return function(context)
                 gui:SetAttribute("BloxAuraKillLastHitAt", state.AuraLastHitAt)
             end
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
+            gui:SetAttribute("BloxMagnetPrimingComplete", state.MagnetPrimingComplete)
+            gui:SetAttribute(
+                "BloxMagnetPrimeTarget",
+                state.MagnetPrimeTarget and normalizeEnemyName(state.MagnetPrimeTarget.Name) or ""
+            )
             gui:SetAttribute("BloxSelectedMobFarm", state.SelectedMobFarm)
             gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
             gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
@@ -3772,6 +3884,8 @@ return function(context)
             -- Normal-sea Magnet only groups copies of the NPC type currently
             -- being attacked. Raid multi-grab remains intentionally unfiltered.
             local targetName = raidGatherEnabled and nil or selectedGatherEnemyName()
+            local primeCapable = state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
+            local primeReady = not state.AutoMagnet or not primeCapable or state.MagnetPrimingComplete
             local candidates = {}
             local candidateSet = {}
             for _, enemy in ipairs(loadedEnemies()) do
@@ -3782,6 +3896,10 @@ return function(context)
                         and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
                 )
                 local matchesTarget = not targetName or enemyMatches(enemy, targetName)
+                if state.AutoMagnet and primeCapable then
+                    matchesTarget = matchesTarget and primeReady
+                        and state.MagnetPrimedTargets[enemy] == true
+                end
                 if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
                     matchesTarget = matchesTarget and state.ThirdSeaEnemyAllowed(enemy)
                 end
@@ -3797,7 +3915,8 @@ return function(context)
                 if not candidateSet[enemy] then
                     if not state.AutoMagnet
                         or (targetName and not enemyMatches(enemy, targetName))
-                        or (state.ThirdSeaFarmActive and not state.ThirdSeaEnemyAllowed(enemy)) then
+                        or (state.ThirdSeaFarmActive and not state.ThirdSeaEnemyAllowed(enemy))
+                        or (state.AutoMagnet and primeCapable and not primeReady) then
                         state.RestoreGatherEnemy(enemy, true)
                     else
                         state.HoldGatherEnemy(enemy)
@@ -4816,6 +4935,81 @@ return function(context)
             setStatus("Collecting nearest chest", true)
         end
 
+        state.ResetBerrySweep = function()
+            state.BerryScanTarget = nil
+            state.BerryScanArrivedAt = 0
+            state.BerrySweepCompletedAt = 0
+            state.BerryRescanAt = 0
+            table.clear(state.BerryScannedBushes)
+        end
+
+        state.BerryBushCFrame = function(bush)
+            if not bush or not bush:IsDescendantOf(workspace) then
+                return nil
+            end
+            if bush:IsA("Model") then
+                return bush:GetPivot()
+            end
+            if bush:IsA("BasePart") then
+                return bush.CFrame
+            end
+            local part = bush:FindFirstChildWhichIsA("BasePart", true)
+            return part and part.CFrame or nil
+        end
+
+        state.HopServer = function(reason, berryOnly)
+            if state.BerryHopBusy then
+                return false
+            end
+            state.BerryHopBusy = true
+            state.BerryHopStatus = tostring(reason or "Finding server")
+            task.spawn(function()
+                local ok, message = pcall(function()
+                    local cursor = nil
+                    local candidates = {}
+                    for _ = 1, 5 do
+                        local url = "https://games.roblox.com/v1/games/"
+                            .. tostring(game.PlaceId)
+                            .. "/servers/Public?sortOrder=Asc&limit=100"
+                        if cursor and cursor ~= "" then
+                            url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+                        end
+                        local data = HttpService:JSONDecode(game:HttpGet(url))
+                        for _, server in ipairs(data.data or {}) do
+                            if server.id ~= game.JobId and server.playing < server.maxPlayers
+                                and not state.BerryVisitedServers[server.id] then
+                                table.insert(candidates, server)
+                            end
+                        end
+                        cursor = data.nextPageCursor
+                        if #candidates > 0 or not cursor or cursor == "" then
+                            break
+                        end
+                    end
+                    if berryOnly and not state.AutoBerryServerHop then
+                        error("Berry Server Hop was switched off")
+                    end
+                    if #candidates == 0 then
+                        error("No different open public server was found")
+                    end
+                    local selected = candidates[math.random(1, #candidates)]
+                    state.BerryVisitedServers[selected.id] = true
+                    state.BerryHopStatus = string.format(
+                        "Joining %d/%d player server",
+                        selected.playing,
+                        selected.maxPlayers
+                    )
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, selected.id, LocalPlayer)
+                end)
+                if not ok then
+                    state.BerryHopBusy = false
+                    state.BerryHopStatus = "Error: " .. tostring(message)
+                    Window:Notify("Server Hop", tostring(message), 4)
+                end
+            end)
+            return true
+        end
+
         local function berryTarget()
             local root = rootPart()
             if not root then
@@ -4862,14 +5056,15 @@ return function(context)
                 return
             end
             local target = berryTarget()
-            if not target then
-                berryLabel.Text = "Berries: Waiting for a streamed berry bush"
-                setStatus("Waiting for a berry to spawn", nil)
-                return
+            if target then
+                state.BerrySweepCompletedAt = 0
+                state.BerryRescanAt = 0
+                state.BerryScanTarget = nil
+                state.BerryScanArrivedAt = 0
+                moveTo(target.CFrame + Vector3.new(0, 3, 0))
+                berryLabel.Text = string.format("Berry: %s | %.0f studs", target.Name, target.Distance)
             end
-            moveTo(target.CFrame + Vector3.new(0, 3, 0))
-            berryLabel.Text = string.format("Berry: %s | %.0f studs", target.Name, target.Distance)
-            if target.Distance <= 14 and ClaimBerry and ClaimBerry:IsA("RemoteFunction") then
+            if target and target.Distance <= 14 and ClaimBerry and ClaimBerry:IsA("RemoteFunction") then
                 state.LastBerryClaim = os.clock()
                 local ok, claimed = pcall(function()
                     return ClaimBerry:InvokeServer(target.Bush.Name, target.Key)
@@ -4881,7 +5076,85 @@ return function(context)
                 elseif not ok then
                     setError("Berry claim failed: " .. tostring(claimed))
                 end
+                return
+            elseif target then
+                setStatus("Traveling to " .. target.Name, nil)
+                return
             end
+
+            local root = rootPart()
+            if not root then
+                return
+            end
+            local scanTarget = state.BerryScanTarget
+            local scanCFrame = state.BerryBushCFrame(scanTarget)
+            if not scanCFrame or state.BerryScannedBushes[scanTarget] then
+                scanTarget = nil
+                scanCFrame = nil
+                local nearestDistance = math.huge
+                for _, bush in ipairs(CollectionService:GetTagged("BerryBush")) do
+                    local bushCFrame = state.BerryBushCFrame(bush)
+                    if bushCFrame and not state.BerryScannedBushes[bush] then
+                        local distance = (bushCFrame.Position - root.Position).Magnitude
+                        if distance < nearestDistance then
+                            scanTarget = bush
+                            scanCFrame = bushCFrame
+                            nearestDistance = distance
+                        end
+                    end
+                end
+                state.BerryScanTarget = scanTarget
+                state.BerryScanArrivedAt = 0
+            end
+            if scanTarget and scanCFrame then
+                local distance = (scanCFrame.Position - root.Position).Magnitude
+                berryLabel.Text = string.format("Berries: Scanning bush | %.0f studs", distance)
+                setStatus("Scanning berry bushes", nil)
+                if distance > 110 then
+                    moveTo(scanCFrame + Vector3.new(0, 5, 0))
+                elseif state.BerryScanArrivedAt == 0 then
+                    cancelMove(false)
+                    state.BerryScanArrivedAt = os.clock()
+                elseif os.clock() - state.BerryScanArrivedAt >= 1.1 then
+                    state.BerryScannedBushes[scanTarget] = true
+                    state.BerryScanTarget = nil
+                    state.BerryScanArrivedAt = 0
+                end
+                return
+            end
+
+            cancelMove(false)
+            if state.BerrySweepCompletedAt == 0 then
+                state.BerrySweepCompletedAt = os.clock()
+                state.BerryRescanAt = os.clock() + 30
+            end
+            if state.AutoBerryServerHop then
+                berryLabel.Text = "Berries: Sweep complete | hopping server..."
+                setStatus("Berry sweep complete; finding another server", true)
+                if os.clock() - state.BerrySweepCompletedAt >= 1.5 then
+                    state.HopServer("Berry sweep complete", true)
+                end
+            elseif os.clock() >= state.BerryRescanAt then
+                state.ResetBerrySweep()
+                berryLabel.Text = "Berries: Rescanning all bushes"
+            else
+                berryLabel.Text = string.format(
+                    "Berries: No spawn found | rescan in %ds",
+                    math.max(0, math.ceil(state.BerryRescanAt - os.clock()))
+                )
+                setStatus("Waiting for berries to respawn", nil)
+            end
+        end
+
+        state.DisableBerryFarm = function()
+            for _, flag in ipairs({"blox_berry_server_hop", "blox_auto_berry"}) do
+                local control = Window.PersistentControls[flag]
+                if control and control:Get() then
+                    control:Set(false)
+                end
+            end
+            state.AutoBerry = false
+            state.AutoBerryServerHop = false
         end
 
         local function enabledStats()
@@ -5111,6 +5384,8 @@ return function(context)
                 "blox_auto_boss",
                 "blox_auto_raid",
                 "blox_auto_chest",
+                "blox_auto_berry",
+                "blox_berry_server_hop",
                 "blox_mob_aura_tp",
                 "blox_selected_mob_farm",
                 "blox_enemy_gather",
@@ -5124,6 +5399,8 @@ return function(context)
             state.AutoBoss = false
             state.AutoRaid = false
             state.AutoChest = false
+            state.AutoBerry = false
+            state.AutoBerryServerHop = false
             state.MobAuraTp = false
             state.SelectedMobFarm = false
             state.GatherEnemies = false
@@ -5610,6 +5887,7 @@ return function(context)
                 state.ActiveFarmTarget = nil
                 state.PositionTarget = nil
                 if enabled then
+                    state.DisableBerryFarm()
                     state.AutoBoss = false
                     state.AutoRaid = false
                     state.MobAuraTp = false
@@ -5647,6 +5925,7 @@ return function(context)
             Callback = function(enabled)
                 state.AutoChest = enabled
                 if enabled then
+                    state.DisableBerryFarm()
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
                     state.AutoRaid = false
@@ -5667,6 +5946,63 @@ return function(context)
                 end
             end,
         })
+
+        state.BerryToggle = WorldFarmSection:AddToggle({
+            Name = "Auto Collect Berries",
+            Description = "Tweens through every tagged berry bush in First, Second, or Third Sea and claims each spawned berry",
+            Flag = "blox_auto_berry",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoBerry = enabled == true
+                state.ResetBerrySweep()
+                if enabled then
+                    state.AutoFarmLevel = false
+                    state.AutoBoss = false
+                    state.AutoRaid = false
+                    state.AutoChest = false
+                    state.MobAuraTp = false
+                    state.SelectedMobFarm = false
+                    for flag, control in pairs(Window.PersistentControls) do
+                        local movementFlag = flag == "blox_auto_level"
+                            or flag == "blox_auto_boss"
+                            or flag == "blox_auto_raid"
+                            or flag == "blox_auto_chest"
+                            or flag == "blox_mob_aura_tp"
+                            or flag == "blox_selected_mob_farm"
+                            or string.sub(tostring(flag), 1, 16) == "blox_third_auto_"
+                        if movementFlag and control and control:Get() then
+                            control:Set(false)
+                        end
+                    end
+                    cancelMove(false)
+                    berryLabel.Text = "Berries: Starting full bush sweep"
+                else
+                    local hopControl = Window.PersistentControls["blox_berry_server_hop"]
+                    if hopControl and hopControl:Get() then
+                        hopControl:Set(false)
+                    end
+                    cancelMove(false)
+                    berryLabel.Text = "Berries: Off"
+                end
+                gui:SetAttribute("BloxAutoBerry", state.AutoBerry)
+            end,
+        })
+        WorldFarmSection:AddToggle({
+            Name = "Berry Server Hop",
+            Description = "Collects every berry found, then joins a different public server and repeats the full sweep",
+            Flag = "blox_berry_server_hop",
+            Default = false,
+            Callback = function(enabled)
+                state.AutoBerryServerHop = enabled == true
+                state.BerryHopStatus = enabled and "Waiting for full bush sweep" or "Off"
+                state.ResetBerrySweep()
+                if enabled and state.BerryToggle and not state.BerryToggle:Get() then
+                    state.BerryToggle:Set(true)
+                end
+                gui:SetAttribute("BloxBerryServerHop", state.AutoBerryServerHop)
+            end,
+        })
+        WorldFarmSection:AddLabel("Berry hop scans every loaded BerryBush before leaving; normal Auto Collect waits and rescans instead.")
 
         FarmSettingsSection:AddSlider({
             Name = "Tween Speed",
@@ -5727,6 +6063,13 @@ return function(context)
                 state.AutoMagnet = enabled
                 if not enabled then
                     state.Gathered = 0
+                    state.MagnetPrimeName = nil
+                    state.MagnetPrimeOrigin = nil
+                    state.MagnetPrimeTarget = nil
+                    state.MagnetPrimeStartedAt = 0
+                    state.MagnetPrimeStartHealth = nil
+                    state.MagnetPrimingComplete = false
+                    table.clear(state.MagnetPrimedTargets)
                 end
                 gui:SetAttribute("BloxAutoMagnet", enabled)
             end,
@@ -5745,7 +6088,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Auto Magnet only groups the same NPC type currently targeted; switching targets releases the old pile.")
+        ExploitSection:AddLabel("Magnet first visits and damages each matching NPC once, then groups the primed same-name targets.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
@@ -6059,6 +6402,7 @@ return function(context)
                 state.MobAuraAnchorTarget = nil
                 state.MobAuraStableAnchor = nil
                 if enabled then
+                    state.DisableBerryFarm()
                     resetMobAuraOrbit()
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
@@ -6143,6 +6487,7 @@ return function(context)
                 state.MobAuraStableAnchor = nil
                 state.SelectedMobWaitingAtSpawn = false
                 if enabled then
+                    state.DisableBerryFarm()
                     resetMobAuraOrbit()
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
@@ -6404,6 +6749,7 @@ return function(context)
                 state.PositionBasis = nil
                 state.PositionAnchorY = nil
                 if enabled then
+                    state.DisableBerryFarm()
                     state.AutoFarmLevel = false
                     state.AutoRaid = false
                     state.MobAuraTp = false
@@ -6634,6 +6980,7 @@ return function(context)
                 state.ActiveFarmTarget = nil
                 state.PositionTarget = nil
                 if enabled then
+                    state.DisableBerryFarm()
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
                     state.MobAuraTp = false
@@ -6985,22 +7332,7 @@ return function(context)
             Name = "Server Hop",
             Description = "Finds a different non-full public server",
             Callback = function()
-                task.spawn(function()
-                    local ok, message = pcall(function()
-                        local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100"
-                        local data = HttpService:JSONDecode(game:HttpGet(url))
-                        for _, server in ipairs(data.data or {}) do
-                            if server.id ~= game.JobId and server.playing < server.maxPlayers then
-                                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
-                                return
-                            end
-                        end
-                        error("No open server was found")
-                    end)
-                    if not ok then
-                        Window:Notify("Server Hop", tostring(message), 4)
-                    end
-                end)
+                state.HopServer("Manual server hop", false)
             end,
         })
 
@@ -7175,7 +7507,7 @@ return function(context)
             end
             gatherStep()
             if state.Noclip or state.Traveling or state.MobAuraTp or state.SelectedMobFarm
-                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest
+                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest or state.AutoBerry
                 or state.ThirdSeaFarmActive then
                 applyNoclip()
             end
@@ -7212,6 +7544,10 @@ return function(context)
                     gui:SetAttribute("BloxAutoLevel", state.AutoFarmLevel)
                     gui:SetAttribute("BloxAutoBoss", state.AutoBoss)
                     gui:SetAttribute("BloxAutoRaid", state.AutoRaid)
+                    gui:SetAttribute("BloxAutoBerry", state.AutoBerry)
+                    gui:SetAttribute("BloxBerryServerHop", state.AutoBerryServerHop)
+                    gui:SetAttribute("BloxBerriesClaimed", state.BerriesClaimed)
+                    gui:SetAttribute("BloxBerryHopStatus", state.BerryHopStatus)
                     gui:SetAttribute("BloxAutoBuso", state.AutoBuso)
                     gui:SetAttribute("BloxWalkOnWater", state.WalkOnWater)
                     gui:SetAttribute("BloxPlayerESP", state.PlayerESP)
@@ -7340,7 +7676,9 @@ return function(context)
                             mobAuraLabel.TextColor3 = COLORS.muted
                         end
                     end
-                    if state.AutoRaid then
+                    if state.AutoBerry then
+                        stepBerry()
+                    elseif state.AutoRaid then
                         stepRaid()
                     elseif state.AutoBoss then
                         stepBossFarm()
@@ -7446,8 +7784,9 @@ return function(context)
                     end
 
                     local magnetText = string.format(
-                        "Auto Magnet: %s | Stacked: %d | Range: %d",
+                        "Auto Magnet: %s | %s: %d | Range: %d",
                         state.AutoMagnet and "On" or "Off",
+                        state.AutoMagnet and not state.MagnetPrimingComplete and "Priming" or "Stacked",
                         state.Gathered,
                         state.MagnetRange
                     )
@@ -7515,6 +7854,8 @@ return function(context)
                 state.DamageDebugConnection = nil
             end
             state.Alive = false
+            state.AutoBerry = false
+            state.AutoBerryServerHop = false
             state.AuraAttackGeneration += 1
             state.FruitDispatchGeneration += 1
             state.AuraAttackPending = false

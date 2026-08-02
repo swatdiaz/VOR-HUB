@@ -114,14 +114,15 @@ return function(context)
         label.Name = "TyrantProgressNotifier"
         label.AnchorPoint = Vector2.new(0.5, 0)
         label.Position = UDim2.new(0.5, 0, 0, UserInputService.TouchEnabled and 54 or 62)
-        label.Size = UDim2.fromOffset(UserInputService.TouchEnabled and 210 or 260, UserInputService.TouchEnabled and 32 or 36)
+        label.Size = UDim2.fromOffset(UserInputService.TouchEnabled and 300 or 460, UserInputService.TouchEnabled and 44 or 52)
         label.BackgroundColor3 = Color3.fromRGB(20, 14, 31)
         label.BackgroundTransparency = 0.08
         label.BorderSizePixel = 0
         label.TextColor3 = Color3.fromRGB(239, 224, 255)
         label.TextStrokeTransparency = 0.72
         label.Font = Enum.Font.GothamSemibold
-        label.TextScaled = true
+        label.TextSize = UserInputService.TouchEnabled and 16 or 19
+        label.TextScaled = false
         label.TextWrapped = false
         label.Active = true
         label.Visible = false
@@ -312,6 +313,12 @@ return function(context)
                 runtime.TyrantNotifier.Visible = false
             end
             return
+        end
+        for _, berryFlag in ipairs({"blox_berry_server_hop", "blox_auto_berry"}) do
+            local berryControl = Window.PersistentControls[berryFlag]
+            if berryControl and berryControl:Get() then
+                berryControl:Set(false)
+            end
         end
         for other in pairs(runtime.Controls) do
             local flag = runtime.ControlFlags[other]
@@ -1113,7 +1120,7 @@ return function(context)
             )
             setStatus("Charging owl eyes", detail)
             updateTyrantNotifier(
-                string.format("Tyrant | ~%d NPCs left | Eyes %d/4", remaining, eyes),
+                string.format("Tyrant | ~%d enemies left", remaining),
                 "npcs",
                 eyes
             )

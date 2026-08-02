@@ -242,6 +242,40 @@ if (-not $tyrantSummon) {
     throw "Auto Tyrant must charge four eyes, clear Tiki vases with Z/X/C/F, and never use transformation key V"
 }
 
+$tyrantNotifier = (
+    $thirdSeaText -match 'UDim2\.fromOffset\(UserInputService\.TouchEnabled and 300 or 460, UserInputService\.TouchEnabled and 44 or 52\)' -and
+    $thirdSeaText -match 'TextSize = UserInputService\.TouchEnabled and 16 or 19' -and
+    $thirdSeaText -match 'string\.format\("Tyrant \| ~%d enemies left", remaining\)'
+)
+if (-not $tyrantNotifier) {
+    throw "Tyrant notifier must be readable on PC/mobile and show only estimated enemies remaining"
+}
+
+$magnetPriming = (
+    $bloxText -match 'MagnetPrimedTargets = setmetatable' -and
+    $bloxText -match 'primeBody\.Health < state\.MagnetPrimeStartHealth' -and
+    $bloxText -match 'state\.MagnetPrimedTargets\[enemy\] == true' -and
+    $bloxText -match 'BloxMagnetPrimingComplete' -and
+    $bloxText -match 'BloxMagnetPrimeTarget'
+)
+if (-not $magnetPriming) {
+    throw "Auto Magnet must damage-prime each same-name NPC before grouping credited targets"
+}
+
+$berryAutomation = (
+    $bloxText -match 'Flag\s*=\s*"blox_auto_berry"' -and
+    $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
+    $bloxText -match 'CollectionService:GetTagged\("BerryBush"\)' -and
+    $bloxText -match 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
+    $bloxText -match 'ClaimBerry:InvokeServer\(target\.Bush\.Name, target\.Key\)' -and
+    $bloxText -match 'state\.HopServer\("Berry sweep complete", true\)' -and
+    $bloxText -match 'if state\.AutoBerry then\s+stepBerry\(\)' -and
+    $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
+)
+if (-not $berryAutomation) {
+    throw "Berry automation must sweep tagged bushes in every sea, claim live berries, and optionally hop after a full sweep"
+}
+
 $raidFruitInventory = (
     $parityText -match 'rawInvoke\("GetFruits"\)' -and
     $parityText -match '\{"getInventoryFruits", "getInventory", "getInventoryWeapons"\}' -and
@@ -819,7 +853,10 @@ Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
+Write-Host "Magnet damage priming: PASS (visit, damage, then group same-name NPCs)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
+Write-Host "Sea-wide berry automation: PASS (full bush sweep, claim, optional server hop)"
+Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
