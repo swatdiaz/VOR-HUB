@@ -53,6 +53,8 @@ return function(context)
         TyrantTracked = setmetatable({}, {__mode = "k"}),
         TyrantSkillIndex = 0,
         TyrantLastSkill = 0,
+        TyrantSkillTool = nil,
+        TyrantSkillToolReadyAt = 0,
         TyrantPotRound = 0,
         TyrantLastPotSeen = 0,
         TyrantLastEmptyRoundAt = 0,
@@ -1092,13 +1094,14 @@ return function(context)
         local tool = nil
         local selection = nil
         local keyCode = nil
+        local nextSkillIndex = nil
         for _ = 1, cycleLength do
-            runtime.TyrantSkillIndex = runtime.TyrantSkillIndex % cycleLength + 1
-            local toolIndex = math.floor((runtime.TyrantSkillIndex - 1) / #allowedSkills) + 1
-            local skillIndex = (runtime.TyrantSkillIndex - 1) % #allowedSkills + 1
+            nextSkillIndex = (nextSkillIndex or runtime.TyrantSkillIndex) % cycleLength + 1
+            local toolIndex = math.floor((nextSkillIndex - 1) / #allowedSkills) + 1
+            local skillIndex = (nextSkillIndex - 1) % #allowedSkills + 1
             selection = toolSelections[toolIndex]
             keyCode = allowedSkills[skillIndex]
-            tool = equipTyrantSkillTool(selection)
+            tool = type(api.ToolForSelection) == "function" and api.ToolForSelection(selection) or nil
             if tool then
                 break
             end
@@ -1107,10 +1110,30 @@ return function(context)
             gui:SetAttribute("BloxTyrantLastSkill", "No Fruit/Melee/Sword tool")
             return
         end
+        local char = helpers.Character()
+        if runtime.TyrantSkillTool ~= tool or tool.Parent ~= char then
+            runtime.TyrantSkillTool = tool
+            runtime.TyrantSkillToolReadyAt = os.clock() + 0.18
+            equipTyrantSkillTool(selection)
+            gui:SetAttribute("BloxTyrantLastSkill", selection .. " readying")
+            return
+        end
+        if os.clock() < runtime.TyrantSkillToolReadyAt then
+            return
+        end
+        runtime.TyrantSkillIndex = nextSkillIndex
         runtime.TyrantLastSkill = os.clock()
+        local camera = workspace.CurrentCamera
+        if camera then
+            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, potPosition)
+            local viewport = camera.ViewportSize
+            pcall(function()
+                VirtualInputManager:SendMouseMoveEvent(viewport.X * 0.5, viewport.Y * 0.5, game)
+            end)
+        end
         pcall(function()
             VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-            task.delay(0.07, function()
+            task.delay(0.14, function()
                 VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
             end)
         end)
