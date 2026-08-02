@@ -211,6 +211,12 @@ return function(context)
         return target ~= nil
     end
 
+    local function farmMobAura(names)
+        local target, stage = api.FarmMobAura(names)
+        setStatus(stage, target and (stage .. ": " .. target) or stage)
+        return target ~= nil
+    end
+
     local function rootPosition(object)
         if object:IsA("BasePart") then
             return object.Position
@@ -957,7 +963,7 @@ return function(context)
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
             runtime.TyrantPotRound = 0
-            farm({"Tyrant of the Skies", "Tyrant"}, nil, nil, 28)
+            farmMobAura({"Tyrant of the Skies", "Tyrant"})
             return
         end
         trackTikiDeaths()
@@ -970,9 +976,10 @@ return function(context)
                 runtime.TyrantSessionKills
             )
             setStatus("Charging owl eyes", detail)
-            api.FarmFirst(TYRANT_TIKI_ENEMIES, tikiCenter(), 3200, 24)
+            api.FarmMobAura(TYRANT_TIKI_ENEMIES)
             return
         end
+        api.FarmMobAura({"__VOR_TYRANT_POTS__"})
         local pot, center = nearestTyrantPot()
         if pot then
             runtime.TyrantLastPotSeen = os.clock()

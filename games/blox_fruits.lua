@@ -288,6 +288,7 @@ return function(context)
             MagnetAnchorName = nil,
             MagnetTweens = setmetatable({}, {__mode = "k"}),
             ThirdSeaFarmActive = false,
+            ThirdSeaUsesMobAura = false,
             ThirdSeaFarmNames = {},
             TweenSpeed = 300,
             LastPositionJitterAt = 0,
@@ -626,6 +627,20 @@ return function(context)
             return string.lower(normalizeEnemyName(model and model.Name)) == string.lower(normalizeEnemyName(targetName))
         end
 
+        state.ThirdSeaEnemyAllowed = function(model)
+            if not state.ThirdSeaFarmActive or next(state.ThirdSeaFarmNames) == nil then
+                return true
+            end
+            local normalized = string.lower(normalizeEnemyName(model and model.Name))
+            for expected in pairs(state.ThirdSeaFarmNames) do
+                if normalized == expected or string.find(normalized, expected, 1, true)
+                    or string.find(expected, normalized, 1, true) then
+                    return true
+                end
+            end
+            return false
+        end
+
         local function nearestEnemy(targetName, anyEnemy)
             local root = rootPart()
             local enemies = workspace:FindFirstChild("Enemies")
@@ -636,7 +651,8 @@ return function(context)
             local bestDistance = math.huge
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
-                if enemyRoot and modelAlive(enemy) and (anyEnemy or enemyMatches(enemy, targetName)) then
+                if enemyRoot and modelAlive(enemy) and state.ThirdSeaEnemyAllowed(enemy)
+                    and (anyEnemy or enemyMatches(enemy, targetName)) then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance < bestDistance then
                         best = enemy
@@ -732,7 +748,7 @@ return function(context)
         local function movementStillNeedsNoclip()
             return state.Noclip or state.AutoFarmLevel or state.AutoBoss
                 or (state.AutoRaid and state.RaidMovementReady)
-                or state.AutoChest or state.MobAuraTp or state.SelectedMobFarm
+                or state.AutoChest or state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
         end
 
         local FarmVertical = {}
@@ -1409,22 +1425,11 @@ return function(context)
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
             end
-            local thirdSeaFilter = state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
                 local hitPart = enemyHitPart(enemy)
-                local matchesTarget = not selectedFilter or enemyMatches(enemy, selectedFilter)
-                if thirdSeaFilter then
-                    matchesTarget = false
-                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
-                    for expected in pairs(state.ThirdSeaFarmNames) do
-                        if normalized == expected or string.find(normalized, expected, 1, true)
-                            or string.find(expected, normalized, 1, true) then
-                            matchesTarget = true
-                            break
-                        end
-                    end
-                end
+                local matchesTarget = state.ThirdSeaEnemyAllowed(enemy)
+                    and (not selectedFilter or enemyMatches(enemy, selectedFilter))
                 if enemyRoot and hitPart and modelAlive(enemy) and matchesTarget then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance <= state.AuraRange then
@@ -2499,7 +2504,8 @@ return function(context)
 
         local function stepMobAuraTp()
             local selectedMode = state.SelectedMobFarm
-            if (not state.MobAuraTp and not selectedMode) or state.AuraFruitBusy then
+            if (not state.MobAuraTp and not selectedMode and not state.ThirdSeaUsesMobAura)
+                or state.AuraFruitBusy then
                 return false
             end
             local root = rootPart()
@@ -2528,6 +2534,7 @@ return function(context)
             local target = state.MobAuraTarget
             local targetRoot = modelRoot(target)
             if not targetRoot or not modelAlive(target)
+                or not state.ThirdSeaEnemyAllowed(target)
                 or (selectedMode and not enemyMatches(target, selectedName))
                 or (targetRoot.Position - root.Position).Magnitude > searchRange then
                 target = nil
@@ -7093,7 +7100,7 @@ return function(context)
             if not state.Alive then
                 return
             end
-            if state.MobAuraTp or state.SelectedMobFarm then
+            if state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura then
                 applyNoclip()
                 stepMobAuraTp()
             end
@@ -7106,10 +7113,10 @@ return function(context)
             end
             local raidFarmEnabled = state.AutoRaid and state.RaidMovementReady and RaidRuntime.Active()
             local combatFarmEnabled = state.AutoFarmLevel or state.AutoBoss or raidFarmEnabled
-                or state.ThirdSeaFarmActive
+                or (state.ThirdSeaFarmActive and not state.ThirdSeaUsesMobAura)
             FarmVertical.SetAntiRagdoll(combatFarmEnabled)
             FarmVertical.SetCalmPose(state.AuraKill and (
-                combatFarmEnabled or state.MobAuraTp or state.SelectedMobFarm
+                combatFarmEnabled or state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
             ))
             local activeCombatFarm = combatFarmEnabled and modelAlive(state.ActiveFarmTarget)
             -- Noclip remains enabled while waiting at a quest/boss/raid spawn.
@@ -8217,6 +8224,11 @@ return function(context)
                         state.ThirdSeaFarmActive = desired
                         if not desired then
                             table.clear(state.ThirdSeaFarmNames)
+                            state.ThirdSeaUsesMobAura = false
+                            state.MobAuraTarget = nil
+                            state.MobAuraTargetName = nil
+                            state.MobAuraAnchorTarget = nil
+                            state.MobAuraStableAnchor = nil
                         end
                         for flag, value in pairs({
                             blox_auto_attack = desired,
@@ -8239,6 +8251,29 @@ return function(context)
                         gui:SetAttribute("BloxThirdSeaCombat", desired)
                         gui:SetAttribute("BloxThirdSeaFarmActive", desired)
                     end,
+                    FarmMobAura = function(names)
+                        local wanted = {}
+                        for _, name in ipairs(type(names) == "table" and names or {}) do
+                            wanted[string.lower(normalizeEnemyName(name))] = true
+                        end
+                        state.ThirdSeaFarmActive = true
+                        state.ThirdSeaUsesMobAura = true
+                        state.ThirdSeaFarmNames = wanted
+                        state.ActiveFarmTarget = nil
+                        state.ActiveFarmHeightOverride = nil
+                        if state.MobAuraTarget and not state.ThirdSeaEnemyAllowed(state.MobAuraTarget) then
+                            state.MobAuraTarget = nil
+                            state.MobAuraTargetName = nil
+                            state.MobAuraDistance = nil
+                            state.MobAuraAnchorTarget = nil
+                            state.MobAuraStableAnchor = nil
+                        end
+                        gui:SetAttribute("BloxThirdSeaFarmActive", true)
+                        gui:SetAttribute("BloxThirdSeaUsesMobAura", true)
+                        local target = state.MobAuraTarget
+                        return target and normalizeEnemyName(target.Name) or nil,
+                            target and "Farming" or "Searching"
+                    end,
                     FarmFirst = function(names, center, radius, heightOverride)
                         local root = rootPart()
                         if not root then
@@ -8249,7 +8284,12 @@ return function(context)
                             wanted[string.lower(normalizeEnemyName(name))] = true
                         end
                         state.ThirdSeaFarmActive = true
+                        state.ThirdSeaUsesMobAura = false
                         state.ThirdSeaFarmNames = wanted
+                        state.MobAuraTarget = nil
+                        state.MobAuraTargetName = nil
+                        state.MobAuraAnchorTarget = nil
+                        state.MobAuraStableAnchor = nil
                         gui:SetAttribute("BloxThirdSeaFarmActive", true)
                         local function allowed(enemy)
                             if not modelAlive(enemy) then
@@ -8324,12 +8364,19 @@ return function(context)
                     end,
                     Stop = function()
                         state.ThirdSeaFarmActive = false
+                        state.ThirdSeaUsesMobAura = false
                         table.clear(state.ThirdSeaFarmNames)
                         state.ActiveFarmTarget = nil
                         state.CurrentEnemyName = nil
                         state.ActiveFarmHeightOverride = nil
+                        state.MobAuraTarget = nil
+                        state.MobAuraTargetName = nil
+                        state.MobAuraDistance = nil
+                        state.MobAuraAnchorTarget = nil
+                        state.MobAuraStableAnchor = nil
                         cancelMove(false)
                         gui:SetAttribute("BloxThirdSeaFarmActive", false)
+                        gui:SetAttribute("BloxThirdSeaUsesMobAura", false)
                     end,
                     RootPart = rootPart,
                 },

@@ -223,7 +223,10 @@ $tyrantSummon = (
     $thirdSeaText -match 'local function recoverTyrantTeam\(\)' -and
     $bloxText -notmatch 'state\.ThirdSeaFarmActive and #targets > 1' -and
     $thirdSeaText -notmatch 'api\.SetGather|PersistentControls\["blox_weapon_type"\]' -and
-    $bloxText -match 'local thirdSeaFilter = state\.ThirdSeaFarmActive and next\(state\.ThirdSeaFarmNames\) ~= nil' -and
+    $bloxText -match 'FarmMobAura = function\(names\)' -and
+    $bloxText -match 'state\.ThirdSeaUsesMobAura' -and
+    $thirdSeaText -match 'api\.FarmMobAura\(TYRANT_TIKI_ENEMIES\)' -and
+    $thirdSeaText -match 'farmMobAura\(\{"Tyrant of the Skies", "Tyrant"\}\)' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
