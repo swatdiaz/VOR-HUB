@@ -308,20 +308,27 @@ return function(context)
     local function stepFinalDoor()
         local final = jungle:FindFirstChild("Final")
         local finalPart = final and final:FindFirstChild("Part")
-        if not finalPart or finalPart.Transparency ~= 0 then
+        if not finalPart then
             return false
         end
         local relic = toolNamed("Relic")
-        if not relic then
-            runtime.LastRemote.rich = 0
-            setStatus("Relic", "Waiting for Rich Man to give the Relic", context.COLORS.warning)
+        -- Final.Part is shared world geometry and can already be transparent
+        -- because another player opened the room. The player's Relic is the
+        -- authoritative personal-stage signal: keep placing until it is
+        -- consumed, even if the shared door already looks open.
+        if relic then
+            equip(relic)
+            setStatus("Relic", "Placing personal Relic in the Jungle door", context.COLORS.warning)
+            if moveNear(finalPart, Vector3.new(0, 3, 0), 9) then
+                rawInvoke("ProQuestProgress", "PlaceRelic")
+            end
             return true
         end
-        equip(relic)
-        setStatus("Relic", "Placing Relic in the Jungle door", context.COLORS.warning)
-        if moveNear(finalPart, Vector3.new(0, 3, 0), 9) then
-            rawInvoke("ProQuestProgress", "PlaceRelic")
+        if finalPart.Transparency ~= 0 then
+            return false
         end
+        runtime.LastRemote.rich = 0
+        setStatus("Relic", "Waiting for Rich Man to give the Relic", context.COLORS.warning)
         return true
     end
 
