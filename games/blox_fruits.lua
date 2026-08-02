@@ -1795,17 +1795,13 @@ return function(context)
                 end
             end
 
-            local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
-            if nativeSent then
-                state.AuraMultiTargetCount = 1
-                return true, nil, 1
-            end
-            if nativeError == "native-controller-busy" then
-                return false, nativeError
-            end
-
             local registerHit = resolveRegisterHitClosure()
             if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
+                if nativeSent then
+                    state.AuraMultiTargetCount = 1
+                    return true, nil, 1
+                end
                 return false, nativeError or "combat registration is unavailable in this server build"
             end
 
@@ -1889,17 +1885,13 @@ return function(context)
                 end
             end
 
-            local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
-            if nativeSent then
-                state.AuraMultiTargetCount = 1
-                return true, nil, 1
-            end
-            if nativeError == "native-controller-busy" then
-                return false, nativeError
-            end
-
             local registerHit = resolveRegisterHitClosure()
             if not RegisterAttackEvent or type(registerHit) ~= "function" then
+                local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
+                if nativeSent then
+                    state.AuraMultiTargetCount = 1
+                    return true, nil, 1
+                end
                 return false, nativeError or "Double Attack combat registration is unavailable"
             end
             if #DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit) == 0 then

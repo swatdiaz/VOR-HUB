@@ -438,6 +438,14 @@ if (-not $auraGenerationOwned) {
     throw "Aura Kill pending recovery must use generation-owned attack windows"
 }
 
+$registeredWeaponDamageFirst = (
+    $bloxText -match '(?s)local function sendRegisteredAuraHit\(.*?local registerHit = resolveRegisterHitClosure\(\).*?if not RegisterAttackEvent or type\(registerHit\) ~= "function" then\s+local nativeSent, nativeError = state\.SendNativeControllerAttack\(tool\)' -and
+    $bloxText -match '(?s)function DoubleAttackEngine\.SendSword\(.*?local registerHit = resolveRegisterHitClosure\(\).*?if not RegisterAttackEvent or type\(registerHit\) ~= "function" then\s+local nativeSent, nativeError = state\.SendNativeControllerAttack\(tool\)'
+)
+if (-not $registeredWeaponDamageFirst) {
+    throw "Sword and Melee attacks must prefer the health-verified registered-hit path before native fallback"
+}
+
 $fruitGenerationOwned = (
     $bloxText -match 'FruitDispatchGeneration\s*=\s*0' -and
     $bloxText -match 'state\.FruitDispatchGeneration \+= 1\s+local fruitGeneration = state\.FruitDispatchGeneration' -and
@@ -883,6 +891,7 @@ Write-Host "Ownership-independent Auto Magnet: PASS"
 Write-Host "Stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-state handoff)"
 Write-Host "Aura Kill lifecycle ownership: PASS (generation guard across yield, respawn, timeout, and override)"
+Write-Host "Sword and Melee damage routing: PASS (registered hit first, native fallback only)"
 Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module cleanup)"
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
