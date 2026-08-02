@@ -1196,7 +1196,10 @@ return function(context)
                 end
                 local previousOffset = state.LastMeterSampleOffset
                 local previousAt = state.LastMeterSampleAt
-                if typeof(previousOffset) == "Vector2" and type(previousAt) == "number" then
+                local offsetChanged = typeof(previousOffset) ~= "Vector2"
+                    or (offset - previousOffset).Magnitude > 0.000001
+                if offsetChanged and typeof(previousOffset) == "Vector2"
+                    and type(previousAt) == "number" then
                     local sampleDuration = sampleAt - previousAt
                     if sampleDuration > 0.0001 and sampleDuration < 0.25 then
                         local observedSpeed = (offset - previousOffset):Dot(state.ShotDirection) / sampleDuration
@@ -1210,9 +1213,11 @@ return function(context)
                         end
                     end
                 end
+                if offsetChanged then
+                    state.LastMeterSampleAt = sampleAt
+                    state.LastMeterSampleOffset = offset
+                end
             end
-            state.LastMeterSampleAt = sampleAt
-            state.LastMeterSampleOffset = offset
 
             local reachedTarget = false
             local targetOffset = state.PerfectOffsets[state.MeterName]

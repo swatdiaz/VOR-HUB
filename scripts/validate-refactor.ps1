@@ -562,6 +562,8 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.415\)' -and
     $practicalBasketballText -match 'targetTravel\s*=\s*\(targetOffset\s*-\s*state\.ShotStartOffset\):Dot\(state\.ShotDirection\)' -and
     $practicalBasketballText -match 'state\.ShotTravel\s*>=\s*targetTravel' -and
+    $practicalBasketballText -match '\(offset\s*-\s*previousOffset\)\.Magnitude\s*>\s*0\.000001' -and
+    $practicalBasketballText -match 'if offsetChanged then\s*state\.LastMeterSampleAt\s*=\s*sampleAt' -and
     $practicalBasketballText -match 'observedSpeed\s*>\s*0\s*and\s*observedSpeed\s*<\s*5' -and
     $practicalBasketballText -match 'state\.MeterSpeed\s*\*\s*0\.7\s*\+\s*observedSpeed\s*\*\s*0\.3' -and
     $practicalBasketballText -match 'predictedDelay\s*<=\s*0\.004' -and
