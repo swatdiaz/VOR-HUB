@@ -262,6 +262,9 @@ $mobAuraEnemyHold = (
     $bloxText -match 'SwordTargetLimit = 35' -and
     $bloxText -match 'FruitTargetLimit = 35' -and
     $bloxText -match 'local serverAnchor = gatheredOriginal' -and
+    $bloxText -match 'state\.RestoreGatherEnemy\(target, true\)' -and
+    $bloxText -match 'local isActiveMagnetTarget = not multiGrabEnabled' -and
+    $bloxText -match 'state\.PinMobAuraTarget\(target, serverAnchor\)' -and
     $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {

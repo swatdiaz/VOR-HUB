@@ -2613,6 +2613,14 @@ return function(context)
             local gatheredOriginal = state.AutoMagnet and state.GatherOriginalStates[target]
             local serverAnchor = gatheredOriginal and typeof(gatheredOriginal.CFrame) == "CFrame"
                 and gatheredOriginal.CFrame.Position or liveAnchor
+            if gatheredOriginal and state.RestoreGatherEnemy then
+                -- A secondary pile member can become the next active target.
+                -- Restore its replicated location before giving the hard pin
+                -- ownership so combat never attacks a client-only ghost CFrame.
+                state.RestoreGatherEnemy(target, true)
+                targetRoot = modelRoot(target) or targetRoot
+                liveAnchor = targetRoot.Position
+            end
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
             local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
@@ -2645,8 +2653,8 @@ return function(context)
             local anchor = ((state.GatherEnemies and not singleFallback) or fixedPosition)
                 and state.MobAuraStableAnchor or liveAnchor
             if state.AutoMagnet then
-                if state.RestoreMobAuraPin then
-                    state.RestoreMobAuraPin(false)
+                if state.PinMobAuraTarget then
+                    state.PinMobAuraTarget(target, serverAnchor)
                 end
             elseif state.PinMobAuraTarget then
                 state.PinMobAuraTarget(target, state.MobAuraStableAnchor or liveAnchor)
@@ -3993,6 +4001,20 @@ return function(context)
                 end
                 local enemyBody = candidate.Enemy:FindFirstChildOfClass("Humanoid")
                 if enemyBody then
+                    local isActiveMagnetTarget = not multiGrabEnabled and (
+                        candidate.Enemy == state.MobAuraTarget
+                            or candidate.Enemy == state.ActiveFarmTarget
+                    )
+                    if isActiveMagnetTarget then
+                        -- The active NPC is hard-pinned by Mob Aura at its real
+                        -- server anchor. Rewriting it inside Magnet invalidates
+                        -- otherwise credited hits after the current game update.
+                        if state.GatherOriginalStates[candidate.Enemy] then
+                            state.RestoreGatherEnemy(candidate.Enemy, true)
+                        end
+                        gathered += 1
+                        continue
+                    end
                     if state.GatherOriginalStates[candidate.Enemy] == nil then
                         state.GatherOriginalStates[candidate.Enemy] = {
                             CFrame = candidate.Root.CFrame,
