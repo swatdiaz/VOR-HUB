@@ -556,19 +556,19 @@ $practicalBasketballSafeRelease = (
 )
 $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'task\.delay\(state\.ReleaseDelay' -and
-    $practicalBasketballText -match 'Name\s*=\s*"Extra Release Lead"' -and
-    $practicalBasketballText -match 'AdaptiveReleaseLead\s*=\s*0\.0095' -and
-    $practicalBasketballText -match 'state\.MeterSpeed\s*=\s*state\.MeterSpeed\s*>\s*0' -and
-    $practicalBasketballText -match 'state\.ShotTravel\s*\+\s*prediction\s*>=\s*targetTravel' -and
+    $practicalBasketballText -notmatch 'Name\s*=\s*"Extra Release Lead"' -and
+    $practicalBasketballText -notmatch 'Name\s*=\s*"Vertical Perfect Offset"' -and
+    $practicalBasketballText -match 'PerfectTravels\s*=\s*\{' -and
+    $practicalBasketballText -match 'Vertical\s*=\s*1\.35' -and
+    $practicalBasketballText -match 'state\.ShotTravel\s*>=\s*targetTravel' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
-    $practicalBasketballText -match 'local leadCorrection\s*=\s*\(\{' -and
-    $practicalBasketballText -match 'LeadLowerBound\s*=\s*nil' -and
-    $practicalBasketballText -match 'LeadUpperBound\s*=\s*nil' -and
-    $practicalBasketballText -match 'nextEffectiveLead\s*=\s*\(state\.LeadLowerBound\s*\+\s*state\.LeadUpperBound\)\s*\*\s*0\.5' -and
+    $practicalBasketballText -match 'local travelCorrection\s*=\s*\(\{' -and
+    $practicalBasketballText -match 'TargetLowerTravels\s*=\s*\{' -and
+    $practicalBasketballText -match 'TargetUpperTravels\s*=\s*\{' -and
+    $practicalBasketballText -match 'nextTravel\s*=\s*\(lowerTravel\s*\+\s*upperTravel\)\s*\*\s*0\.5' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
-    $practicalBasketballText -match 'state\.AdaptiveReleaseLead\s*=\s*math\.clamp' -and
     $practicalBasketballText -notmatch 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )
@@ -591,10 +591,10 @@ $practicalBasketballSharedProfiles = (
     $profilesText -match 'migrateLegacyConfigs\(\)'
 )
 $practicalBasketballTimingMigration = (
-    $profilesText -match 'local PROFILE_VERSION\s*=\s*5' -and
+    $profilesText -match 'local PROFILE_VERSION\s*=\s*6' -and
     $profilesText -match 'local function normalizeProfileData\(metadata\)' -and
-    $profilesText -match 'practical_basketball_vertical_perfect_offset\s*=\s*"-1\.46824694"' -and
-    $profilesText -match 'practical_basketball_release_delay\s*=\s*0' -and
+    $profilesText -match 'practical_basketball_vertical_perfect_offset\s*=\s*nil' -and
+    $profilesText -match 'practical_basketball_release_delay\s*=\s*nil' -and
     $profilesText -match 'version\s*=\s*PROFILE_VERSION' -and
     $profilesText -match 'if normalizeProfileData\(data\) then'
 )
@@ -683,10 +683,10 @@ Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation i
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
-Write-Host "Practical Basketball Auto Green: PASS (fixed full-meter target with feedback-calibrated network lead)"
+Write-Host "Practical Basketball Auto Green: PASS (locked controls with feedback-bracketed direct release travel)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
 Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
-Write-Host "Practical Basketball timing profiles: PASS (legacy offset and delay migrate to full-bar calibration)"
+Write-Host "Practical Basketball timing profiles: PASS (legacy manual offset and delay controls are discarded)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
 Write-Host "Practical Basketball camera FOV: PASS (change listener, late render lock, and clean reset)"

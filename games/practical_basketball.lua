@@ -113,13 +113,14 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
-        -- The release remote reaches the server after the local meter sample.
-        -- Keep the visual target fixed at the full-white endpoint and learn the
-        -- network lead independently from server timing feedback.
-        AdaptiveReleaseLead = 0.0095,
-        LeadLowerBound = nil,
-        LeadUpperBound = nil,
-        ReleaseLead = 0,
+        -- Calibrate the actual local release point. Meter-velocity prediction
+        -- amplified tiny timing changes into huge offset jumps, especially when
+        -- a manual lead was changed between shots.
+        PerfectTravels = {
+            Vertical = 1.35,
+        },
+        TargetLowerTravels = {},
+        TargetUpperTravels = {},
         ReleasedThisShot = false,
         WasMeterActive = false,
         WasServerReleased = true,
@@ -138,8 +139,6 @@ return function(context)
         PendingReleaseOffset = nil,
         PendingReleaseMeter = nil,
         PendingReleaseDirection = nil,
-        PendingReleaseSpeed = 0,
-        PendingEffectiveReleaseLead = nil,
         LastFeedback = "Waiting",
         LastTimingCorrection = "Waiting",
         FullOffsets = {
@@ -147,7 +146,7 @@ return function(context)
             Vertical = Vector2.new(0, -1.46824694),
         },
         PerfectOffsets = {
-            Vertical = Vector2.new(0, -1.46824694),
+            Vertical = Vector2.new(0, -1.35),
         },
         MeterName = "None",
         LastRelease = "Waiting",
@@ -705,32 +704,7 @@ return function(context)
             meterReleaseLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
         end,
     })
-    AutoGreenSection:AddInput({
-        Name = "Vertical Perfect Offset",
-        Description = "Full-white Vertical meter endpoint; server feedback fine-tunes earlier only when necessary",
-        Flag = "practical_basketball_vertical_perfect_offset",
-        Placeholder = "-1.46824694",
-        Default = "-1.46824694",
-        Callback = function(value)
-            local parsed = tonumber(value)
-            if parsed then
-                state.PerfectOffsets.Vertical = Vector2.new(0, parsed)
-            end
-        end,
-    })
-    AutoGreenSection:AddSlider({
-        Name = "Extra Release Lead",
-        Description = "Optional manual fine-tune added to the automatically learned network lead",
-        Flag = "practical_basketball_release_delay",
-        Min = 0,
-        Max = 30,
-        Step = 1,
-        Default = 0,
-        Suffix = "ms",
-        Callback = function(value)
-            state.ReleaseLead = math.clamp((tonumber(value) or 0) / 1000, 0, 0.03)
-        end,
-    })
+    AutoGreenSection:AddLabel("Timing is fully automatic; manual offset and lead controls are locked out.")
     AutoGreenSection:AddButton({
         Name = "Green Next Shot",
         Description = "Arms Auto Green for one shot without leaving it enabled",
@@ -742,7 +716,7 @@ return function(context)
         end,
     })
     AutoGreenSection:AddLabel("Safe release: no hooks, no VirtualInputManager, and no forced E key-up.")
-    AutoGreenSection:AddLabel("A manual Perfect Release teaches VOR the exact offset for that meter style.")
+    AutoGreenSection:AddLabel("Every server grade narrows the exact local release offset for that meter style.")
 
     MovementSection:AddToggle({
         Name = "Auto Sprint",
@@ -1180,8 +1154,6 @@ return function(context)
         state.PendingReleaseOffset = nil
         state.PendingReleaseMeter = nil
         state.PendingReleaseDirection = nil
-        state.PendingReleaseSpeed = 0
-        state.PendingEffectiveReleaseLead = nil
         state.ReleasedThisShot = false
     end
 
@@ -1237,22 +1209,10 @@ return function(context)
             state.LastMeterSampleAt = sampleAt
             state.LastMeterSampleOffset = offset
 
-            local target = state.PerfectOffsets[state.MeterName]
-            if not target and state.ShotDirection then
-                target = state.ShotStartOffset + state.ShotDirection * 0.11655831
-            end
             local reachedTarget = false
-            if target and state.ShotDirection then
-                local targetTravel = (target - state.ShotStartOffset):Dot(state.ShotDirection)
-                local effectiveReleaseLead = math.clamp(
-                    state.AdaptiveReleaseLead + state.ReleaseLead,
-                    0,
-                    0.04
-                )
-                local prediction = math.max(0, state.MeterSpeed) * effectiveReleaseLead
-                reachedTarget = targetTravel >= 0 and state.ShotTravel + prediction >= targetTravel
-            elseif target then
-                reachedTarget = (offset - target).Magnitude <= 0.002
+            local targetTravel = state.PerfectTravels[state.MeterName]
+            if targetTravel and state.ShotDirection then
+                reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
             end
 
             if reachedTarget
@@ -1264,26 +1224,18 @@ return function(context)
                 local releaseMeter = state.MeterName
                 local releaseOffset = offset
                 local releaseDirection = state.ShotDirection
-                local releaseSpeed = state.MeterSpeed
-                local effectiveReleaseLead = math.clamp(
-                    state.AdaptiveReleaseLead + state.ReleaseLead,
-                    0,
-                    0.04
-                )
                 if releaseShoot() then
                     state.ReleasedThisShot = true
                     state.ForceNextGreen = false
                     state.PendingReleaseOffset = releaseOffset
                     state.PendingReleaseMeter = releaseMeter
                     state.PendingReleaseDirection = releaseDirection
-                    state.PendingReleaseSpeed = releaseSpeed
-                    state.PendingEffectiveReleaseLead = effectiveReleaseLead
                     state.LastRelease = string.format(
-                        "%s at (%.5f, %.5f) | lead %dms",
+                        "%s at (%.5f, %.5f) | travel %.5f",
                         releaseMeter,
                         releaseOffset.X,
                         releaseOffset.Y,
-                        math.round(effectiveReleaseLead * 1000)
+                        state.ShotTravel
                     )
                     meterReleaseLabel.Text = "Release: " .. state.LastRelease
                     meterReleaseLabel.TextColor3 = COLORS.success
@@ -1311,6 +1263,7 @@ return function(context)
         if typeof(offset) == "Vector2" and not state.PendingReleaseOffset then
             state.PendingReleaseOffset = offset
             state.PendingReleaseMeter = state.LastShotMeter
+            state.PendingReleaseDirection = state.ShotDirection
             state.LastShotOffset = offset
         end
     end))
@@ -1340,45 +1293,56 @@ return function(context)
                 timingName,
                 math.round(tonumber(contest) or 0)
             )
-            if state.ReleasedThisShot and typeof(state.PendingReleaseOffset) == "Vector2" then
-                -- Positive lead releases earlier. Build a timing bracket from
-                -- the server grade, then bisect it instead of bouncing a whole
-                -- millisecond between Good and Slightly Late.
-                local usedLead = tonumber(state.PendingEffectiveReleaseLead)
-                    or math.clamp(state.AdaptiveReleaseLead + state.ReleaseLead, 0, 0.04)
+            if typeof(state.PendingReleaseOffset) == "Vector2"
+                and typeof(state.PendingReleaseDirection) == "Vector2"
+                and typeof(state.ShotStartOffset) == "Vector2" then
+                local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
+                local usedTravel = (state.PendingReleaseOffset - state.ShotStartOffset)
+                    :Dot(state.PendingReleaseDirection)
                 if index and index < 5 then
-                    state.LeadUpperBound = state.LeadUpperBound
-                        and math.min(state.LeadUpperBound, usedLead)
-                        or usedLead
+                    state.TargetLowerTravels[learnedMeter] = math.max(
+                        state.TargetLowerTravels[learnedMeter] or 0,
+                        usedTravel
+                    )
                 elseif index and index > 5 then
-                    state.LeadLowerBound = state.LeadLowerBound
-                        and math.max(state.LeadLowerBound, usedLead)
-                        or usedLead
+                    state.TargetUpperTravels[learnedMeter] = math.min(
+                        state.TargetUpperTravels[learnedMeter] or math.huge,
+                        usedTravel
+                    )
                 end
 
-                local leadCorrection = ({
-                    [1] = -0.004,
-                    [2] = -0.002,
-                    [3] = -0.001,
-                    [4] = -0.0005,
+                local travelCorrection = ({
+                    [1] = 0.08,
+                    [2] = 0.04,
+                    [3] = 0.02,
+                    [4] = 0.01,
                     [5] = 0,
-                    [6] = 0.0005,
-                    [7] = 0.002,
-                    [8] = 0.004,
+                    [6] = -0.02,
+                    [7] = -0.04,
+                    [8] = -0.08,
                 })[index]
-                if leadCorrection then
-                    local nextEffectiveLead = usedLead + leadCorrection
-                    if state.LeadLowerBound and state.LeadUpperBound
-                        and state.LeadLowerBound <= state.LeadUpperBound then
-                        nextEffectiveLead = (state.LeadLowerBound + state.LeadUpperBound) * 0.5
+                if travelCorrection then
+                    local nextTravel = usedTravel + travelCorrection
+                    local lowerTravel = state.TargetLowerTravels[learnedMeter]
+                    local upperTravel = state.TargetUpperTravels[learnedMeter]
+                    if lowerTravel and upperTravel and lowerTravel <= upperTravel then
+                        nextTravel = (lowerTravel + upperTravel) * 0.5
                     end
-                    nextEffectiveLead = math.clamp(nextEffectiveLead, 0, 0.04)
-                    state.AdaptiveReleaseLead = math.clamp(nextEffectiveLead - state.ReleaseLead, 0, 0.04)
+                    local fullOffset = state.FullOffsets[learnedMeter]
+                    if typeof(fullOffset) == "Vector2" then
+                        local fullTravel = (fullOffset - state.ShotStartOffset)
+                            :Dot(state.PendingReleaseDirection)
+                        nextTravel = math.min(nextTravel, fullTravel)
+                    end
+                    nextTravel = math.max(0, nextTravel)
+                    state.PerfectTravels[learnedMeter] = nextTravel
+                    state.PerfectOffsets[learnedMeter] = state.ShotStartOffset
+                        + state.PendingReleaseDirection * nextTravel
                     state.LastTimingCorrection = string.format(
-                        "%s %+.1fms -> auto %.2fms",
+                        "%s %+.3f travel -> %.5f",
                         timingName,
-                        leadCorrection * 1000,
-                        state.AdaptiveReleaseLead * 1000
+                        travelCorrection,
+                        nextTravel
                     )
                 end
             end
@@ -1540,10 +1504,7 @@ return function(context)
             gui:SetAttribute("PracticalBasketballLastRelease", state.LastRelease)
             gui:SetAttribute("PracticalBasketballLastFeedback", state.LastFeedback)
             gui:SetAttribute("PracticalBasketballTimingCorrection", state.LastTimingCorrection)
-            gui:SetAttribute(
-                "PracticalBasketballReleaseLeadMs",
-                math.round(math.clamp(state.AdaptiveReleaseLead + state.ReleaseLead, 0, 0.04) * 1000)
-            )
+            gui:SetAttribute("PracticalBasketballReleaseTravel", state.PerfectTravels[state.LastShotMeter])
             gui:SetAttribute("PracticalBasketballAction", action)
             gui:SetAttribute("PracticalBasketballHasBall", hasBall)
         end)
