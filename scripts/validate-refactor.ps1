@@ -183,6 +183,8 @@ $autoSaber = (
     $firstSeaText -match 'ProQuestProgress", "PlaceRelic"' -and
     $firstSeaText -match 'api\.FarmFirst\(\{"Mob Leader"\}' -and
     $firstSeaText -match 'api\.FarmFirst\(\{"Saber Expert"\}' -and
+    $firstSeaText -match 'Window\.PersistentControls\["blox_double_attack"\]' -and
+    $firstSeaText -match 'weapon:Set\("Melee"\)' -and
     $firstSeaText -match 'runtime\.Toggle:Set\(false\)'
 )
 if (-not $autoSaber) {

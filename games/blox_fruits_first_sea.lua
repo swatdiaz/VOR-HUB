@@ -176,6 +176,16 @@ return function(context)
                 control:Set(false)
             end
         end
+        local doubleAttack = Window.PersistentControls["blox_double_attack"]
+        if doubleAttack and doubleAttack:Get() then
+            doubleAttack:Set(false)
+        end
+        local weapon = Window.PersistentControls["blox_weapon_type"]
+        if weapon and weapon:Get() ~= "Melee" then
+            weapon:Set("Melee")
+        end
+        sharedState.DoubleAttack = false
+        sharedState.WeaponType = "Melee"
     end
 
     local function finish(message)
