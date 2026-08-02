@@ -260,7 +260,9 @@ $mobAuraEnemyHold = (
     $bloxText -match 'enemyRoot\.Anchored = original\.Anchored' -and
     $bloxText -match 'enemyBody:ChangeState\(Enum\.HumanoidStateType\.Physics\)' -and
     $bloxText -match 'SwordTargetLimit = 35' -and
-    $bloxText -match 'FruitTargetLimit = 35'
+    $bloxText -match 'FruitTargetLimit = 35' -and
+    $bloxText -match 'local serverAnchor = gatheredOriginal' -and
+    $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {
     throw "Mob Aura must pin its active NPC while Magnet exposes every piled target to the attack hitbox"
@@ -385,7 +387,8 @@ $mobAuraSameTypeGather = $bloxText -match 'local targetName\s*=\s*raidGatherEnab
 $stickyMagnetCapture = $bloxText -match 'local captured\s*=\s*state\.AutoMagnet and state\.GatherOriginalStates\[enemy\] ~= nil'
 $oldTypeRelease = $bloxText -match 'targetName and not enemyMatches\(enemy, targetName\)'
 $animationFreeze = $bloxText -match 'state\.FreezeGatherAnimations = function\(enemy, enemyBody\)'
-$rootFreeze = $bloxText -match 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)' -and
+$rootFreeze = $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)' -and
+    $bloxText -match 'Size = candidate\.Root\.Size' -and
     $bloxText -match 'enemyBody\.PlatformStand = true' -and
     $bloxText -match 'enemyRoot\.Size = original\.Size'
 if (-not ($mobAuraSameTypeGather -and $stickyMagnetCapture -and $oldTypeRelease -and $animationFreeze -and $rootFreeze)) {
@@ -862,7 +865,7 @@ Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclu
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
 Write-Host "Mob Aura enemy hold: PASS (fixed ground anchor, stopped animation and physics)"
-Write-Host "Magnet hit registration: PASS (35 targets, enlarged frozen hit roots)"
+Write-Host "Magnet hit registration: PASS (35 targets, server-anchor routing, normal hit roots)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Sea-wide berry automation: PASS (live-spawn claim, empty-server hop, stay after collection)"
 Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"

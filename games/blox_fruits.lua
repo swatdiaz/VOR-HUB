@@ -2606,30 +2606,37 @@ return function(context)
             end
 
             local liveAnchor = targetRoot.Position
+            -- Auto Magnet can move an unowned NPC only on this client. The
+            -- combat server still validates that rig at its replicated world
+            -- position, so drive the player from the saved pre-magnet CFrame.
+            -- This keeps target swaps server-creditable without a priming tour.
+            local gatheredOriginal = state.AutoMagnet and state.GatherOriginalStates[target]
+            local serverAnchor = gatheredOriginal and typeof(gatheredOriginal.CFrame) == "CFrame"
+                and gatheredOriginal.CFrame.Position or liveAnchor
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
             local fixedPosition = not state.MobAuraOrbit and not state.MobAuraRandomSquare
             if singleFallback then
                 state.MobAuraAnchorTarget = target
-                state.MobAuraStableAnchor = liveAnchor
+                state.MobAuraStableAnchor = serverAnchor
             elseif state.MobAuraAnchorTarget ~= target then
                 state.MobAuraAnchorTarget = target
                 -- A replacement target may already be inside the grabbed pile.
                 -- Retain the original ground anchor across target swaps or the
                 -- new, raised NPC position feeds height back into the player.
                 if not state.GatherEnemies or not state.MobAuraStableAnchor then
-                    state.MobAuraStableAnchor = liveAnchor
+                    state.MobAuraStableAnchor = serverAnchor
                 end
             elseif (not state.GatherEnemies and not fixedPosition) or not state.MobAuraStableAnchor then
-                state.MobAuraStableAnchor = liveAnchor
+                state.MobAuraStableAnchor = serverAnchor
             end
             if fixedPosition and state.MobAuraStableAnchor then
                 local reacquireDistance = math.max(
                     12,
                     math.min(50, (tonumber(state.AuraRange) or 70) * 0.65)
                 )
-                if (liveAnchor - state.MobAuraStableAnchor).Magnitude > reacquireDistance then
-                    state.MobAuraStableAnchor = liveAnchor
+                if (serverAnchor - state.MobAuraStableAnchor).Magnitude > reacquireDistance then
+                    state.MobAuraStableAnchor = serverAnchor
                 end
             end
             -- Once Multi Grab moves the target underneath the player, keep
@@ -3942,7 +3949,10 @@ return function(context)
                     or state.MagnetAnchorName ~= targetName
                     or typeof(state.MagnetAnchorCFrame) ~= "CFrame" then
                     state.MagnetAnchorTarget = anchorCandidate.Enemy
-                    state.MagnetAnchorCFrame = anchorCandidate.Root.CFrame
+                    local anchorOriginal = state.GatherOriginalStates[anchorCandidate.Enemy]
+                    state.MagnetAnchorCFrame = anchorOriginal
+                        and typeof(anchorOriginal.CFrame) == "CFrame"
+                        and anchorOriginal.CFrame or anchorCandidate.Root.CFrame
                     state.MagnetAnchorName = targetName
                 end
                 targetCFrame = CFrame.new(state.MagnetAnchorCFrame.Position)
@@ -4017,7 +4027,6 @@ return function(context)
                         candidate.Root.CFrame = targetCFrame
                         candidate.Root.AssemblyLinearVelocity = Vector3.zero
                         candidate.Root.AssemblyAngularVelocity = Vector3.zero
-                        candidate.Root.Size = Vector3.new(60, 60, 60)
                         candidate.Root.CanCollide = false
                         enemyBody.WalkSpeed = 0
                         enemyBody.JumpPower = 0
