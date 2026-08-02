@@ -557,11 +557,14 @@ $practicalBasketballSafeRelease = (
 $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'task\.delay\(state\.ReleaseDelay' -and
     $practicalBasketballText -match 'Name\s*=\s*"Extra Release Lead"' -and
-    $practicalBasketballText -match 'AdaptiveReleaseLead\s*=\s*0\.016' -and
+    $practicalBasketballText -match 'AdaptiveReleaseLead\s*=\s*0\.0095' -and
     $practicalBasketballText -match 'state\.MeterSpeed\s*=\s*state\.MeterSpeed\s*>\s*0' -and
     $practicalBasketballText -match 'state\.ShotTravel\s*\+\s*prediction\s*>=\s*targetTravel' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
     $practicalBasketballText -match 'local leadCorrection\s*=\s*\(\{' -and
+    $practicalBasketballText -match 'LeadLowerBound\s*=\s*nil' -and
+    $practicalBasketballText -match 'LeadUpperBound\s*=\s*nil' -and
+    $practicalBasketballText -match 'nextEffectiveLead\s*=\s*\(state\.LeadLowerBound\s*\+\s*state\.LeadUpperBound\)\s*\*\s*0\.5' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and

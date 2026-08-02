@@ -116,7 +116,9 @@ return function(context)
         -- The release remote reaches the server after the local meter sample.
         -- Keep the visual target fixed at the full-white endpoint and learn the
         -- network lead independently from server timing feedback.
-        AdaptiveReleaseLead = 0.016,
+        AdaptiveReleaseLead = 0.0095,
+        LeadLowerBound = nil,
+        LeadUpperBound = nil,
         ReleaseLead = 0,
         ReleasedThisShot = false,
         WasMeterActive = false,
@@ -137,6 +139,7 @@ return function(context)
         PendingReleaseMeter = nil,
         PendingReleaseDirection = nil,
         PendingReleaseSpeed = 0,
+        PendingEffectiveReleaseLead = nil,
         LastFeedback = "Waiting",
         LastTimingCorrection = "Waiting",
         FullOffsets = {
@@ -1178,6 +1181,7 @@ return function(context)
         state.PendingReleaseMeter = nil
         state.PendingReleaseDirection = nil
         state.PendingReleaseSpeed = 0
+        state.PendingEffectiveReleaseLead = nil
         state.ReleasedThisShot = false
     end
 
@@ -1273,6 +1277,7 @@ return function(context)
                     state.PendingReleaseMeter = releaseMeter
                     state.PendingReleaseDirection = releaseDirection
                     state.PendingReleaseSpeed = releaseSpeed
+                    state.PendingEffectiveReleaseLead = effectiveReleaseLead
                     state.LastRelease = string.format(
                         "%s at (%.5f, %.5f) | lead %dms",
                         releaseMeter,
@@ -1336,30 +1341,44 @@ return function(context)
                 math.round(tonumber(contest) or 0)
             )
             if state.ReleasedThisShot and typeof(state.PendingReleaseOffset) == "Vector2" then
-                -- Positive lead releases earlier. Adjust that time compensation,
-                -- never the visual full-meter target. Moving both was the source
-                -- of the partial-white releases and unstable calibration.
+                -- Positive lead releases earlier. Build a timing bracket from
+                -- the server grade, then bisect it instead of bouncing a whole
+                -- millisecond between Good and Slightly Late.
+                local usedLead = tonumber(state.PendingEffectiveReleaseLead)
+                    or math.clamp(state.AdaptiveReleaseLead + state.ReleaseLead, 0, 0.04)
+                if index and index < 5 then
+                    state.LeadUpperBound = state.LeadUpperBound
+                        and math.min(state.LeadUpperBound, usedLead)
+                        or usedLead
+                elseif index and index > 5 then
+                    state.LeadLowerBound = state.LeadLowerBound
+                        and math.max(state.LeadLowerBound, usedLead)
+                        or usedLead
+                end
+
                 local leadCorrection = ({
-                    [1] = -0.008,
-                    [2] = -0.004,
-                    [3] = -0.002,
-                    [4] = -0.001,
+                    [1] = -0.004,
+                    [2] = -0.002,
+                    [3] = -0.001,
+                    [4] = -0.0005,
                     [5] = 0,
-                    [6] = 0.002,
-                    [7] = 0.004,
-                    [8] = 0.008,
+                    [6] = 0.0005,
+                    [7] = 0.002,
+                    [8] = 0.004,
                 })[index]
                 if leadCorrection then
-                    state.AdaptiveReleaseLead = math.clamp(
-                        state.AdaptiveReleaseLead + leadCorrection,
-                        0,
-                        0.04
-                    )
+                    local nextEffectiveLead = usedLead + leadCorrection
+                    if state.LeadLowerBound and state.LeadUpperBound
+                        and state.LeadLowerBound <= state.LeadUpperBound then
+                        nextEffectiveLead = (state.LeadLowerBound + state.LeadUpperBound) * 0.5
+                    end
+                    nextEffectiveLead = math.clamp(nextEffectiveLead, 0, 0.04)
+                    state.AdaptiveReleaseLead = math.clamp(nextEffectiveLead - state.ReleaseLead, 0, 0.04)
                     state.LastTimingCorrection = string.format(
-                        "%s %+dms -> auto %dms",
+                        "%s %+.1fms -> auto %.2fms",
                         timingName,
-                        math.round(leadCorrection * 1000),
-                        math.round(state.AdaptiveReleaseLead * 1000)
+                        leadCorrection * 1000,
+                        state.AdaptiveReleaseLead * 1000
                     )
                 end
             end
