@@ -265,6 +265,8 @@ $mobAuraEnemyHold = (
     $bloxText -match 'state\.RestoreGatherEnemy\(target, true\)' -and
     $bloxText -match 'local isActiveMagnetTarget = not multiGrabEnabled' -and
     $bloxText -match 'state\.PinMobAuraTarget\(target, serverAnchor\)' -and
+    $bloxText -match 'local creditedMagnetTarget = state\.AutoMagnet and not state\.GatherEnemies' -and
+    $bloxText -match 'not creditedMagnetTarget or enemy == creditedMagnetTarget' -and
     $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {

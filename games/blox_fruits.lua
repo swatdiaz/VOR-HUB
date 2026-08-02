@@ -1434,11 +1434,19 @@ return function(context)
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
             end
+            -- Current servers reject the whole registered hit when an extra
+            -- Magnet rig exists only at the pile CFrame on this client. Keep
+            -- the visual/frozen pile, but submit the real active farm rig for
+            -- credited combat. Each replacement is restored and promoted in
+            -- stepMobAuraTp after the active one dies.
+            local creditedMagnetTarget = state.AutoMagnet and not state.GatherEnemies
+                and (state.MobAuraTarget or state.ActiveFarmTarget) or nil
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
                 local hitPart = enemyHitPart(enemy)
                 local matchesTarget = state.ThirdSeaEnemyAllowed(enemy)
                     and (not selectedFilter or enemyMatches(enemy, selectedFilter))
+                    and (not creditedMagnetTarget or enemy == creditedMagnetTarget)
                 if enemyRoot and hitPart and modelAlive(enemy) and matchesTarget then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance <= state.AuraRange then
