@@ -157,6 +157,17 @@ return function(context)
     local parent = Utilities.GetGuiParent()
     assert(parent, "VOR UI could not find a Gui parent")
 
+    -- A raw ScreenGui destroy does not disconnect the previous hub's tracked
+    -- Heartbeat loops. Always run the old Window cleanup before replacing its
+    -- interface, otherwise reloading leaves zombie automation fighting the new
+    -- build for movement, tools, and targets.
+    local previousWindow = _G.VORHub
+    if type(previousWindow) == "table" and type(previousWindow.Destroy) == "function" then
+        pcall(function()
+            previousWindow:Destroy()
+        end)
+    end
+
     for _, container in ipairs({parent, game:GetService("CoreGui")}) do
         local old = container and container:FindFirstChild(SETTINGS.GuiName)
         if old then
