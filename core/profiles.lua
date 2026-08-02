@@ -6,7 +6,7 @@ return function(context)
     local Utilities = assert(context.Utilities, "profiles requires Utilities")
     local HttpService = Utilities.Services.HttpService
     local COLORS = SETTINGS.COLORS
-    local PROFILE_VERSION = 4
+    local PROFILE_VERSION = 5
 
     local function hasFileApi()
         return type(isfolder) == "function"

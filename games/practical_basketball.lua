@@ -113,6 +113,10 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
+        -- The release remote reaches the server after the local meter sample.
+        -- Keep the visual target fixed at the full-white endpoint and learn the
+        -- network lead independently from server timing feedback.
+        AdaptiveReleaseLead = 0.016,
         ReleaseLead = 0,
         ReleasedThisShot = false,
         WasMeterActive = false,
@@ -712,8 +716,8 @@ return function(context)
         end,
     })
     AutoGreenSection:AddSlider({
-        Name = "Release Prediction Lead",
-        Description = "Optional early prediction; server feedback calibrates the exact meter offset after every shot",
+        Name = "Extra Release Lead",
+        Description = "Optional manual fine-tune added to the automatically learned network lead",
         Flag = "practical_basketball_release_delay",
         Min = 0,
         Max = 30,
@@ -1236,7 +1240,12 @@ return function(context)
             local reachedTarget = false
             if target and state.ShotDirection then
                 local targetTravel = (target - state.ShotStartOffset):Dot(state.ShotDirection)
-                local prediction = math.max(0, state.MeterSpeed) * state.ReleaseLead
+                local effectiveReleaseLead = math.clamp(
+                    state.AdaptiveReleaseLead + state.ReleaseLead,
+                    0,
+                    0.04
+                )
+                local prediction = math.max(0, state.MeterSpeed) * effectiveReleaseLead
                 reachedTarget = targetTravel >= 0 and state.ShotTravel + prediction >= targetTravel
             elseif target then
                 reachedTarget = (offset - target).Magnitude <= 0.002
@@ -1252,6 +1261,11 @@ return function(context)
                 local releaseOffset = offset
                 local releaseDirection = state.ShotDirection
                 local releaseSpeed = state.MeterSpeed
+                local effectiveReleaseLead = math.clamp(
+                    state.AdaptiveReleaseLead + state.ReleaseLead,
+                    0,
+                    0.04
+                )
                 if releaseShoot() then
                     state.ReleasedThisShot = true
                     state.ForceNextGreen = false
@@ -1264,7 +1278,7 @@ return function(context)
                         releaseMeter,
                         releaseOffset.X,
                         releaseOffset.Y,
-                        math.round(state.ReleaseLead * 1000)
+                        math.round(effectiveReleaseLead * 1000)
                     )
                     meterReleaseLabel.Text = "Release: " .. state.LastRelease
                     meterReleaseLabel.TextColor3 = COLORS.success
@@ -1322,57 +1336,42 @@ return function(context)
                 math.round(tonumber(contest) or 0)
             )
             if state.ReleasedThisShot and typeof(state.PendingReleaseOffset) == "Vector2" then
-                local correctionSeconds = ({
-                    [1] = 0.02,
-                    [2] = 0.012,
-                    [3] = 0.006,
-                    [4] = 0.003,
+                -- Positive lead releases earlier. Adjust that time compensation,
+                -- never the visual full-meter target. Moving both was the source
+                -- of the partial-white releases and unstable calibration.
+                local leadCorrection = ({
+                    [1] = -0.008,
+                    [2] = -0.004,
+                    [3] = -0.002,
+                    [4] = -0.001,
                     [5] = 0,
-                    [6] = -0.003,
-                    [7] = -0.008,
-                    [8] = -0.014,
+                    [6] = 0.002,
+                    [7] = 0.004,
+                    [8] = 0.008,
                 })[index]
-                local direction = state.PendingReleaseDirection
-                local speed = tonumber(state.PendingReleaseSpeed) or 0
-                local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
-                if correctionSeconds and typeof(direction) == "Vector2" and speed > 0 then
-                    local correctedTarget = state.PendingReleaseOffset
-                        + direction * speed * correctionSeconds
-                    local shotStart = state.ShotStartOffset
-                    local maximumOffset = state.FullOffsets[learnedMeter]
-                    if correctionSeconds > 0
-                        and typeof(shotStart) == "Vector2"
-                        and typeof(maximumOffset) == "Vector2" then
-                        local correctedTravel = (correctedTarget - shotStart):Dot(direction)
-                        local maximumTravel = (maximumOffset - shotStart):Dot(direction)
-                        if maximumTravel >= 0 and correctedTravel > maximumTravel then
-                            correctedTarget = shotStart + direction * maximumTravel
-                        end
-                    end
-                    local previousTarget = state.PerfectOffsets[learnedMeter]
-                    state.PerfectOffsets[learnedMeter] = typeof(previousTarget) == "Vector2"
-                        and previousTarget:Lerp(correctedTarget, index == 5 and 0.25 or 0.7)
-                        or correctedTarget
+                if leadCorrection then
+                    state.AdaptiveReleaseLead = math.clamp(
+                        state.AdaptiveReleaseLead + leadCorrection,
+                        0,
+                        0.04
+                    )
                     state.LastTimingCorrection = string.format(
-                        "%s %+dms -> %.8f",
+                        "%s %+dms -> auto %dms",
                         timingName,
-                        math.round(correctionSeconds * 1000),
-                        state.PerfectOffsets[learnedMeter].Y
+                        math.round(leadCorrection * 1000),
+                        math.round(state.AdaptiveReleaseLead * 1000)
                     )
                 end
             end
             if index == 5 and typeof(state.PendingReleaseOffset) == "Vector2" then
                 local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
-                if not state.ReleasedThisShot then
-                    state.PerfectOffsets[learnedMeter] = state.PendingReleaseOffset
-                end
                 meterReleaseLabel.Text = state.ReleasedThisShot
                     and string.format(
                         "Perfect confirmed: %s",
                         state.LastRelease
                     )
                     or string.format(
-                        "Calibrated %s: %.8f",
+                        "Manual Perfect %s: %.8f",
                         learnedMeter,
                         state.PendingReleaseOffset.Y
                     )
@@ -1522,7 +1521,10 @@ return function(context)
             gui:SetAttribute("PracticalBasketballLastRelease", state.LastRelease)
             gui:SetAttribute("PracticalBasketballLastFeedback", state.LastFeedback)
             gui:SetAttribute("PracticalBasketballTimingCorrection", state.LastTimingCorrection)
-            gui:SetAttribute("PracticalBasketballReleaseLeadMs", math.round(state.ReleaseLead * 1000))
+            gui:SetAttribute(
+                "PracticalBasketballReleaseLeadMs",
+                math.round(math.clamp(state.AdaptiveReleaseLead + state.ReleaseLead, 0, 0.04) * 1000)
+            )
             gui:SetAttribute("PracticalBasketballAction", action)
             gui:SetAttribute("PracticalBasketballHasBall", hasBall)
         end)

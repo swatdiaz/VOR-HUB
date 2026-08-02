@@ -556,16 +556,17 @@ $practicalBasketballSafeRelease = (
 )
 $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'task\.delay\(state\.ReleaseDelay' -and
-    $practicalBasketballText -match 'Name\s*=\s*"Release Prediction Lead"' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Extra Release Lead"' -and
+    $practicalBasketballText -match 'AdaptiveReleaseLead\s*=\s*0\.016' -and
     $practicalBasketballText -match 'state\.MeterSpeed\s*=\s*state\.MeterSpeed\s*>\s*0' -and
     $practicalBasketballText -match 'state\.ShotTravel\s*\+\s*prediction\s*>=\s*targetTravel' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
-    $practicalBasketballText -match 'local correctionSeconds\s*=\s*\(\{' -and
+    $practicalBasketballText -match 'local leadCorrection\s*=\s*\(\{' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
-    $practicalBasketballText -match 'correctedTravel\s*>\s*maximumTravel' -and
-    $practicalBasketballText -match 'previousTarget:Lerp\(correctedTarget' -and
+    $practicalBasketballText -match 'state\.AdaptiveReleaseLead\s*=\s*math\.clamp' -and
+    $practicalBasketballText -notmatch 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )
 $practicalBasketballReliableGuard = (
@@ -587,7 +588,7 @@ $practicalBasketballSharedProfiles = (
     $profilesText -match 'migrateLegacyConfigs\(\)'
 )
 $practicalBasketballTimingMigration = (
-    $profilesText -match 'local PROFILE_VERSION\s*=\s*4' -and
+    $profilesText -match 'local PROFILE_VERSION\s*=\s*5' -and
     $profilesText -match 'local function normalizeProfileData\(metadata\)' -and
     $profilesText -match 'practical_basketball_vertical_perfect_offset\s*=\s*"-1\.46824694"' -and
     $profilesText -match 'practical_basketball_release_delay\s*=\s*0' -and
@@ -679,7 +680,7 @@ Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation i
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
-Write-Host "Practical Basketball Auto Green: PASS (measured meter velocity, immediate retry, feedback-calibrated target)"
+Write-Host "Practical Basketball Auto Green: PASS (fixed full-meter target with feedback-calibrated network lead)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
 Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
 Write-Host "Practical Basketball timing profiles: PASS (legacy offset and delay migrate to full-bar calibration)"
