@@ -552,7 +552,10 @@ $practicalBasketballSafeRelease = (
     $practicalBasketballText -notmatch 'hookmetamethod|hookfunction' -and
     $practicalBasketballText -match 'child:GetAttribute\("Active"\)\s*==\s*true' -and
     $practicalBasketballText -match 'serverReleased\s*==\s*false' -and
-    $practicalBasketballText -match 'shootInputHeld\(\)'
+    $practicalBasketballText -match 'shootInputHeld\(\)' -and
+    $practicalBasketballText -match 'Description\s*=\s*"Releases held E or native mobile Shoot input' -and
+    $practicalBasketballText -match 'if input\.KeyCode\s*~=\s*Enum\.KeyCode\.E then' -and
+    $practicalBasketballText -notmatch 'or UserInputService:IsKeyDown\(Enum\.KeyCode\.Space\)\s*\n\s*end\s*\n\s*\n\s*local function resetShot'
 )
 $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'task\.delay\(state\.ReleaseDelay' -and
@@ -578,8 +581,17 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
+    $practicalBasketballText -match 'TweenService:Create\(fillGradient,\s*TweenInfo\.new\(0\)' -and
+    $practicalBasketballText -match 'syncVisibleMeter\(meter,\s*character,\s*releaseOffset\)' -and
     $practicalBasketballText -notmatch 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
+)
+$practicalBasketballStuckRecovery = (
+    $practicalBasketballText -match '"DropBall"' -and
+    $practicalBasketballText -match 'local function recoverStuckPossession\(character,\s*now\)' -and
+    $practicalBasketballText -match 'character:GetAttribute\("CanMove"\)\s*==\s*false' -and
+    $practicalBasketballText -match 'state\.PossessionRecoveryStage\s*==\s*0\s*and\s*stuckFor\s*>=\s*0\.75' -and
+    $practicalBasketballText -match 'fireRemote\("DropBall"\)'
 )
 $practicalBasketballReliableGuard = (
     $practicalBasketballText -match 'GuardRefreshAt\s*=\s*0' -and
@@ -661,7 +673,7 @@ $practicalBasketballQuickLaunch = (
     $uiText -match 'self\.Pages\.Shooting' -and
     $uiText -match '\{"Shooting",\s*"Offense",\s*"Defense",\s*"Dribble",\s*"Visuals"\}'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballSharedProfiles -and $practicalBasketballTimingMigration -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballStuckRecovery -and $practicalBasketballSharedProfiles -and $practicalBasketballTimingMigration -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 

@@ -83,6 +83,7 @@ return function(context)
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
+    local TweenService = game:GetService("TweenService")
     local UserInputService = game:GetService("UserInputService")
     local ContextActionService = game:GetService("ContextActionService")
     local CollectionService = game:GetService("CollectionService")
@@ -134,6 +135,9 @@ return function(context)
         LastShotOffset = nil,
         LastShotMeter = "Vertical",
         MobileShootHeld = false,
+        PossessionStuckSince = nil,
+        PossessionRecoveryStage = 0,
+        LastPossessionRecovery = 0,
         PendingReleaseOffset = nil,
         PendingReleaseTravel = nil,
         PendingReleaseMeter = nil,
@@ -204,6 +208,7 @@ return function(context)
         "Dribble",
         "Pass",
         "Screen",
+        "DropBall",
     }) do
         remotes[name] = inputRemotes and inputRemotes:FindFirstChild(name)
     end
@@ -356,6 +361,26 @@ return function(context)
         -- Never simulate key-up here. The tutorial keyboard component owns the
         -- physical E state; forcing it up can leave the character pose stuck.
         return fireRemote("Shoot", {Shoot = false})
+    end
+
+    local function syncVisibleMeter(meter, character, releaseOffset)
+        if not meter or not character or typeof(releaseOffset) ~= "Vector2" then
+            return
+        end
+        local fillGradient = meter:FindFirstChild("FillGradient", true)
+        if not fillGradient or not fillGradient:IsA("UIGradient") then
+            return
+        end
+        -- The native Meter controller eases FillGradient.Offset over 0.05s.
+        -- Auto Green releases from the live attribute between rendered samples,
+        -- so replace that stale visual tween with the exact release position.
+        local rotation = tonumber(character:GetAttribute("meterRotation"))
+            or fillGradient.Rotation
+        local tween = TweenService:Create(fillGradient, TweenInfo.new(0), {
+            Offset = releaseOffset,
+            Rotation = rotation,
+        })
+        tween:Play()
     end
 
     local function setSprintHeld(held)
@@ -695,7 +720,7 @@ return function(context)
 
     AutoGreenSection:AddToggle({
         Name = "Auto Green",
-        Description = "Releases held keyboard or native mobile Shoot input from the live Aero meter",
+        Description = "Releases held E or native mobile Shoot input from the live Aero meter",
         Flag = "practical_basketball_auto_green",
         Default = false,
         Callback = function(enabled)
@@ -1139,7 +1164,6 @@ return function(context)
     local function shootInputHeld()
         return state.MobileShootHeld
             or UserInputService:IsKeyDown(Enum.KeyCode.E)
-            or UserInputService:IsKeyDown(Enum.KeyCode.Space)
     end
 
     local function resetShot(offset, token)
@@ -1263,6 +1287,7 @@ return function(context)
                     and tostring(character:GetAttribute("Action") or "") == "Shooting"
                     and shootInputHeld()
                 if stillShooting and releaseShoot() then
+                    syncVisibleMeter(meter, character, releaseOffset)
                     state.ReleasedThisShot = true
                     state.ForceNextGreen = false
                     state.PendingReleaseOffset = releaseOffset
@@ -1294,7 +1319,7 @@ return function(context)
     end
 
     track(UserInputService.InputEnded:Connect(function(input)
-        if input.KeyCode ~= Enum.KeyCode.E and input.KeyCode ~= Enum.KeyCode.Space then
+        if input.KeyCode ~= Enum.KeyCode.E then
             return
         end
         local character = resolveCharacter()
@@ -1311,6 +1336,41 @@ return function(context)
             state.LastShotOffset = offset
         end
     end))
+
+    local function recoverStuckPossession(character, now)
+        local action = tostring(character:GetAttribute("Action") or "")
+        local keysReleased = not state.MobileShootHeld
+            and not UserInputService:IsKeyDown(Enum.KeyCode.E)
+            and not UserInputService:IsKeyDown(Enum.KeyCode.Space)
+            and not UserInputService:IsKeyDown(Enum.KeyCode.G)
+        local stalePossession = hasBasketball(character)
+            and character:GetAttribute("CanMove") == false
+            and character:GetAttribute("ReleasedShot") == false
+            and character:GetAttribute("TripleThreat") ~= true
+            and character:GetAttribute("Hold") ~= true
+            and action == ""
+            and keysReleased
+
+        if not stalePossession then
+            state.PossessionStuckSince = nil
+            state.PossessionRecoveryStage = 0
+            return
+        end
+
+        state.PossessionStuckSince = state.PossessionStuckSince or now
+        local stuckFor = now - state.PossessionStuckSince
+        if state.PossessionRecoveryStage == 0 and stuckFor >= 0.75 then
+            releaseShoot()
+            state.PossessionRecoveryStage = 1
+            state.LastPossessionRecovery = now
+        elseif state.PossessionRecoveryStage == 1
+            and stuckFor >= 1.50
+            and now - state.LastPossessionRecovery >= 0.50 then
+            fireRemote("DropBall")
+            state.PossessionRecoveryStage = 2
+            state.LastPossessionRecovery = now
+        end
+    end
 
     local interfaceRemotes = remoteRoot and remoteRoot:FindFirstChild("InterfaceService")
     local showFeedbackRemote = interfaceRemotes and interfaceRemotes:FindFirstChild("ShowFeedback")
@@ -1416,6 +1476,8 @@ return function(context)
         local stamina = tonumber(character and character:GetAttribute("Stamina")) or 0
         local inGame = character and (character:GetAttribute("InGame") == true
             or character:GetAttribute("OnCourt") == true)
+
+        recoverStuckPossession(character, now)
 
         if state.AutoSprint then
             setSprintHeld(movementInputHeld(character) and stamina >= state.SprintThreshold)
