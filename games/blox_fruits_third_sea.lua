@@ -180,6 +180,7 @@ return function(context)
         if key and runtime.Controls[key] then
             runtime.Controls[key]:Set(false)
         end
+        api.SetGather(false)
         api.Stop()
         setStatus("Complete", message)
         notify("Third Sea", message, 6)
@@ -189,6 +190,7 @@ return function(context)
         if not enabled then
             if runtime.Active == key then
                 runtime.Active = nil
+                api.SetGather(false)
                 api.Stop()
                 setStatus("Stopped", "Automation stopped")
             end
@@ -202,6 +204,7 @@ return function(context)
         end
         runtime.Active = key
         api.SetCombat(true)
+        api.SetGather(key == "tyrant")
         if key == "tyrant" then
             local doubleAttack = Window.PersistentControls["blox_double_attack"]
             if doubleAttack then

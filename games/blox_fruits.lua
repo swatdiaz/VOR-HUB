@@ -3853,7 +3853,9 @@ return function(context)
                 end
             end
             local gathered = 0
-            local limit = multiGrabEnabled and MULTI_GRAB_LIMIT or math.huge
+            local limit = multiGrabEnabled and (
+                state.ThirdSeaFarmActive and DoubleAttackEngine.SwordTargetLimit or MULTI_GRAB_LIMIT
+            ) or math.huge
             for index, candidate in ipairs(candidates) do
                 if index > limit then
                     break
@@ -8240,6 +8242,11 @@ return function(context)
                         end
                         gui:SetAttribute("BloxThirdSeaCombat", desired)
                         gui:SetAttribute("BloxThirdSeaFarmActive", desired)
+                    end,
+                    SetGather = function(enabled)
+                        state.GatherEnemies = enabled == true
+                        state.LastGatherScan = 0
+                        gui:SetAttribute("BloxMultiGrabEnemies", state.GatherEnemies)
                     end,
                     FarmFirst = function(names, center, radius, heightOverride)
                         local root = rootPart()
