@@ -113,12 +113,10 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
-        -- Calibrate the actual local release point. Meter-velocity prediction
-        -- amplified tiny timing changes into huge offset jumps, especially when
-        -- a manual lead was changed between shots.
-        PerfectTravels = {
-            Vertical = 1.35,
-        },
+        -- The displayed meter advances in roughly 0.05-stud frame steps, while
+        -- the server's Perfect window sits between those samples. Track an
+        -- interpolated release target instead of waiting for the next frame.
+        PerfectTravels = {},
         TargetLowerTravels = {},
         TargetUpperTravels = {},
         ReleasedThisShot = false,
@@ -137,6 +135,7 @@ return function(context)
         LastShotMeter = "Vertical",
         MobileShootHeld = false,
         PendingReleaseOffset = nil,
+        PendingReleaseTravel = nil,
         PendingReleaseMeter = nil,
         PendingReleaseDirection = nil,
         LastFeedback = "Waiting",
@@ -146,7 +145,9 @@ return function(context)
             Vertical = Vector2.new(0, -1.46824694),
         },
         PerfectOffsets = {
-            Vertical = Vector2.new(0, -1.35),
+            -- Confirmed by the live server: -1.4148 graded Good and -1.4150
+            -- graded Perfect at 0% contest.
+            Vertical = Vector2.new(0, -1.415),
         },
         MeterName = "None",
         LastRelease = "Waiting",
@@ -1152,6 +1153,7 @@ return function(context)
         state.LastMeterSampleOffset = typeof(offset) == "Vector2" and offset or nil
         state.MeterSpeed = 0
         state.PendingReleaseOffset = nil
+        state.PendingReleaseTravel = nil
         state.PendingReleaseMeter = nil
         state.PendingReleaseDirection = nil
         state.ReleasedThisShot = false
@@ -1221,19 +1223,42 @@ return function(context)
                 reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
             end
 
-            if reachedTarget
+            local releaseDelay
+            if not reachedTarget and targetTravel and state.MeterSpeed > 0 then
+                local remainingTravel = targetTravel - state.ShotTravel
+                local predictedDelay = remainingTravel / state.MeterSpeed
+                if remainingTravel > 0 and predictedDelay >= 0 and predictedDelay <= 0.004 then
+                    releaseDelay = predictedDelay
+                end
+            end
+
+            if (reachedTarget or releaseDelay)
                 and not state.ReleasedThisShot
                 and serverReleased == false
                 and action == "Shooting"
                 and shootInputHeld()
                 and (state.AutoGreen or state.ForceNextGreen) then
+                if releaseDelay and releaseDelay > 0 then
+                    -- task.wait/task.delay round tiny waits to several
+                    -- milliseconds and skipped the measured Perfect slice.
+                    -- This spin is capped at 4 ms and happens once per shot.
+                    local deadline = os.clock() + releaseDelay
+                    repeat until os.clock() >= deadline
+                end
                 local releaseMeter = state.MeterName
-                local releaseOffset = offset
                 local releaseDirection = state.ShotDirection
-                if releaseShoot() then
+                local releaseTravel = releaseDelay and targetTravel or state.ShotTravel
+                local releaseOffset = releaseDelay
+                    and state.ShotStartOffset + releaseDirection * releaseTravel
+                    or offset
+                local stillShooting = character:GetAttribute("ReleasedShot") == false
+                    and tostring(character:GetAttribute("Action") or "") == "Shooting"
+                    and shootInputHeld()
+                if stillShooting and releaseShoot() then
                     state.ReleasedThisShot = true
                     state.ForceNextGreen = false
                     state.PendingReleaseOffset = releaseOffset
+                    state.PendingReleaseTravel = releaseTravel
                     state.PendingReleaseMeter = releaseMeter
                     state.PendingReleaseDirection = releaseDirection
                     state.LastRelease = string.format(
@@ -1241,7 +1266,7 @@ return function(context)
                         releaseMeter,
                         releaseOffset.X,
                         releaseOffset.Y,
-                        state.ShotTravel
+                        releaseTravel
                     )
                     meterReleaseLabel.Text = "Release: " .. state.LastRelease
                     meterReleaseLabel.TextColor3 = COLORS.success
@@ -1268,6 +1293,11 @@ return function(context)
         local offset = character and character:GetAttribute("meterOffset")
         if typeof(offset) == "Vector2" and not state.PendingReleaseOffset then
             state.PendingReleaseOffset = offset
+            if typeof(state.ShotStartOffset) == "Vector2"
+                and typeof(state.ShotDirection) == "Vector2" then
+                state.PendingReleaseTravel = (offset - state.ShotStartOffset)
+                    :Dot(state.ShotDirection)
+            end
             state.PendingReleaseMeter = state.LastShotMeter
             state.PendingReleaseDirection = state.ShotDirection
             state.LastShotOffset = offset
@@ -1299,12 +1329,17 @@ return function(context)
                 timingName,
                 math.round(tonumber(contest) or 0)
             )
-            if typeof(state.PendingReleaseOffset) == "Vector2"
-                and typeof(state.PendingReleaseDirection) == "Vector2"
-                and typeof(state.ShotStartOffset) == "Vector2" then
+            local canLearnTravel = type(state.PendingReleaseTravel) == "number"
+                or typeof(state.PendingReleaseOffset) == "Vector2"
+                    and typeof(state.PendingReleaseDirection) == "Vector2"
+                    and typeof(state.ShotStartOffset) == "Vector2"
+            if canLearnTravel then
                 local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
-                local usedTravel = (state.PendingReleaseOffset - state.ShotStartOffset)
-                    :Dot(state.PendingReleaseDirection)
+                local usedTravel = state.PendingReleaseTravel
+                if type(usedTravel) ~= "number" then
+                    usedTravel = (state.PendingReleaseOffset - state.ShotStartOffset)
+                        :Dot(state.PendingReleaseDirection)
+                end
                 if index and index < 5 then
                     state.TargetLowerTravels[learnedMeter] = math.max(
                         state.TargetLowerTravels[learnedMeter] or 0,
@@ -1318,14 +1353,14 @@ return function(context)
                 end
 
                 local travelCorrection = ({
-                    [1] = 0.08,
-                    [2] = 0.04,
-                    [3] = 0.02,
-                    [4] = 0.01,
+                    [1] = 0.01,
+                    [2] = 0.003,
+                    [3] = 0.001,
+                    [4] = 0.0002,
                     [5] = 0,
-                    [6] = -0.02,
-                    [7] = -0.04,
-                    [8] = -0.08,
+                    [6] = -0.0002,
+                    [7] = -0.003,
+                    [8] = -0.01,
                 })[index]
                 if travelCorrection then
                     local nextTravel = usedTravel + travelCorrection
