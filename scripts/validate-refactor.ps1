@@ -562,13 +562,17 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
     $practicalBasketballText -match 'local correctionSeconds\s*=\s*\(\{' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
-    $practicalBasketballText -match 'correctedTravel\s*>\s*furthestTravel' -and
+    $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
+    $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
+    $practicalBasketballText -match 'correctedTravel\s*>\s*maximumTravel' -and
     $practicalBasketballText -match 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )
 $practicalBasketballReliableGuard = (
     $practicalBasketballText -match 'GuardRefreshAt\s*=\s*0' -and
     $practicalBasketballText -match 'character:GetAttribute\("HoldingG"\)' -and
+    $practicalBasketballText -match 'local carryingBasketball\s*=\s*hasBasketball\(character\)' -and
+    $practicalBasketballText -match 'state\.AutoGuard\s*and\s*inGame\s*and\s*not carryingBasketball' -and
     $practicalBasketballText -match 'setGuardHeld\(true,\s*true\)' -and
     $practicalBasketballText -match 'setGuardHeld\(false,\s*true\)'
 )
@@ -581,6 +585,14 @@ $practicalBasketballSharedProfiles = (
     $profilesText -match 'metadata\.scopeId\s*=\s*SETTINGS\.ConfigScopeId' -and
     $profilesText -match 'not isfile\(destination\)' -and
     $profilesText -match 'migrateLegacyConfigs\(\)'
+)
+$practicalBasketballTimingMigration = (
+    $profilesText -match 'local PROFILE_VERSION\s*=\s*4' -and
+    $profilesText -match 'local function normalizeProfileData\(metadata\)' -and
+    $profilesText -match 'practical_basketball_vertical_perfect_offset\s*=\s*"-1\.46824694"' -and
+    $profilesText -match 'practical_basketball_release_delay\s*=\s*0' -and
+    $profilesText -match 'version\s*=\s*PROFILE_VERSION' -and
+    $profilesText -match 'if normalizeProfileData\(data\) then'
 )
 $practicalBasketballRailIcons = (
     $uiText -match 'Offense\s*=\s*utf8\.char\(0x1F3C0\)' -and
@@ -636,7 +648,7 @@ $practicalBasketballQuickLaunch = (
     $uiText -match 'self\.Pages\.Shooting' -and
     $uiText -match '\{"Shooting",\s*"Offense",\s*"Defense",\s*"Dribble",\s*"Visuals"\}'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballSharedProfiles -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballSharedProfiles -and $practicalBasketballTimingMigration -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -670,6 +682,7 @@ Write-Host "Practical Basketball support: PASS (native Aero character, safe mete
 Write-Host "Practical Basketball Auto Green: PASS (measured meter velocity, immediate retry, feedback-calibrated target)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
 Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
+Write-Host "Practical Basketball timing profiles: PASS (legacy offset and delay migrate to full-bar calibration)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
 Write-Host "Practical Basketball camera FOV: PASS (change listener, late render lock, and clean reset)"

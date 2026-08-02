@@ -6,6 +6,7 @@ return function(context)
     local Utilities = assert(context.Utilities, "profiles requires Utilities")
     local HttpService = Utilities.Services.HttpService
     local COLORS = SETTINGS.COLORS
+    local PROFILE_VERSION = 4
 
     local function hasFileApi()
         return type(isfolder) == "function"
@@ -21,6 +22,25 @@ return function(context)
 
     local function profilePath(name)
         return SETTINGS.ProfileFolder .. "/" .. profileName(name) .. ".json"
+    end
+
+    local function normalizeProfileData(metadata)
+        if type(metadata) ~= "table" or type(metadata.values) ~= "table" then
+            return false
+        end
+        local changed = false
+        if SETTINGS.ActiveGame ~= nil
+            and SETTINGS.ActiveGame.Key == "PracticalBasketball"
+            and (tonumber(metadata.version) or 0) < PROFILE_VERSION then
+            metadata.values.practical_basketball_vertical_perfect_offset = "-1.46824694"
+            metadata.values.practical_basketball_release_delay = 0
+            changed = true
+        end
+        if tonumber(metadata.version) ~= PROFILE_VERSION then
+            metadata.version = PROFILE_VERSION
+            changed = true
+        end
+        return changed
     end
 
     local function migrateLegacyConfigs()
@@ -47,6 +67,7 @@ return function(context)
                             return HttpService:JSONDecode(readfile(legacyPath))
                         end)
                         if decoded and type(metadata) == "table" and type(metadata.values) == "table" then
+                            normalizeProfileData(metadata)
                             metadata.scopeId = SETTINGS.ConfigScopeId
                             metadata.universeId = game.GameId
                             metadata.profile = legacyName
@@ -218,7 +239,7 @@ return function(context)
         local ok, err = pcall(function()
             Utilities.EnsureFolder(SETTINGS.ProfileFolder)
             writefile(profilePath(cleanName), HttpService:JSONEncode({
-                version = 3,
+                version = PROFILE_VERSION,
                 scopeId = SETTINGS.ConfigScopeId,
                 placeId = game.PlaceId,
                 universeId = game.GameId,
@@ -252,6 +273,9 @@ return function(context)
         end)
         if not ok or type(data) ~= "table" or type(data.values) ~= "table" then
             return false, "Profile data is invalid"
+        end
+        if normalizeProfileData(data) then
+            pcall(writefile, path, HttpService:JSONEncode(data))
         end
         if not self:ProfileScopeMatches(data) then
             return false, "Profile belongs to a different game"

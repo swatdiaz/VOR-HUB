@@ -135,9 +135,12 @@ return function(context)
         PendingReleaseSpeed = 0,
         LastFeedback = "Waiting",
         LastTimingCorrection = "Waiting",
+        FullOffsets = {
+            -- Live Vertical meter endpoint when the white bar is completely filled.
+            Vertical = Vector2.new(0, -1.46824694),
+        },
         PerfectOffsets = {
-            -- Captured from a manual Perfect Release in Learn PB.
-            Vertical = Vector2.new(0, -1.31517029),
+            Vertical = Vector2.new(0, -1.46824694),
         },
         MeterName = "None",
         LastRelease = "Waiting",
@@ -697,10 +700,10 @@ return function(context)
     })
     AutoGreenSection:AddInput({
         Name = "Vertical Perfect Offset",
-        Description = "Exact Learn PB Perfect Release offset; updates automatically after a manual perfect",
+        Description = "Full-white Vertical meter endpoint; server feedback fine-tunes earlier only when necessary",
         Flag = "practical_basketball_vertical_perfect_offset",
-        Placeholder = "-1.31517029",
-        Default = "-1.31517029",
+        Placeholder = "-1.46824694",
+        Default = "-1.46824694",
         Callback = function(value)
             local parsed = tonumber(value)
             if parsed then
@@ -1336,14 +1339,14 @@ return function(context)
                     local correctedTarget = state.PendingReleaseOffset
                         + direction * speed * correctionSeconds
                     local shotStart = state.ShotStartOffset
-                    local furthestOffset = state.ShotFurthestOffset
+                    local maximumOffset = state.FullOffsets[learnedMeter]
                     if correctionSeconds > 0
                         and typeof(shotStart) == "Vector2"
-                        and typeof(furthestOffset) == "Vector2" then
+                        and typeof(maximumOffset) == "Vector2" then
                         local correctedTravel = (correctedTarget - shotStart):Dot(direction)
-                        local furthestTravel = (furthestOffset - shotStart):Dot(direction)
-                        if furthestTravel >= 0 and correctedTravel > furthestTravel then
-                            correctedTarget = shotStart + direction * furthestTravel
+                        local maximumTravel = (maximumOffset - shotStart):Dot(direction)
+                        if maximumTravel >= 0 and correctedTravel > maximumTravel then
+                            correctedTarget = shotStart + direction * maximumTravel
                         end
                     end
                     local previousTarget = state.PerfectOffsets[learnedMeter]
@@ -1389,7 +1392,8 @@ return function(context)
             setSprintHeld(false)
         end
 
-        if state.AutoGuard and inGame then
+        local carryingBasketball = hasBasketball(character)
+        if state.AutoGuard and inGame and not carryingBasketball then
             local authoritativeGuard = character:GetAttribute("HoldingG")
             if authoritativeGuard ~= true or now >= state.GuardRefreshAt then
                 setGuardHeld(true, true)
