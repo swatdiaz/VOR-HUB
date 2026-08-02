@@ -23,6 +23,67 @@ return function(context)
         return SETTINGS.ProfileFolder .. "/" .. profileName(name) .. ".json"
     end
 
+    local function migrateLegacyConfigs()
+        if not hasFileApi() or type(listfiles) ~= "function"
+            or type(SETTINGS.LegacyConfigRoots) ~= "table" then
+            return 0
+        end
+        local migrated = 0
+        Utilities.EnsureFolder(SETTINGS.ProfileFolder)
+        for _, legacyRoot in ipairs(SETTINGS.LegacyConfigRoots) do
+            local legacyProfileFolder = tostring(legacyRoot) .. "/Profiles"
+            local listed, files = pcall(function()
+                if not isfolder(legacyProfileFolder) then
+                    return {}
+                end
+                return listfiles(legacyProfileFolder)
+            end)
+            if listed and type(files) == "table" then
+                for _, legacyPath in ipairs(files) do
+                    local legacyName = profileName(tostring(legacyPath):match("([^/\\]+)%.json$") or "")
+                    local destination = legacyName ~= "" and profilePath(legacyName) or nil
+                    if destination and not isfile(destination) then
+                        local decoded, metadata = pcall(function()
+                            return HttpService:JSONDecode(readfile(legacyPath))
+                        end)
+                        if decoded and type(metadata) == "table" and type(metadata.values) == "table" then
+                            metadata.scopeId = SETTINGS.ConfigScopeId
+                            metadata.universeId = game.GameId
+                            metadata.profile = legacyName
+                            local copied = pcall(writefile, destination, HttpService:JSONEncode(metadata))
+                            if copied then
+                                migrated += 1
+                            end
+                        end
+                    end
+                end
+            end
+
+            if not isfile(SETTINGS.AutoLoadFile) then
+                local legacyAutoLoad = tostring(legacyRoot) .. "/autoload.json"
+                if isfile(legacyAutoLoad) then
+                    local decoded, metadata = pcall(function()
+                        return HttpService:JSONDecode(readfile(legacyAutoLoad))
+                    end)
+                    if decoded and type(metadata) == "table" then
+                        metadata.scopeId = SETTINGS.ConfigScopeId
+                        metadata.universeId = game.GameId
+                        pcall(function()
+                            Utilities.EnsureFolder(SETTINGS.ConfigRoot)
+                            writefile(SETTINGS.AutoLoadFile, HttpService:JSONEncode(metadata))
+                        end)
+                    end
+                end
+            end
+        end
+        if migrated > 0 then
+            warn(string.format("[VOR Hub] Migrated %d Practical Basketball profile(s) into the shared universe scope", migrated))
+        end
+        return migrated
+    end
+
+    migrateLegacyConfigs()
+
     local function encodeValue(value, seen)
         local kind = typeof(value)
         if kind == "Color3" then

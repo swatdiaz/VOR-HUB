@@ -39,6 +39,7 @@ return function(runtime)
                 [85576197307056] = true,
                 [80681221431821] = true,
                 [106120159518740] = true,
+                [137269396533485] = true,
             },
             Module = "games/practical_basketball.lua",
         },
@@ -123,7 +124,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.8.5",
+        Version = "3.8.6",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
@@ -165,10 +166,27 @@ return function(runtime)
         IsDungeon = activeGame ~= nil and activeGame.Key == "BloxFruitsDungeons",
     }
 
-    settings.ConfigScopeId = settings.IsBloxFruits and universeId or placeId
+    local sharesUniverseProfiles = settings.IsBloxFruits
+        or activeGame ~= nil and activeGame.Key == "PracticalBasketball"
+    settings.ConfigScopeId = sharesUniverseProfiles and universeId or placeId
     settings.ConfigRoot = "VORHub/Configs/" .. tostring(settings.ConfigScopeId)
     settings.ProfileFolder = settings.ConfigRoot .. "/Profiles"
     settings.AutoLoadFile = settings.ConfigRoot .. "/autoload.json"
+    settings.LegacyConfigRoots = {}
+    if activeGame ~= nil and activeGame.Key == "PracticalBasketball" then
+        local seenLegacyRoots = {}
+        local function addLegacyRoot(legacyPlaceId)
+            local root = "VORHub/Configs/" .. tostring(legacyPlaceId)
+            if root ~= settings.ConfigRoot and not seenLegacyRoots[root] then
+                seenLegacyRoots[root] = true
+                settings.LegacyConfigRoots[#settings.LegacyConfigRoots + 1] = root
+            end
+        end
+        addLegacyRoot(placeId)
+        for legacyPlaceId in pairs(activeGame.PlaceIds) do
+            addLegacyRoot(legacyPlaceId)
+        end
+    end
     settings.AccessFile = "VORHub/Configs/access.json"
 
     settings.COLORS = {

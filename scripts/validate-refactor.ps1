@@ -206,6 +206,7 @@ if (-not $raidFruitCycle) {
 
 $loaderText = Get-Content -LiteralPath (Join-Path $repo "loader.lua") -Raw
 $uiText = Get-Content -LiteralPath (Join-Path $repo "core/ui.lua") -Raw
+$profilesText = Get-Content -LiteralPath (Join-Path $repo "core/profiles.lua") -Raw
 $versionText = Get-Content -LiteralPath (Join-Path $repo "core/settings.lua") -Raw
 $semanticVersionMatch = [regex]::Match($versionText, 'Version\s*=\s*"(?<version>\d+\.\d+\.\d+)"')
 $semanticVersionOk = $semanticVersionMatch.Success
@@ -542,7 +543,7 @@ if (-not ($beeSwarmRouted -and $beeSwarmNativeLoop -and $beeSwarmPages -and $bee
 }
 
 $practicalBasketballText = Get-Content -LiteralPath (Join-Path $repo "games/practical_basketball.lua") -Raw
-$practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?106120159518740.*?games/practical_basketball\.lua'
+$practicalBasketballRouted = $settingsText -match '(?s)PracticalBasketball\s*=\s*\{.*?UniverseId\s*=\s*7529591378.*?85576197307056.*?80681221431821.*?106120159518740.*?137269396533485.*?games/practical_basketball\.lua'
 $practicalBasketballCharacter = $practicalBasketballText -match 'workspace:FindFirstChild\("Characters"\)'
 $practicalBasketballAero = $practicalBasketballText -match 'AeroRemoteServices' -and $practicalBasketballText -match 'InputService'
 $practicalBasketballBallTag = $practicalBasketballText -match 'GetTagged\("Basketballs"\)'
@@ -570,6 +571,16 @@ $practicalBasketballReliableGuard = (
     $practicalBasketballText -match 'character:GetAttribute\("HoldingG"\)' -and
     $practicalBasketballText -match 'setGuardHeld\(true,\s*true\)' -and
     $practicalBasketballText -match 'setGuardHeld\(false,\s*true\)'
+)
+$practicalBasketballSharedProfiles = (
+    $settingsText -match 'activeGame\s*~=\s*nil\s*and\s*activeGame\.Key\s*==\s*"PracticalBasketball"' -and
+    $settingsText -match 'settings\.ConfigScopeId\s*=\s*sharesUniverseProfiles\s*and\s*universeId\s*or\s*placeId' -and
+    $settingsText -match 'settings\.LegacyConfigRoots\s*=\s*\{\}' -and
+    $practicalBasketballText -match 'Flag\s*=\s*"practical_basketball_auto_green"' -and
+    $profilesText -match 'local function migrateLegacyConfigs\(\)' -and
+    $profilesText -match 'metadata\.scopeId\s*=\s*SETTINGS\.ConfigScopeId' -and
+    $profilesText -match 'not isfile\(destination\)' -and
+    $profilesText -match 'migrateLegacyConfigs\(\)'
 )
 $practicalBasketballRailIcons = (
     $uiText -match 'Offense\s*=\s*utf8\.char\(0x1F3C0\)' -and
@@ -625,7 +636,7 @@ $practicalBasketballQuickLaunch = (
     $uiText -match 'self\.Pages\.Shooting' -and
     $uiText -match '\{"Shooting",\s*"Offense",\s*"Defense",\s*"Dribble",\s*"Visuals"\}'
 )
-if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
+if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $practicalBasketballAero -and $practicalBasketballBallTag -and $practicalBasketballSafeRelease -and $practicalBasketballReliableGreen -and $practicalBasketballReliableGuard -and $practicalBasketballSharedProfiles -and $practicalBasketballRailIcons -and $practicalBasketballPages -and $practicalBasketballDribbleChains -and $practicalBasketballAutoSprint -and $practicalBasketballFovLock -and $practicalBasketballFHotkey -and $practicalBasketballCustomPreview -and $practicalBasketballMobileSupport -and $practicalBasketballQuickLaunch)) {
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
@@ -658,6 +669,7 @@ Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, to
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
 Write-Host "Practical Basketball Auto Green: PASS (measured meter velocity, immediate retry, feedback-calibrated target)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
+Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
 Write-Host "Practical Basketball dribble chains: PASS (guard trigger, hand-aware presets, custom chain, no tutorial completer)"
 Write-Host "Practical Basketball Auto Sprint: PASS (tutorial/free-roam support and movement-vector detection)"
 Write-Host "Practical Basketball camera FOV: PASS (change listener, late render lock, and clean reset)"
