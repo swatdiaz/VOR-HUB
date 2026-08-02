@@ -271,6 +271,8 @@ $mobAuraEnemyHold = (
     $bloxText -match 'setIdentity\(2\)' -and
     $bloxText -match 'combatController:Attack\(tool, nil, nil\)' -and
     $bloxText -match 'VOR_NativeWeaponHitbox' -and
+    $bloxText -match 'state\.NativeCombatBusy = true' -and
+    $bloxText -match 'state\.NativeCombatBusy = false' -and
     $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {
@@ -285,6 +287,8 @@ $berryAutomation = (
     $bloxText -match 'state\.BerriesClaimedThisServer \+= 1' -and
     $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
     $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
+    $bloxText -match 'TeleportService\.TeleportInitFailed:Connect' -and
+    $bloxText -match 'Roblox requires a valid server teleport token' -and
     $bloxText -match 'if state\.AutoBerry then\s+stepBerry\(\)' -and
     $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
 )

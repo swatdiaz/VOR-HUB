@@ -263,6 +263,7 @@ return function(context)
             SelectedMobSearchRange = 30000,
             SelectedMobWaitingAtSpawn = false,
             RegisterHitClosure = nil,
+            NativeCombatBusy = false,
             LastRegisterHitResolve = -math.huge,
             WeaponType = "Best Available",
             AutoBuso = true,
@@ -1540,6 +1541,11 @@ return function(context)
             if type(setIdentity) ~= "function" then
                 return false, "thread identity control is unavailable"
             end
+            if state.NativeCombatBusy then
+                state.AuraStage = "native-controller-busy"
+                return true
+            end
+            state.NativeCombatBusy = true
 
             local char = character()
             local body = humanoid()
@@ -1639,6 +1645,7 @@ return function(context)
                         end
                     end
                 end
+                state.NativeCombatBusy = false
             end)
             if not attackOk then
                 return false, tostring(attackError)
@@ -5142,7 +5149,44 @@ return function(context)
                         selected.playing,
                         selected.maxPlayers
                     )
+                    local failureConnection
+                    failureConnection = TeleportService.TeleportInitFailed:Connect(function(
+                        player,
+                        teleportResult,
+                        errorMessage
+                    )
+                        if player ~= LocalPlayer then
+                            return
+                        end
+                        if failureConnection then
+                            failureConnection:Disconnect()
+                            failureConnection = nil
+                        end
+                        state.BerryHopBusy = false
+                        state.BerryHopStatus = "Teleport blocked: " .. tostring(errorMessage)
+                        Window:Notify(
+                            "Server Hop Blocked",
+                            tostring(errorMessage) .. " (Roblox requires a valid server teleport token)",
+                            6
+                        )
+                    end)
+                    local setIdentity = setthreadidentity or setidentity
+                        or (syn and syn.set_thread_identity)
+                    local getIdentity = getthreadidentity or getidentity
+                        or (syn and syn.get_thread_identity)
+                    local previousIdentity = nil
+                    if type(getIdentity) == "function" then
+                        pcall(function()
+                            previousIdentity = getIdentity()
+                        end)
+                    end
+                    if type(setIdentity) == "function" then
+                        setIdentity(2)
+                    end
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, selected.id, LocalPlayer)
+                    if type(setIdentity) == "function" then
+                        setIdentity(previousIdentity or 8)
+                    end
                 end)
                 if not ok then
                     state.BerryHopBusy = false
