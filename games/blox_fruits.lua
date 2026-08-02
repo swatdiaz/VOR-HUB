@@ -391,6 +391,11 @@ return function(context)
             DamageDebugConnection = nil,
         }
         state.BerryEnvironment = type(getgenv) == "function" and getgenv() or _G
+        pcall(function()
+            if TeleportService:GetTeleportSetting("VORBerryResumeHop") == true then
+                state.BerryEnvironment.VORBerryResumeHop = true
+            end
+        end)
         if state.BerryEnvironment.VORBerryResumeHop == true then
             state.AutoBerry = true
             state.AutoBerryServerHop = true
@@ -5162,7 +5167,8 @@ return function(context)
             local payload = table.concat({
                 "repeat task.wait() until game:IsLoaded()",
                 "task.wait(0.15)",
-                "(type(getgenv) == \"function\" and getgenv() or _G).VORBerryResumeHop = true",
+                "local environment = type(getgenv) == \"function\" and getgenv() or _G",
+                "environment.VORBerryResumeHop = true",
                 "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua?berry_resume=\" .. tostring(os.time())))()",
             }, "\n")
             local ok, message = pcall(queue, payload)
@@ -5186,7 +5192,11 @@ return function(context)
                             error("Cross-sea berry resume failed: " .. tostring(queueMessage))
                         end
                         state.BerryEnvironment.VORBerryResumeHop = true
+                        pcall(function()
+                            TeleportService:SetTeleportSetting("VORBerryResumeHop", true)
+                        end)
                         local fromFirstSea = game.PlaceId == 2753915549
+                            or game.PlaceId == 85211729168715
                         local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"
                         local destination = fromFirstSea and "Third Sea" or "First Sea"
                         state.BerryHopStatus = "Cross-sea hop to random " .. destination .. " server"
@@ -6293,6 +6303,9 @@ return function(context)
             Callback = function(enabled)
                 state.AutoBerryServerHop = enabled == true
                 state.BerryEnvironment.VORBerryResumeHop = state.AutoBerryServerHop
+                pcall(function()
+                    TeleportService:SetTeleportSetting("VORBerryResumeHop", state.AutoBerryServerHop)
+                end)
                 state.BerryHopStatus = enabled and "Scanning live spawns" or "Off"
                 state.BerryEmptySince = 0
                 if enabled and state.BerryToggle and not state.BerryToggle:Get() then

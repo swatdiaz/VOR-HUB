@@ -194,7 +194,8 @@ return function(context)
         local payload = table.concat({
             "repeat task.wait() until game:IsLoaded()",
             "task.wait(0.1)",
-            "(type(getgenv) == \"function\" and getgenv() or _G).VORDungeonResumeAll = true",
+            "local environment = type(getgenv) == \"function\" and getgenv() or _G",
+            "environment.VORDungeonResumeAll = true",
             "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
         }, "\n")
         local ok, message = pcall(queue, payload)

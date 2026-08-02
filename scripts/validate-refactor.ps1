@@ -295,6 +295,8 @@ $berryAutomation = (
     $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
     $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
     $bloxText -match 'VORBerryResumeHop = true' -and
+    $bloxText -match 'TeleportService:GetTeleportSetting\("VORBerryResumeHop"\)' -and
+    $bloxText -match 'TeleportService:SetTeleportSetting\("VORBerryResumeHop", true\)' -and
     $bloxText -match 'local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"' -and
     $bloxText -match 'Cross-sea hop to random " \.\. destination \.\. " server' -and
     $bloxText -match 'Default = state\.AutoBerryServerHop' -and
@@ -400,6 +402,10 @@ $xenoRuntimeMarker = $loaderText -match 'VORXenoCompatibility'
 $xenoHomeIdentity = $uiText -match 'Executor:\s*"\s*\.\.\s*tostring\(context\.Runtime'
 $dungeonText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_dungeons.lua") -Raw
 $xenoTeleportResume = $dungeonText -match '\(type\(getgenv\) == \\"function\\" and getgenv\(\) or _G\)\.VORDungeonResumeAll'
+$xenoTeleportResume = $xenoTeleportResume -or (
+    $dungeonText -match 'local environment = type\(getgenv\) == \\"function\\" and getgenv\(\) or _G' -and
+    $dungeonText -match 'environment\.VORDungeonResumeAll = true'
+)
 if (-not ($xenoExecutorDetection -and $xenoHttpRetry -and $xenoRequestFallback -and $xenoRuntimeMarker -and $xenoHomeIdentity -and $xenoTeleportResume)) {
     throw "Xeno compatibility contract failed"
 }
