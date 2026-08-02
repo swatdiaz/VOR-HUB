@@ -2639,7 +2639,8 @@ return function(context)
                     local nearestPrimeDistance = math.huge
                     local retryPrime = nil
                     local retryDistance = math.huge
-                    for _, candidate in ipairs(loadedEnemies()) do
+                    local enemies = workspace:FindFirstChild("Enemies")
+                    for _, candidate in ipairs(enemies and enemies:GetChildren() or {}) do
                         local candidateRoot = modelRoot(candidate)
                         if candidateRoot and modelAlive(candidate)
                             and enemyMatches(candidate, primeName)
