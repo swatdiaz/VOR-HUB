@@ -30,6 +30,7 @@ return function(context)
         CachedRemote = {},
         LastInventory = 0,
         SaberOwned = false,
+        LastRelicAttemptAt = 0,
         RelicPlacementRequestedAt = 0,
         RelicPlaced = false,
         StatusLabel = nil,
@@ -347,6 +348,10 @@ return function(context)
             if root and (root.Position - relicSlot.Position).Magnitude > 3 then
                 api.MoveTo(relicSlot)
             else
+                if os.clock() - runtime.LastRelicAttemptAt < 1.5 then
+                    return true
+                end
+                runtime.LastRelicAttemptAt = os.clock()
                 local ok = rawInvoke("ProQuestProgress", "PlaceRelic")
                 if ok then
                     runtime.RelicPlacementRequestedAt = os.clock()
@@ -394,6 +399,7 @@ return function(context)
             runtime.Enabled = enabled == true
             runtime.CachedRemote = {}
             runtime.LastRemote = {}
+            runtime.LastRelicAttemptAt = 0
             runtime.RelicPlacementRequestedAt = 0
             runtime.RelicPlaced = false
             gui:SetAttribute("BloxAutoSaberRelicPlaced", false)
