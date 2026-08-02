@@ -114,10 +114,18 @@ return function(context)
         Alive = true,
         AutoGreen = false,
         ForceNextGreen = false,
+        AdaptiveTiming = false,
+        ManualReleaseDelayMs = 0,
         -- The displayed meter advances in roughly 0.05-stud frame steps, while
         -- the server's Perfect window sits between those samples. Track an
         -- interpolated release target instead of waiting for the next frame.
         PerfectTravels = {},
+        ShotProfiles = {},
+        CurrentShotSignature = nil,
+        CurrentShotLearnable = false,
+        ReleaseRecords = {},
+        ProfileClock = 0,
+        ActiveTargetOffset = nil,
         ScheduledReleaseId = nil,
         RenderStepDuration = 1 / 60,
         ReleasedThisShot = false,
@@ -725,7 +733,56 @@ return function(context)
             meterReleaseLabel.TextColor3 = enabled and COLORS.success or COLORS.muted
         end,
     })
-    AutoGreenSection:AddLabel("Timing is fully automatic; manual offset and lead controls are locked out.")
+    local releaseFineTuneControl
+    releaseFineTuneControl = AutoGreenSection:AddSlider({
+        Name = "Release Fine-Tune",
+        Description = "Positive releases later; negative releases earlier",
+        Flag = "practical_basketball_release_fine_tune_ms",
+        Min = -50,
+        Max = 50,
+        Step = 0.25,
+        Round = 2,
+        Default = 0,
+        Suffix = " ms",
+        Callback = function(value)
+            state.ManualReleaseDelayMs = tonumber(value) or 0
+            state.LastTimingCorrection = string.format(
+                "Manual timing: %+.2f ms",
+                state.ManualReleaseDelayMs
+            )
+        end,
+    })
+    AutoGreenSection:AddButton({
+        Name = "Later +0.25 ms",
+        Description = "Hold the shot a quarter millisecond longer",
+        Callback = function()
+            releaseFineTuneControl:Set(state.ManualReleaseDelayMs + 0.25)
+        end,
+    })
+    AutoGreenSection:AddButton({
+        Name = "Earlier -0.25 ms",
+        Description = "Release the shot a quarter millisecond sooner",
+        Callback = function()
+            releaseFineTuneControl:Set(state.ManualReleaseDelayMs - 0.25)
+        end,
+    })
+    AutoGreenSection:AddButton({
+        Name = "Reset Fine-Tune",
+        Description = "Returns manual release timing to 0.00 ms",
+        Callback = function()
+            releaseFineTuneControl:Set(0)
+        end,
+    })
+    AutoGreenSection:AddToggle({
+        Name = "Adaptive Timing",
+        Description = "Learns separate layup and jump-shot timing only while fine-tune is 0 ms",
+        Flag = "practical_basketball_adaptive_timing",
+        Default = false,
+        Callback = function(enabled)
+            state.AdaptiveTiming = enabled
+        end,
+    })
+    AutoGreenSection:AddLabel("Manual test: leave Adaptive Timing off so the target cannot move behind your back.")
     AutoGreenSection:AddButton({
         Name = "Green Next Shot",
         Description = "Arms Auto Green for one shot without leaving it enabled",
@@ -1161,6 +1218,79 @@ return function(context)
             or UserInputService:IsKeyDown(Enum.KeyCode.E)
     end
 
+    local function quantize(value, step)
+        value = tonumber(value)
+        if not value then
+            return nil
+        end
+        return math.round(value / step) * step
+    end
+
+    local function buildShotSignature(character, meterName)
+        local baseAnimation = character:GetAttribute("BaseAnimation")
+        local shotSpeed = quantize(character:GetAttribute("ShotSpeed"), 0.05)
+        local deltaTime = quantize(character:GetAttribute("deltaTime"), 0.001)
+        local rotation = quantize(character:GetAttribute("meterRotation"), 1)
+        local learnable = baseAnimation ~= nil
+            and shotSpeed ~= nil
+            and deltaTime ~= nil
+            and rotation ~= nil
+        if not learnable then
+            return tostring(meterName or "Unknown") .. "|Fallback", false
+        end
+        return string.format(
+            "%s|%s|%.2f|%.3f|%.0f",
+            tostring(meterName or "Unknown"),
+            tostring(baseAnimation),
+            shotSpeed,
+            deltaTime,
+            rotation % 360
+        ), true
+    end
+
+    local function resolveShotProfile(character, meterName, defaultTarget)
+        if not state.CurrentShotSignature or not state.CurrentShotLearnable then
+            local candidateSignature, candidateLearnable = buildShotSignature(
+                character,
+                meterName
+            )
+            if candidateLearnable or not state.CurrentShotSignature then
+                state.CurrentShotSignature = candidateSignature
+                state.CurrentShotLearnable = candidateLearnable
+            end
+        end
+        local signature = state.CurrentShotSignature
+        local profile = state.ShotProfiles[signature]
+        if not profile then
+            local profileCount = 0
+            local oldestKey, oldestClock
+            for key, existing in pairs(state.ShotProfiles) do
+                profileCount += 1
+                if not oldestClock or existing.LastUsed < oldestClock then
+                    oldestKey, oldestClock = key, existing.LastUsed
+                end
+            end
+            if profileCount >= 128 and oldestKey then
+                state.ShotProfiles[oldestKey] = nil
+            end
+            profile = {
+                TargetY = defaultTarget.Y,
+                EarlyY = nil,
+                LateY = nil,
+                Locked = false,
+                Samples = 0,
+                MissSide = nil,
+                MissStreak = 0,
+                Learnable = state.CurrentShotLearnable,
+                LastUsed = 0,
+            }
+            state.ShotProfiles[signature] = profile
+        end
+        state.ProfileClock += 1
+        profile.LastUsed = state.ProfileClock
+        return signature, profile
+    end
+
     local function resetShot(offset, token)
         state.ShotToken = token
         state.ShotStartOffset = typeof(offset) == "Vector2" and offset or nil
@@ -1175,6 +1305,9 @@ return function(context)
         state.PendingReleaseTravel = nil
         state.PendingReleaseMeter = nil
         state.PendingReleaseDirection = nil
+        state.CurrentShotSignature = nil
+        state.CurrentShotLearnable = false
+        state.ActiveTargetOffset = nil
         state.ScheduledReleaseId = nil
         state.ReleasedThisShot = false
     end
@@ -1183,6 +1316,8 @@ return function(context)
         character,
         scheduleId,
         expectedShotToken,
+        expectedShotSignature,
+        expectedTargetY,
         releaseMeter,
         releaseDirection,
         releaseTravel,
@@ -1194,6 +1329,9 @@ return function(context)
         local stillShooting = state.Alive
             and not state.ReleasedThisShot
             and state.ShotToken == expectedShotToken
+            and state.CurrentShotSignature == expectedShotSignature
+            and typeof(state.ActiveTargetOffset) == "Vector2"
+            and math.abs(state.ActiveTargetOffset.Y - expectedTargetY) < 0.00001
             and character:GetAttribute("ShotStartTime") == expectedShotToken
             and character:GetAttribute("ReleasedShot") == false
             and tostring(character:GetAttribute("Action") or "") == "Shooting"
@@ -1225,6 +1363,21 @@ return function(context)
         state.PendingReleaseTravel = releaseTravel
         state.PendingReleaseMeter = releaseMeter
         state.PendingReleaseDirection = releaseDirection
+        table.insert(state.ReleaseRecords, {
+            Token = expectedShotToken,
+            Signature = expectedShotSignature,
+            TargetY = expectedTargetY,
+            UsedY = releaseOffset.Y,
+            Learnable = state.AdaptiveTiming
+                and math.abs(state.ManualReleaseDelayMs) < 0.0001
+                and state.CurrentShotLearnable,
+            DelayMs = state.ManualReleaseDelayMs,
+            Meter = releaseMeter,
+            At = os.clock(),
+        })
+        while #state.ReleaseRecords > 4 do
+            table.remove(state.ReleaseRecords, 1)
+        end
         state.LastRelease = string.format(
             "%s at (%.5f, %.5f) | travel %.5f",
             releaseMeter,
@@ -1298,7 +1451,16 @@ return function(context)
             end
 
             local reachedTarget = false
-            local targetOffset = state.PerfectOffsets[state.MeterName]
+            local defaultTarget = state.PerfectOffsets[state.MeterName]
+            local targetOffset = defaultTarget
+            if typeof(defaultTarget) == "Vector2" then
+                local _, profile = resolveShotProfile(
+                    character,
+                    state.MeterName,
+                    defaultTarget
+                )
+                targetOffset = Vector2.new(defaultTarget.X, profile.TargetY)
+            end
             local targetTravel
             if typeof(targetOffset) == "Vector2" and state.ShotDirection then
                 -- Shot travel starts from this shot's live initial offset (about
@@ -1308,12 +1470,15 @@ return function(context)
                 state.PerfectTravels[state.MeterName] = targetTravel
                 reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
             end
+            state.ActiveTargetOffset = targetOffset
 
             local releaseDelay
-            if not reachedTarget and targetTravel and state.MeterSpeed > 0 then
+            if targetTravel and state.MeterSpeed > 0 then
                 local remainingTravel = targetTravel - state.ShotTravel
                 local predictedDelay = remainingTravel / state.MeterSpeed
-                if remainingTravel > 0 and predictedDelay >= 0 and predictedDelay <= 0.025 then
+                    + (state.ManualReleaseDelayMs / 1000)
+                reachedTarget = predictedDelay <= 0
+                if not reachedTarget and predictedDelay <= 0.025 then
                     releaseDelay = predictedDelay
                 end
             end
@@ -1326,11 +1491,13 @@ return function(context)
             if releaseEligible and releaseDelay and not state.ScheduledReleaseId then
                 local releaseMeter = state.MeterName
                 local releaseDirection = state.ShotDirection
-                local releaseTravel = targetTravel
+                local releaseTravel = state.ShotTravel + state.MeterSpeed * releaseDelay
                 local releaseOffset = state.ShotStartOffset + releaseDirection * releaseTravel
                 local deadline = os.clock() + releaseDelay
                 local scheduleId = {}
                 local expectedShotToken = state.ShotToken
+                local expectedShotSignature = state.CurrentShotSignature
+                local expectedTargetY = targetOffset.Y
                 state.ScheduledReleaseId = scheduleId
                 -- Wake about one measured render frame early, then precision-spin
                 -- only to the original target deadline. This avoids task.delay
@@ -1349,6 +1516,8 @@ return function(context)
                         character,
                         scheduleId,
                         expectedShotToken,
+                        expectedShotSignature,
+                        expectedTargetY,
                         releaseMeter,
                         releaseDirection,
                         releaseTravel,
@@ -1360,6 +1529,8 @@ return function(context)
                     character,
                     nil,
                     state.ShotToken,
+                    state.CurrentShotSignature,
+                    targetOffset.Y,
                     state.MeterName,
                     state.ShotDirection,
                     state.ShotTravel,
@@ -1463,9 +1634,99 @@ return function(context)
                 timingName,
                 math.round(tonumber(contest) or 0)
             )
-            state.LastTimingCorrection = timingName .. " | fixed per-shot target"
-            if index == 5 and typeof(state.PendingReleaseOffset) == "Vector2" then
-                local learnedMeter = state.PendingReleaseMeter or state.LastShotMeter
+            local now = os.clock()
+            while state.ReleaseRecords[1]
+                and now - state.ReleaseRecords[1].At > 3 do
+                table.remove(state.ReleaseRecords, 1)
+            end
+            local releaseRecord = table.remove(state.ReleaseRecords, 1)
+            local signature = releaseRecord and releaseRecord.Signature
+            local profile = signature and state.ShotProfiles[signature]
+            local usedY = releaseRecord and releaseRecord.UsedY
+            if profile
+                and profile.Learnable
+                and releaseRecord.Learnable
+                and type(usedY) == "number"
+                and index then
+                profile.Samples += 1
+                local lockHeld = false
+                if index == 5 then
+                    profile.TargetY = math.clamp(usedY, -1.440, -1.390)
+                    profile.Locked = true
+                    profile.MissSide = nil
+                    profile.MissStreak = 0
+                else
+                    local missSide = index < 5 and "Early" or "Late"
+                    local shouldAdjust = true
+                    if profile.Locked then
+                        if profile.MissSide == missSide then
+                            profile.MissStreak += 1
+                        else
+                            profile.MissSide = missSide
+                            profile.MissStreak = 1
+                        end
+                        if profile.MissStreak < 2 then
+                            shouldAdjust = false
+                            lockHeld = true
+                        else
+                            profile.Locked = false
+                            profile.MissSide = nil
+                            profile.MissStreak = 0
+                        end
+                    end
+
+                    if shouldAdjust then
+                        if index < 5 then
+                            profile.EarlyY = profile.EarlyY
+                                and math.min(profile.EarlyY, usedY)
+                                or usedY
+                        elseif index > 5 then
+                            profile.LateY = profile.LateY
+                                and math.max(profile.LateY, usedY)
+                                or usedY
+                        end
+
+                        if profile.EarlyY and profile.LateY
+                            and profile.EarlyY >= profile.LateY then
+                            profile.TargetY = (profile.EarlyY + profile.LateY) * 0.5
+                        else
+                            local adjustment = ({
+                                [1] = -0.008,
+                                [2] = -0.004,
+                                [3] = -0.002,
+                                [4] = -0.001,
+                                [6] = 0.001,
+                                [7] = 0.004,
+                                [8] = 0.008,
+                            })[index] or 0
+                            profile.TargetY += adjustment
+                        end
+                        profile.TargetY = math.clamp(profile.TargetY, -1.440, -1.390)
+                    end
+                end
+                state.LastTimingCorrection = string.format(
+                    "%s | profile %d -> %.5f%s%s",
+                    timingName,
+                    profile.Samples,
+                    profile.TargetY,
+                    profile.Locked and " locked" or "",
+                    lockHeld and " | one noisy miss ignored" or ""
+                )
+            else
+                local manualDelay = releaseRecord and releaseRecord.DelayMs
+                    or state.ManualReleaseDelayMs
+                state.LastTimingCorrection = string.format(
+                    "%s | manual %+.2f ms",
+                    timingName,
+                    manualDelay
+                )
+            end
+            local confirmedY = releaseRecord and releaseRecord.UsedY
+                or (state.PendingReleaseOffset and state.PendingReleaseOffset.Y)
+            if index == 5 and type(confirmedY) == "number" then
+                local learnedMeter = releaseRecord and releaseRecord.Meter
+                    or state.PendingReleaseMeter
+                    or state.LastShotMeter
                 meterReleaseLabel.Text = state.ReleasedThisShot
                     and string.format(
                         "Perfect confirmed: %s",
@@ -1474,7 +1735,7 @@ return function(context)
                     or string.format(
                         "Manual Perfect %s: %.8f",
                         learnedMeter,
-                        state.PendingReleaseOffset.Y
+                        confirmedY
                     )
                 meterReleaseLabel.TextColor3 = COLORS.success
             end
@@ -1592,7 +1853,8 @@ return function(context)
         meterNameLabel.Text = "Meter: " .. state.MeterName
         meterNameLabel.TextColor3 = state.MeterName ~= "None" and COLORS.success or COLORS.muted
         local meterOffset = character and character:GetAttribute("meterOffset")
-        local targetOffset = state.PerfectOffsets[state.LastShotMeter]
+        local targetOffset = state.ActiveTargetOffset
+            or state.PerfectOffsets[state.LastShotMeter]
         meterProgressLabel.Text = typeof(meterOffset) == "Vector2"
             and string.format(
                 "Offset Y: %.8f | Perfect: %s",

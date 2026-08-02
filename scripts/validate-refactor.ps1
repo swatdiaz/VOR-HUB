@@ -582,7 +582,31 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -notmatch 'local travelCorrection\s*=\s*\(\{' -and
     $practicalBasketballText -notmatch 'TargetLowerTravels\s*=\s*\{' -and
     $practicalBasketballText -notmatch 'TargetUpperTravels\s*=\s*\{' -and
-    $practicalBasketballText -match 'fixed per-shot target' -and
+    $practicalBasketballText -match 'ShotProfiles\s*=\s*\{' -and
+    $practicalBasketballText -match 'ReleaseRecords\s*=\s*\{' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Release Fine-Tune"' -and
+    $practicalBasketballText -match 'Min\s*=\s*-50' -and
+    $practicalBasketballText -match 'Max\s*=\s*50' -and
+    $practicalBasketballText -match 'Step\s*=\s*0\.25' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Later \+0\.25 ms"' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Earlier -0\.25 ms"' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Reset Fine-Tune"' -and
+    $practicalBasketballText -match 'predictedDelay\s*=\s*remainingTravel\s*/\s*state\.MeterSpeed\s*\+\s*\(state\.ManualReleaseDelayMs\s*/\s*1000\)' -and
+    $practicalBasketballText -match 'Name\s*=\s*"Adaptive Timing"' -and
+    $practicalBasketballText -match 'local function buildShotSignature\(character,\s*meterName\)' -and
+    $practicalBasketballText -match 'character:GetAttribute\("BaseAnimation"\)' -and
+    $practicalBasketballText -match 'quantize\(character:GetAttribute\("ShotSpeed"\),\s*0\.05\)' -and
+    $practicalBasketballText -match 'quantize\(character:GetAttribute\("deltaTime"\),\s*0\.001\)' -and
+    $practicalBasketballText -match 'quantize\(character:GetAttribute\("meterRotation"\),\s*1\)' -and
+    $practicalBasketballText -match 'profileCount\s*>=\s*128' -and
+    $practicalBasketballText -match '#state\.ReleaseRecords\s*>\s*4' -and
+    $practicalBasketballText -match 'now\s*-\s*state\.ReleaseRecords\[1\]\.At\s*>\s*3' -and
+    $practicalBasketballText -match 'state\.CurrentShotSignature\s*==\s*expectedShotSignature' -and
+    $practicalBasketballText -match 'math\.abs\(state\.ActiveTargetOffset\.Y\s*-\s*expectedTargetY\)\s*<\s*0\.00001' -and
+    $practicalBasketballText -match 'profile\.EarlyY\s*>=\s*profile\.LateY' -and
+    $practicalBasketballText -match 'profile\.Locked\s*=\s*true' -and
+    $practicalBasketballText -match 'profile\.MissStreak\s*<\s*2' -and
+    $practicalBasketballText -match 'profile\.TargetY\s*=\s*math\.clamp\(profile\.TargetY,\s*-1\.440,\s*-1\.390\)' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
@@ -711,7 +735,7 @@ Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation i
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
-Write-Host "Practical Basketball Auto Green: PASS (fixed target with frame-aware scheduled release)"
+Write-Host "Practical Basketball Auto Green: PASS (frame-aware release with bounded per-shot profiles)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
 Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
 Write-Host "Practical Basketball timing profiles: PASS (legacy manual offset and delay controls are discarded)"
