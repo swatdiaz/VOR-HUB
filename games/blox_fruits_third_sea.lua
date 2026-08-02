@@ -944,9 +944,13 @@ return function(context)
                     end
                 end
             end
-            if runtime.TyrantSessionKills >= 300 then
-                red = math.max(red, 4)
-            end
+        end
+        -- The visible red diamonds are rendered separately from the two gray
+        -- BirdStatue meshes, so exact mesh discovery must not veto the confirmed
+        -- 300-kill server cycle. Once the required kills are credited, enter the
+        -- live CuttableObject phase even though Cube.010 itself remains gray.
+        if runtime.TyrantSessionKills >= 300 then
+            red = math.max(red, 4)
         end
         runtime.TyrantEyes = math.clamp(red, 0, 4)
         runtime.TyrantEyeParts = total
