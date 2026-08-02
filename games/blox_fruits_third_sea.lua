@@ -53,8 +53,6 @@ return function(context)
         TyrantTracked = setmetatable({}, {__mode = "k"}),
         TyrantSkillIndex = 0,
         TyrantLastSkill = 0,
-        TyrantSkillTool = nil,
-        TyrantSkillToolReadyAt = 0,
         TyrantPotRound = 0,
         TyrantLastPotSeen = 0,
         TyrantLastEmptyRoundAt = 0,
@@ -1052,23 +1050,6 @@ return function(context)
         return best, center
     end
 
-    local function equipTyrantSkillTool(selection)
-        local tool = type(api.ToolForSelection) == "function" and api.ToolForSelection(selection) or nil
-        if not tool then
-            return nil
-        end
-        if type(api.EquipTool) == "function" then
-            api.EquipTool(tool)
-        else
-            local char = helpers.Character()
-            local body = char and char:FindFirstChildOfClass("Humanoid")
-            if body and tool.Parent ~= char then
-                body:EquipTool(tool)
-            end
-        end
-        return tool
-    end
-
     local function useTyrantPotSkill(pot)
         local root = api.RootPart()
         if not root or not pot then
@@ -1088,40 +1069,9 @@ return function(context)
         if os.clock() - runtime.TyrantLastSkill < 0.22 then
             return
         end
-        local toolSelections = {"Blox Fruit", "Melee", "Sword"}
         local allowedSkills = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.F}
-        local cycleLength = #toolSelections * #allowedSkills
-        local tool = nil
-        local selection = nil
-        local keyCode = nil
-        local nextSkillIndex = nil
-        for _ = 1, cycleLength do
-            nextSkillIndex = (nextSkillIndex or runtime.TyrantSkillIndex) % cycleLength + 1
-            local toolIndex = math.floor((nextSkillIndex - 1) / #allowedSkills) + 1
-            local skillIndex = (nextSkillIndex - 1) % #allowedSkills + 1
-            selection = toolSelections[toolIndex]
-            keyCode = allowedSkills[skillIndex]
-            tool = type(api.ToolForSelection) == "function" and api.ToolForSelection(selection) or nil
-            if tool then
-                break
-            end
-        end
-        if not tool or not keyCode then
-            gui:SetAttribute("BloxTyrantLastSkill", "No Fruit/Melee/Sword tool")
-            return
-        end
-        local char = helpers.Character()
-        if runtime.TyrantSkillTool ~= tool or tool.Parent ~= char then
-            runtime.TyrantSkillTool = tool
-            runtime.TyrantSkillToolReadyAt = os.clock() + 0.18
-            equipTyrantSkillTool(selection)
-            gui:SetAttribute("BloxTyrantLastSkill", selection .. " readying")
-            return
-        end
-        if os.clock() < runtime.TyrantSkillToolReadyAt then
-            return
-        end
-        runtime.TyrantSkillIndex = nextSkillIndex
+        runtime.TyrantSkillIndex = runtime.TyrantSkillIndex % #allowedSkills + 1
+        local keyCode = allowedSkills[runtime.TyrantSkillIndex]
         runtime.TyrantLastSkill = os.clock()
         local camera = workspace.CurrentCamera
         if camera then
@@ -1150,7 +1100,7 @@ return function(context)
                 end)
             end)
         end
-        gui:SetAttribute("BloxTyrantLastSkill", selection .. " " .. keyCode.Name)
+        gui:SetAttribute("BloxTyrantLastSkill", keyCode.Name)
     end
 
     local function recoverTyrantTeam()

@@ -8867,8 +8867,6 @@ return function(context)
                     MoveTo = function(target)
                         return moveTo(target)
                     end,
-                    ToolForSelection = toolForSelection,
-                    EquipTool = equipTool,
                     Stop = function()
                         state.ThirdSeaFarmActive = false
                         state.ThirdSeaUsesMobAura = false
