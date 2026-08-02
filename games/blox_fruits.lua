@@ -2269,6 +2269,18 @@ return function(context)
                 -- Grab is off. Fruit independently covers its nearest three.
                 attackTargets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
                 target = attackTargets[1] or target
+            elseif state.ThirdSeaFarmActive and #targets > 1 then
+                -- Third Sea progression stages can require hundreds of normal
+                -- NPC kills. Batch every nearby authorized farm target through
+                -- the same native registered-Melee swing instead of rotating a
+                -- single rig per attack window.
+                attackTargets = {}
+                local multiLimit = math.min(#targets, DoubleAttackEngine.SwordTargetLimit)
+                for offset = 0, multiLimit - 1 do
+                    local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
+                    table.insert(attackTargets, targets[index])
+                end
+                target = attackTargets[1]
             elseif (state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid

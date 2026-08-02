@@ -221,6 +221,7 @@ $tyrantSummon = (
     $thirdSeaText -match 'CuttableObject' -and
     $thirdSeaText -match 'not object:IsDescendantOf\(gui\)' -and
     $thirdSeaText -match 'local function recoverTyrantTeam\(\)' -and
+    $bloxText -match 'state\.ThirdSeaFarmActive and #targets > 1' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
