@@ -1341,7 +1341,7 @@ return function(context)
                 Gui = gui,
                 Track = track,
                 Pages = pages,
-                COLORS = COLORS,
+                COLORS = context.COLORS,
                 API = context.ExperimentalAPI,
             }
         )
@@ -1368,7 +1368,7 @@ return function(context)
                 State = sharedState,
                 Remotes = remotes,
                 Helpers = helpers,
-                COLORS = COLORS,
+                COLORS = context.COLORS,
                 AutomationAPI = context.ThirdSeaAPI,
             }
         )
