@@ -1200,9 +1200,12 @@ return function(context)
                     local sampleDuration = sampleAt - previousAt
                     if sampleDuration > 0.0001 and sampleDuration < 0.25 then
                         local observedSpeed = (offset - previousOffset):Dot(state.ShotDirection) / sampleDuration
-                        if observedSpeed > 0 then
+                        -- Clean Vertical traces travel at about 3.05 units/s.
+                        -- Tiny callback intervals occasionally report 9+ and
+                        -- would make interpolation release several ms early.
+                        if observedSpeed > 0 and observedSpeed < 5 then
                             state.MeterSpeed = state.MeterSpeed > 0
-                                and state.MeterSpeed * 0.65 + observedSpeed * 0.35
+                                and state.MeterSpeed * 0.7 + observedSpeed * 0.3
                                 or observedSpeed
                         end
                     end
