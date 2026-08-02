@@ -342,6 +342,9 @@ return function(context)
                 runtime.Active = nil
                 if key == "tyrant" then
                     setTyrantPotHold(false)
+                    if type(api.SetBossMode) == "function" then
+                        api.SetBossMode(false)
+                    end
                 end
                 api.Stop()
                 setStatus("Stopped", "Automation stopped")
@@ -1167,6 +1170,9 @@ return function(context)
             setTyrantPotHold(false)
             runtime.TyrantPotTarget = nil
             runtime.TyrantSkillIndex = 0
+            if type(api.SetBossMode) == "function" then
+                api.SetBossMode(true)
+            end
             api.SetCombat(true)
             runtime.TyrantBossActive = true
             runtime.TyrantPotRound = 0
@@ -1189,6 +1195,9 @@ return function(context)
             setTyrantPotHold(false)
             runtime.TyrantPotTarget = nil
             runtime.TyrantSkillIndex = 0
+            if type(api.SetBossMode) == "function" then
+                api.SetBossMode(false)
+            end
             api.SetCombat(true)
             local confirmedKills = math.max(runtime.TyrantSessionKills, eyes * 75)
             local remaining = math.max(300 - confirmedKills, 0)
@@ -1210,6 +1219,9 @@ return function(context)
         -- Vase skills need exclusive ownership of the equipped Tool. Aura Kill's
         -- attack loop otherwise re-equips its selected weapon between our settle
         -- frame and the native skill input. Boss/NPC branches re-arm it above.
+        if type(api.SetBossMode) == "function" then
+            api.SetBossMode(false)
+        end
         api.SetCombat(false)
         local pot = runtime.TyrantPotTarget
         local center = tikiCenter()

@@ -301,6 +301,7 @@ return function(context)
             ThirdSeaFarmActive = false,
             ThirdSeaUsesMobAura = false,
             ThirdSeaFarmNames = {},
+            ThirdSeaBossMode = false,
             TweenSpeed = 300,
             LastPositionJitterAt = 0,
             PositionJitterCorner = 0,
@@ -1756,7 +1757,7 @@ return function(context)
                 -- consumes AURA_KILL_HIT_DELAY. Adding half the animation
                 -- length here made the "Turbo" toggle visibly pause even with
                 -- Extra Aura Delay at zero.
-                return AURA_KILL_HIT_DELAY
+                return state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY
             end
             return math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence)
         end
@@ -1809,7 +1810,7 @@ return function(context)
             -- Zero is rejected by the server.
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "attack-started"
-            task.wait(AURA_KILL_HIT_DELAY)
+            task.wait(state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY)
             if state.AuraAttackGeneration ~= attackGeneration
                 or not state.Alive or not state.AuraKill then
                 return false, "the target left before the hit window"
@@ -1900,7 +1901,7 @@ return function(context)
 
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "double-sword-started"
-            task.wait(AURA_KILL_HIT_DELAY)
+            task.wait(state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY)
             if state.AuraAttackGeneration ~= attackGeneration
                 or not state.Alive or not state.AuraKill or not state.DoubleAttack then
                 return false, "the target left before the hit window"
@@ -2479,7 +2480,7 @@ return function(context)
                 plan.FruitData = weaponDataForTool(plan.Fruit)
                 plan.FruitRegistered = isFruitWeaponType(weaponTypeForTool(plan.Fruit, plan.FruitData))
                     and hasRegisteredBasicMoveset(plan.FruitData)
-                plan.Cadence = AURA_KILL_HIT_DELAY + extraDelay
+                plan.Cadence = (state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY) + extraDelay
                 state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Fruit.Name
                 state.AuraWeaponType = plan.SwordSelection .. " + Blox Fruit"
                 state.AuraAttackMode = "Double Attack: " .. plan.SwordSelection
@@ -2773,16 +2774,23 @@ return function(context)
             -- Once Multi Grab moves the target underneath the player, keep
             -- using its original ground anchor. Following the moved NPC would
             -- add MobAuraHeight again every frame and launch the player upward.
-            local anchor = ((state.GatherEnemies and not singleFallback) or fixedPosition)
-                and state.MobAuraStableAnchor or liveAnchor
-            if state.AutoMagnet then
+            local anchor = state.ThirdSeaBossMode and liveAnchor
+                or (((state.GatherEnemies and not singleFallback) or fixedPosition)
+                    and state.MobAuraStableAnchor or liveAnchor)
+            if state.ThirdSeaBossMode then
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(true)
+                end
+            elseif state.AutoMagnet then
                 if state.RestoreMobAuraPin then
                     state.RestoreMobAuraPin(false)
                 end
             elseif state.PinMobAuraTarget then
                 state.PinMobAuraTarget(target, state.MobAuraStableAnchor or liveAnchor)
             end
-            local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
+            local height = state.ThirdSeaBossMode
+                and 34
+                or math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
             if state.MobAuraRandomSquare then
                 local now = os.clock()
@@ -8756,6 +8764,24 @@ return function(context)
                         gui:SetAttribute("BloxThirdSeaCombat", desired)
                         gui:SetAttribute("BloxThirdSeaFarmActive", desired)
                     end,
+                    SetBossMode = function(enabled)
+                        local desired = enabled == true
+                        if state.ThirdSeaBossMode ~= desired then
+                            state.ThirdSeaBossMode = desired
+                            state.AuraAttackGeneration += 1
+                            state.FruitDispatchGeneration += 1
+                            state.AuraAttackPending = false
+                            state.FruitDispatchPending = false
+                            state.NativeCombatBusy = false
+                            state.LastAttack = 0
+                            state.LastDoubleFruitAttack = 0
+                        end
+                        DoubleAttackEngine.FruitCadence = desired and 0.018 or 0.075
+                        if desired and state.RestoreMobAuraPin then
+                            state.RestoreMobAuraPin(true)
+                        end
+                        gui:SetAttribute("BloxThirdSeaBossMode", desired)
+                    end,
                     FarmMobAura = function(names)
                         local wanted = {}
                         for _, name in ipairs(type(names) == "table" and names or {}) do
@@ -8868,6 +8894,8 @@ return function(context)
                         return moveTo(target)
                     end,
                     Stop = function()
+                        state.ThirdSeaBossMode = false
+                        DoubleAttackEngine.FruitCadence = 0.075
                         state.ThirdSeaFarmActive = false
                         state.ThirdSeaUsesMobAura = false
                         table.clear(state.ThirdSeaFarmNames)
