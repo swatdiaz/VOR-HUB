@@ -2546,7 +2546,8 @@ return function(context)
                 state.SelectedMobWaitingAtSpawn = false
                 return false
             end
-            local searchRange = selectedMode and state.SelectedMobSearchRange or state.MobAuraSearchRange
+            local searchRange = state.ThirdSeaUsesMobAura and math.huge
+                or (selectedMode and state.SelectedMobSearchRange or state.MobAuraSearchRange)
 
             local target = state.MobAuraTarget
             local targetRoot = modelRoot(target)

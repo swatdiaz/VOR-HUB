@@ -225,6 +225,7 @@ $tyrantSummon = (
     $thirdSeaText -notmatch 'api\.SetGather|PersistentControls\["blox_weapon_type"\]' -and
     $bloxText -match 'FarmMobAura = function\(names\)' -and
     $bloxText -match 'state\.ThirdSeaUsesMobAura' -and
+    $bloxText -match 'local searchRange = state\.ThirdSeaUsesMobAura and math\.huge' -and
     $thirdSeaText -match 'api\.FarmMobAura\(TYRANT_TIKI_ENEMIES\)' -and
     $thirdSeaText -match 'farmMobAura\(\{"Tyrant of the Skies", "Tyrant"\}\)' -and
     $thirdSeaText -match 'Flag\s*=\s*"blox_tyrant_progress_notifier"' -and
