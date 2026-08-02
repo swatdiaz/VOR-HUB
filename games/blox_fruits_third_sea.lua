@@ -201,6 +201,16 @@ return function(context)
         end
         runtime.Active = key
         api.SetCombat(true)
+        if key == "tyrant" then
+            local doubleAttack = Window.PersistentControls["blox_double_attack"]
+            if doubleAttack then
+                doubleAttack:Set(false)
+            end
+            local weaponType = Window.PersistentControls["blox_weapon_type"]
+            if weaponType then
+                weaponType:Set("Melee")
+            end
+        end
         setStatus("Started", "Reading live quest state...")
     end
 
@@ -703,6 +713,23 @@ return function(context)
         local seen = {}
         local map = workspace:FindFirstChild("Map")
         if map then
+            -- The live Tiki arena has two BirdStatue .010 meshes. Each mesh is
+            -- one statue's pair of eyes, so the two parts represent all 4 eyes.
+            for _, object in ipairs(map:GetDescendants()) do
+                local statue = object.Parent
+                if object:IsA("BasePart")
+                    and statue and statue:IsA("Model") and statue.Name == "BirdStatue"
+                    and string.find(object.Name, "Cube.010", 1, true) then
+                    seen[object] = true
+                    total += 2
+                    if redColor(object.Color)
+                        or string.find(string.lower(object.BrickColor.Name), "red", 1, true) then
+                        red += 2
+                    end
+                end
+            end
+        end
+        if map and total == 0 then
             for _, object in ipairs(map:GetDescendants()) do
                 if object:IsA("BasePart") then
                     local path = string.lower(object:GetFullName())
@@ -778,6 +805,10 @@ return function(context)
     end
 
     local function isTyrantPot(object, center)
+        if object:IsA("Model") and object:GetAttribute("TikiUrn") == true
+            and CollectionService:HasTag(object, "CuttableObject") then
+            return rootPosition(object) ~= nil
+        end
         if not object:IsA("BasePart") or object.Transparency >= 0.98 or not object.CanQuery then
             return false
         end
@@ -813,12 +844,34 @@ return function(context)
         local center = tikiCenter()
         local best = nil
         local bestDistance = math.huge
+        local exactUrns = 0
+        for _, object in ipairs(CollectionService:GetTagged("CuttableObject")) do
+            if object.Parent and object:IsA("Model") and object:GetAttribute("TikiUrn") == true then
+                local position = rootPosition(object)
+                if position then
+                    exactUrns += 1
+                    local distance = (position - root.Position).Magnitude
+                    if distance < bestDistance then
+                        best = object
+                        bestDistance = distance
+                    end
+                end
+            end
+        end
+        if exactUrns > 0 then
+            gui:SetAttribute("BloxTyrantUrns", exactUrns)
+            return best, center
+        end
+        gui:SetAttribute("BloxTyrantUrns", 0)
         for _, object in ipairs(map:GetDescendants()) do
             if isTyrantPot(object, center) then
-                local distance = (object.Position - root.Position).Magnitude
-                if distance < bestDistance then
-                    best = object
-                    bestDistance = distance
+                local position = rootPosition(object)
+                if position then
+                    local distance = (position - root.Position).Magnitude
+                    if distance < bestDistance then
+                        best = object
+                        bestDistance = distance
+                    end
                 end
             end
         end
@@ -853,8 +906,12 @@ return function(context)
         if not root or not pot then
             return
         end
-        local distance = (root.Position - pot.Position).Magnitude
-        local destination = CFrame.lookAt(pot.Position + Vector3.new(0, 7, 12), pot.Position)
+        local potPosition = rootPosition(pot)
+        if not potPosition then
+            return
+        end
+        local distance = (root.Position - potPosition).Magnitude
+        local destination = CFrame.lookAt(potPosition + Vector3.new(0, 7, 12), potPosition)
         if distance > 24 then
             api.MoveTo(destination)
             return

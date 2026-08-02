@@ -215,6 +215,10 @@ $tyrantSummon = (
     $thirdSeaText -match '"Skull Slayer"' -and
     $thirdSeaText -match 'local function tyrantEyeProgress\(\)' -and
     $thirdSeaText -match 'runtime\.TyrantSessionKills >= 300' -and
+    $thirdSeaText -match 'BirdStatue' -and
+    $thirdSeaText -match 'Cube\.010' -and
+    $thirdSeaText -match 'TikiUrn' -and
+    $thirdSeaText -match 'CuttableObject' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
