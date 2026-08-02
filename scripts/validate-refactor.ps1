@@ -296,6 +296,7 @@ $berryAutomation = (
     $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
     $bloxText -match 'VORBerryResumeHop = true' -and
     $bloxText -match 'TeleportService:GetTeleportSetting\("VORBerryResumeHop"\)' -and
+    $bloxText -match 'type\(resumeSetting\) == "boolean"' -and
     $bloxText -match 'TeleportService:SetTeleportSetting\("VORBerryResumeHop", true\)' -and
     $bloxText -match 'local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"' -and
     $bloxText -match 'state\.RecoverBerryTeam = function\(\)' -and

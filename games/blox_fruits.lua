@@ -392,8 +392,9 @@ return function(context)
         }
         state.BerryEnvironment = type(getgenv) == "function" and getgenv() or _G
         pcall(function()
-            if TeleportService:GetTeleportSetting("VORBerryResumeHop") == true then
-                state.BerryEnvironment.VORBerryResumeHop = true
+            local resumeSetting = TeleportService:GetTeleportSetting("VORBerryResumeHop")
+            if type(resumeSetting) == "boolean" then
+                state.BerryEnvironment.VORBerryResumeHop = resumeSetting
             end
         end)
         if state.BerryEnvironment.VORBerryResumeHop == true then
