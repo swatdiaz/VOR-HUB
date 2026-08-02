@@ -1169,6 +1169,7 @@ return function(context)
         end
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
+            api.SetCombat(true)
             runtime.TyrantBossActive = true
             runtime.TyrantPotRound = 0
             updateTyrantNotifier("Tyrant | BOSS LIVE", "boss", 4)
@@ -1187,6 +1188,7 @@ return function(context)
         trackTikiDeaths()
         local eyes, eyeParts = tyrantEyeProgress()
         if eyes < 4 then
+            api.SetCombat(true)
             local confirmedKills = math.max(runtime.TyrantSessionKills, eyes * 75)
             local remaining = math.max(300 - confirmedKills, 0)
             local detail = string.format(
@@ -1204,7 +1206,10 @@ return function(context)
             api.FarmMobAura(TYRANT_TIKI_ENEMIES)
             return
         end
-        api.FarmMobAura({"__VOR_TYRANT_POTS__"})
+        -- Vase skills need exclusive ownership of the equipped Tool. Aura Kill's
+        -- attack loop otherwise re-equips its selected weapon between our settle
+        -- frame and the native skill input. Boss/NPC branches re-arm it above.
+        api.SetCombat(false)
         local pot, center = nearestTyrantPot()
         if pot then
             runtime.TyrantLastPotSeen = os.clock()
