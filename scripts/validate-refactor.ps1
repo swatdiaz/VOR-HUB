@@ -560,6 +560,8 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'state\.ShotTravel\s*\+\s*prediction\s*>=\s*targetTravel' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
     $practicalBasketballText -match 'local correctionSeconds\s*=\s*\(\{' -and
+    $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
+    $practicalBasketballText -match 'correctedTravel\s*>\s*furthestTravel' -and
     $practicalBasketballText -match 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )

@@ -121,6 +121,8 @@ return function(context)
         ShotStartOffset = nil,
         ShotDirection = nil,
         ShotTravel = 0,
+        ShotFurthestOffset = nil,
+        ShotFurthestTravel = 0,
         LastMeterSampleAt = nil,
         LastMeterSampleOffset = nil,
         MeterSpeed = 0,
@@ -1160,6 +1162,8 @@ return function(context)
         state.ShotStartOffset = typeof(offset) == "Vector2" and offset or nil
         state.ShotDirection = nil
         state.ShotTravel = 0
+        state.ShotFurthestOffset = typeof(offset) == "Vector2" and offset or nil
+        state.ShotFurthestTravel = 0
         state.LastMeterSampleAt = os.clock()
         state.LastMeterSampleOffset = typeof(offset) == "Vector2" and offset or nil
         state.MeterSpeed = 0
@@ -1201,6 +1205,10 @@ return function(context)
             end
             if state.ShotDirection then
                 state.ShotTravel = delta:Dot(state.ShotDirection)
+                if state.ShotTravel >= state.ShotFurthestTravel then
+                    state.ShotFurthestTravel = state.ShotTravel
+                    state.ShotFurthestOffset = offset
+                end
                 local previousOffset = state.LastMeterSampleOffset
                 local previousAt = state.LastMeterSampleAt
                 if typeof(previousOffset) == "Vector2" and type(previousAt) == "number" then
@@ -1327,6 +1335,17 @@ return function(context)
                 if correctionSeconds and typeof(direction) == "Vector2" and speed > 0 then
                     local correctedTarget = state.PendingReleaseOffset
                         + direction * speed * correctionSeconds
+                    local shotStart = state.ShotStartOffset
+                    local furthestOffset = state.ShotFurthestOffset
+                    if correctionSeconds > 0
+                        and typeof(shotStart) == "Vector2"
+                        and typeof(furthestOffset) == "Vector2" then
+                        local correctedTravel = (correctedTarget - shotStart):Dot(direction)
+                        local furthestTravel = (furthestOffset - shotStart):Dot(direction)
+                        if furthestTravel >= 0 and correctedTravel > furthestTravel then
+                            correctedTarget = shotStart + direction * furthestTravel
+                        end
+                    end
                     local previousTarget = state.PerfectOffsets[learnedMeter]
                     state.PerfectOffsets[learnedMeter] = typeof(previousTarget) == "Vector2"
                         and previousTarget:Lerp(correctedTarget, index == 5 and 0.25 or 0.7)
