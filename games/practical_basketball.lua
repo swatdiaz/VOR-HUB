@@ -363,8 +363,8 @@ return function(context)
         return fireRemote("Shoot", {Shoot = false})
     end
 
-    local function syncVisibleMeter(meter, character, releaseOffset)
-        if not meter or not character or typeof(releaseOffset) ~= "Vector2" then
+    local function syncVisibleMeter(meter, character, visualOffset)
+        if not meter or not character or typeof(visualOffset) ~= "Vector2" then
             return
         end
         local fillGradient = meter:FindFirstChild("FillGradient", true)
@@ -377,7 +377,7 @@ return function(context)
         local rotation = tonumber(character:GetAttribute("meterRotation"))
             or fillGradient.Rotation
         local tween = TweenService:Create(fillGradient, TweenInfo.new(0), {
-            Offset = releaseOffset,
+            Offset = visualOffset,
             Rotation = rotation,
         })
         tween:Play()
@@ -1287,7 +1287,11 @@ return function(context)
                     and tostring(character:GetAttribute("Action") or "") == "Shooting"
                     and shootInputHeld()
                 if stillShooting and releaseShoot() then
-                    syncVisibleMeter(meter, character, releaseOffset)
+                    syncVisibleMeter(
+                        meter,
+                        character,
+                        state.FullOffsets[releaseMeter] or releaseOffset
+                    )
                     state.ReleasedThisShot = true
                     state.ForceNextGreen = false
                     state.PendingReleaseOffset = releaseOffset
@@ -1343,13 +1347,20 @@ return function(context)
             and not UserInputService:IsKeyDown(Enum.KeyCode.E)
             and not UserInputService:IsKeyDown(Enum.KeyCode.Space)
             and not UserInputService:IsKeyDown(Enum.KeyCode.G)
-        local stalePossession = hasBasketball(character)
+        local carryingBasketball = hasBasketball(character)
+        local staleIdlePossession = carryingBasketball
             and character:GetAttribute("CanMove") == false
             and character:GetAttribute("ReleasedShot") == false
             and character:GetAttribute("TripleThreat") ~= true
             and character:GetAttribute("Hold") ~= true
             and action == ""
             and keysReleased
+
+        local staleShootingPossession = carryingBasketball
+            and character:GetAttribute("CanMove") == false
+            and action == "Shooting"
+            and keysReleased
+        local stalePossession = staleIdlePossession or staleShootingPossession
 
         if not stalePossession then
             state.PossessionStuckSince = nil

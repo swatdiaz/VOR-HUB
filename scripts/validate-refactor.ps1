@@ -582,7 +582,7 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
     $practicalBasketballText -match 'TweenService:Create\(fillGradient,\s*TweenInfo\.new\(0\)' -and
-    $practicalBasketballText -match 'syncVisibleMeter\(meter,\s*character,\s*releaseOffset\)' -and
+    $practicalBasketballText -match 'state\.FullOffsets\[releaseMeter\]\s*or\s*releaseOffset' -and
     $practicalBasketballText -notmatch 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )
@@ -590,6 +590,8 @@ $practicalBasketballStuckRecovery = (
     $practicalBasketballText -match '"DropBall"' -and
     $practicalBasketballText -match 'local function recoverStuckPossession\(character,\s*now\)' -and
     $practicalBasketballText -match 'character:GetAttribute\("CanMove"\)\s*==\s*false' -and
+    $practicalBasketballText -match 'local staleShootingPossession\s*=\s*carryingBasketball' -and
+    $practicalBasketballText -match 'action\s*==\s*"Shooting"\s*\n\s*and keysReleased' -and
     $practicalBasketballText -match 'state\.PossessionRecoveryStage\s*==\s*0\s*and\s*stuckFor\s*>=\s*0\.75' -and
     $practicalBasketballText -match 'fireRemote\("DropBall"\)'
 )
