@@ -562,6 +562,11 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'Vertical\s*=\s*1\.35' -and
     $practicalBasketballText -match 'targetTravel\s*=\s*\(targetOffset\s*-\s*state\.ShotStartOffset\):Dot\(state\.ShotDirection\)' -and
     $practicalBasketballText -match 'state\.ShotTravel\s*>=\s*targetTravel' -and
+    $practicalBasketballText -match 'InstantMeterSpeed\s*=\s*0' -and
+    $practicalBasketballText -match 'local eta\s*=\s*remainingTravel\s*/\s*state\.InstantMeterSpeed' -and
+    $practicalBasketballText -match 'task\.delay\(eta,\s*function\(\)' -and
+    $practicalBasketballText -match 'generation\s*~=\s*state\.ShotGeneration' -and
+    $practicalBasketballText -match '"scheduled"' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
     $practicalBasketballText -match 'local travelCorrection\s*=\s*\(\{' -and
     $practicalBasketballText -match 'TargetLowerTravels\s*=\s*\{' -and

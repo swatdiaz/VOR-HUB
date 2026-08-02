@@ -133,6 +133,9 @@ return function(context)
         LastMeterSampleAt = nil,
         LastMeterSampleOffset = nil,
         MeterSpeed = 0,
+        InstantMeterSpeed = 0,
+        ShotGeneration = 0,
+        ReleaseScheduled = false,
         LastShotOffset = nil,
         LastShotMeter = "Vertical",
         MobileShootHeld = false,
@@ -1142,6 +1145,8 @@ return function(context)
     end
 
     local function resetShot(offset, token)
+        state.ShotGeneration += 1
+        state.ReleaseScheduled = false
         state.ShotToken = token
         state.ShotStartOffset = typeof(offset) == "Vector2" and offset or nil
         state.ShotDirection = nil
@@ -1151,10 +1156,38 @@ return function(context)
         state.LastMeterSampleAt = os.clock()
         state.LastMeterSampleOffset = typeof(offset) == "Vector2" and offset or nil
         state.MeterSpeed = 0
+        state.InstantMeterSpeed = 0
         state.PendingReleaseOffset = nil
         state.PendingReleaseMeter = nil
         state.PendingReleaseDirection = nil
         state.ReleasedThisShot = false
+    end
+
+    local function commitAutoRelease(releaseMeter, releaseOffset, releaseDirection, releaseTravel, releaseMode)
+        if releaseShoot() then
+            state.ReleasedThisShot = true
+            state.ReleaseScheduled = false
+            state.ForceNextGreen = false
+            state.PendingReleaseOffset = releaseOffset
+            state.PendingReleaseMeter = releaseMeter
+            state.PendingReleaseDirection = releaseDirection
+            state.LastRelease = string.format(
+                "%s at (%.5f, %.5f) | travel %.5f | %s",
+                releaseMeter,
+                releaseOffset.X,
+                releaseOffset.Y,
+                releaseTravel,
+                releaseMode or "direct"
+            )
+            meterReleaseLabel.Text = "Release: " .. state.LastRelease
+            meterReleaseLabel.TextColor3 = COLORS.success
+            return true
+        end
+        state.ReleaseScheduled = false
+        state.LastRelease = "Shoot remote unavailable; retrying"
+        meterReleaseLabel.Text = "Release: Shoot remote unavailable; retrying"
+        meterReleaseLabel.TextColor3 = COLORS.error
+        return false
     end
 
     local function updateShooting(character)
@@ -1199,6 +1232,7 @@ return function(context)
                     if sampleDuration > 0.0001 and sampleDuration < 0.25 then
                         local observedSpeed = (offset - previousOffset):Dot(state.ShotDirection) / sampleDuration
                         if observedSpeed > 0 then
+                            state.InstantMeterSpeed = observedSpeed
                             state.MeterSpeed = state.MeterSpeed > 0
                                 and state.MeterSpeed * 0.65 + observedSpeed * 0.35
                                 or observedSpeed
@@ -1221,35 +1255,54 @@ return function(context)
                 reachedTarget = targetTravel >= 0 and state.ShotTravel >= targetTravel
             end
 
-            if reachedTarget
-                and not state.ReleasedThisShot
+            local releaseArmed = not state.ReleasedThisShot
                 and serverReleased == false
                 and action == "Shooting"
                 and shootInputHeld()
-                and (state.AutoGreen or state.ForceNextGreen) then
-                local releaseMeter = state.MeterName
-                local releaseOffset = offset
-                local releaseDirection = state.ShotDirection
-                if releaseShoot() then
-                    state.ReleasedThisShot = true
-                    state.ForceNextGreen = false
-                    state.PendingReleaseOffset = releaseOffset
-                    state.PendingReleaseMeter = releaseMeter
-                    state.PendingReleaseDirection = releaseDirection
-                    state.LastRelease = string.format(
-                        "%s at (%.5f, %.5f) | travel %.5f",
-                        releaseMeter,
-                        releaseOffset.X,
-                        releaseOffset.Y,
-                        state.ShotTravel
-                    )
-                    meterReleaseLabel.Text = "Release: " .. state.LastRelease
-                    meterReleaseLabel.TextColor3 = COLORS.success
-                else
-                    state.LastRelease = "Shoot remote unavailable; retrying"
-                    meterReleaseLabel.Text = "Release: Shoot remote unavailable; retrying"
-                    meterReleaseLabel.TextColor3 = COLORS.error
+                and (state.AutoGreen or state.ForceNextGreen)
+            if releaseArmed and not state.ReleaseScheduled and targetTravel
+                and state.ShotDirection and state.InstantMeterSpeed > 0 then
+                local remainingTravel = targetTravel - state.ShotTravel
+                local eta = remainingTravel / state.InstantMeterSpeed
+                if remainingTravel > 0 and eta >= 0 and eta <= 0.06 then
+                    state.ReleaseScheduled = true
+                    local generation = state.ShotGeneration
+                    local scheduledMeter = state.MeterName
+                    local scheduledDirection = state.ShotDirection
+                    local scheduledOffset = state.ShotStartOffset + scheduledDirection * targetTravel
+                    task.delay(eta, function()
+                        if not state.Alive or generation ~= state.ShotGeneration
+                            or not state.ReleaseScheduled or state.ReleasedThisShot then
+                            return
+                        end
+                        local currentAction = tostring(character:GetAttribute("Action") or "")
+                        if character:GetAttribute("ReleasedShot") ~= false
+                            or currentAction ~= "Shooting"
+                            or not shootInputHeld()
+                            or not (state.AutoGreen or state.ForceNextGreen) then
+                            state.ReleaseScheduled = false
+                            return
+                        end
+                        commitAutoRelease(
+                            scheduledMeter,
+                            scheduledOffset,
+                            scheduledDirection,
+                            targetTravel,
+                            "scheduled"
+                        )
+                    end)
                 end
+            end
+
+            if reachedTarget
+                and releaseArmed and not state.ReleaseScheduled then
+                commitAutoRelease(
+                    state.MeterName,
+                    offset,
+                    state.ShotDirection,
+                    state.ShotTravel,
+                    "fallback"
+                )
             end
         end
 
