@@ -84,8 +84,8 @@ return function(context)
         local NATIVE_FRUIT_MAX_RANGE = 25
         local DoubleAttackEngine = {
             HitRange = 38,
-            SwordTargetLimit = 12,
-            FruitTargetLimit = 3,
+            SwordTargetLimit = 35,
+            FruitTargetLimit = 35,
             FruitCadence = 0.075,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
@@ -295,14 +295,9 @@ return function(context)
             MagnetAnchorTarget = nil,
             MagnetAnchorCFrame = nil,
             MagnetAnchorName = nil,
-            MagnetPrimeName = nil,
-            MagnetPrimeOrigin = nil,
-            MagnetPrimeTarget = nil,
-            MagnetPrimeStartedAt = 0,
-            MagnetPrimeStartHealth = nil,
-            MagnetPrimingComplete = false,
-            MagnetPrimedTargets = setmetatable({}, {__mode = "k"}),
             MagnetTweens = setmetatable({}, {__mode = "k"}),
+            MobAuraPinnedTarget = nil,
+            MobAuraPinOriginals = setmetatable({}, {__mode = "k"}),
             ThirdSeaFarmActive = false,
             ThirdSeaUsesMobAura = false,
             ThirdSeaFarmNames = {},
@@ -2521,12 +2516,20 @@ return function(context)
 
         local function stepMobAuraTp()
             local selectedMode = state.SelectedMobFarm
-            if (not state.MobAuraTp and not selectedMode and not state.ThirdSeaUsesMobAura)
-                or state.AuraFruitBusy then
+            if not state.MobAuraTp and not selectedMode and not state.ThirdSeaUsesMobAura then
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(true)
+                end
+                return false
+            end
+            if state.AuraFruitBusy then
                 return false
             end
             local root = rootPart()
             if not root then
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(false)
+                end
                 state.MobAuraTarget = nil
                 state.MobAuraTargetName = nil
                 state.MobAuraDistance = nil
@@ -2538,6 +2541,9 @@ return function(context)
 
             local selectedName = selectedMode and state.SelectedMobName or nil
             if selectedMode and (not selectedName or selectedName == "None") then
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(true)
+                end
                 state.MobAuraTarget = nil
                 state.MobAuraTargetName = nil
                 state.MobAuraDistance = nil
@@ -2561,6 +2567,9 @@ return function(context)
                 local nearest, distance = nearestEnemy(selectedName, not selectedMode)
                 state.MobAuraPreTeleportDistance = distance
                 if not nearest or not distance or distance > searchRange then
+                    if state.RestoreMobAuraPin then
+                        state.RestoreMobAuraPin(true)
+                    end
                     state.MobAuraTarget = nil
                     state.MobAuraTargetName = nil
                     state.MobAuraAnchorTarget = nil
@@ -2599,97 +2608,6 @@ return function(context)
                 return false
             end
 
-            -- A locally stacked NPC can look perfect while the server still
-            -- remembers its old position and rejects damage. Prime every
-            -- living copy of the current NPC type with one real close-range
-            -- hit before Magnet groups them. This also gives the client a fair
-            -- chance to obtain network ownership instead of counting fake hits.
-            if state.AutoMagnet then
-                local primeName = normalizeEnemyName(target.Name)
-                if state.MagnetPrimeName ~= primeName then
-                    state.MagnetPrimeName = primeName
-                    state.MagnetPrimeOrigin = targetRoot.Position
-                    state.MagnetPrimeTarget = nil
-                    state.MagnetPrimeStartedAt = 0
-                    state.MagnetPrimeStartHealth = nil
-                    state.MagnetPrimingComplete = false
-                    table.clear(state.MagnetPrimedTargets)
-                end
-                local primeTarget = state.MagnetPrimeTarget
-                local primeBody = primeTarget and primeTarget:FindFirstChildOfClass("Humanoid")
-                local primeRoot = modelRoot(primeTarget)
-                if primeTarget and (not primeBody or primeBody.Health <= 0 or not primeRoot) then
-                    state.MagnetPrimedTargets[primeTarget] = true
-                    primeTarget = nil
-                elseif primeTarget then
-                    local damaged = type(state.MagnetPrimeStartHealth) == "number"
-                        and primeBody.Health < state.MagnetPrimeStartHealth
-                    if damaged then
-                        state.MagnetPrimedTargets[primeTarget] = true
-                        primeTarget = nil
-                    elseif os.clock() - state.MagnetPrimeStartedAt >= 3 then
-                        -- Do not deadlock the farm if one NPC is temporarily
-                        -- invulnerable; revisit it during the next rotation.
-                        state.MagnetPrimedTargets[primeTarget] = "retry"
-                        primeTarget = nil
-                    end
-                end
-                if not primeTarget then
-                    local nearestPrime = nil
-                    local nearestPrimeDistance = math.huge
-                    local retryPrime = nil
-                    local retryDistance = math.huge
-                    local enemies = workspace:FindFirstChild("Enemies")
-                    for _, candidate in ipairs(enemies and enemies:GetChildren() or {}) do
-                        local candidateRoot = modelRoot(candidate)
-                        if candidateRoot and modelAlive(candidate)
-                            and enemyMatches(candidate, primeName)
-                            and state.ThirdSeaEnemyAllowed(candidate)
-                            and (not state.MagnetPrimeOrigin
-                                or (candidateRoot.Position - state.MagnetPrimeOrigin).Magnitude <= state.MagnetRange) then
-                            local distance = (candidateRoot.Position - root.Position).Magnitude
-                            local primeState = state.MagnetPrimedTargets[candidate]
-                            if primeState == nil and distance < nearestPrimeDistance then
-                                nearestPrime = candidate
-                                nearestPrimeDistance = distance
-                            elseif primeState == "retry" and distance < retryDistance then
-                                retryPrime = candidate
-                                retryDistance = distance
-                            end
-                        end
-                    end
-                    primeTarget = nearestPrime or retryPrime
-                    if primeTarget then
-                        state.MagnetPrimedTargets[primeTarget] = nil
-                        local body = primeTarget:FindFirstChildOfClass("Humanoid")
-                        state.MagnetPrimeTarget = primeTarget
-                        state.MagnetPrimeStartedAt = os.clock()
-                        state.MagnetPrimeStartHealth = body and body.Health or nil
-                        state.MagnetPrimingComplete = false
-                    else
-                        state.MagnetPrimeTarget = nil
-                        state.MagnetPrimeStartHealth = nil
-                        state.MagnetPrimingComplete = true
-                    end
-                end
-                if primeTarget then
-                    target = primeTarget
-                    targetRoot = modelRoot(target)
-                    state.MobAuraTarget = target
-                    if not targetRoot then
-                        return false
-                    end
-                end
-            else
-                state.MagnetPrimeName = nil
-                state.MagnetPrimeOrigin = nil
-                state.MagnetPrimeTarget = nil
-                state.MagnetPrimeStartedAt = 0
-                state.MagnetPrimeStartHealth = nil
-                state.MagnetPrimingComplete = false
-                table.clear(state.MagnetPrimedTargets)
-            end
-
             local liveAnchor = targetRoot.Position
             local singleFallback = state.GatherSingleFallbackEnemy == target
                 and modelAlive(state.GatherSingleFallbackEnemy)
@@ -2722,6 +2640,13 @@ return function(context)
             -- add MobAuraHeight again every frame and launch the player upward.
             local anchor = ((state.GatherEnemies and not singleFallback) or fixedPosition)
                 and state.MobAuraStableAnchor or liveAnchor
+            if state.AutoMagnet then
+                if state.RestoreMobAuraPin then
+                    state.RestoreMobAuraPin(false)
+                end
+            elseif state.PinMobAuraTarget then
+                state.PinMobAuraTarget(target, state.MobAuraStableAnchor or liveAnchor)
+            end
             local height = math.clamp(state.MobAuraHeight, 3, AURA_KILL_MAX_RANGE - 10)
             local orbitOffset = Vector3.zero
             if state.MobAuraRandomSquare then
@@ -2822,11 +2747,6 @@ return function(context)
                 gui:SetAttribute("BloxAuraKillLastHitAt", state.AuraLastHitAt)
             end
             gui:SetAttribute("BloxMobAuraTp", state.MobAuraTp)
-            gui:SetAttribute("BloxMagnetPrimingComplete", state.MagnetPrimingComplete)
-            gui:SetAttribute(
-                "BloxMagnetPrimeTarget",
-                state.MagnetPrimeTarget and normalizeEnemyName(state.MagnetPrimeTarget.Name) or ""
-            )
             gui:SetAttribute("BloxSelectedMobFarm", state.SelectedMobFarm)
             gui:SetAttribute("BloxSelectedMobName", state.SelectedMobName)
             gui:SetAttribute("BloxSelectedMobSearchRange", state.SelectedMobSearchRange)
@@ -3763,6 +3683,7 @@ return function(context)
                     end
                     enemyRoot.AssemblyLinearVelocity = Vector3.zero
                     enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                    enemyRoot.Size = original.Size
                     enemyRoot.CanCollide = original.CanCollide
                     enemyBody.WalkSpeed = original.WalkSpeed
                     enemyBody.JumpPower = original.JumpPower
@@ -3794,6 +3715,75 @@ return function(context)
             end
         end
 
+        state.RestoreMobAuraPin = function(restorePosition)
+            local enemy = state.MobAuraPinnedTarget
+            local original = enemy and state.MobAuraPinOriginals[enemy]
+            local enemyRoot = modelRoot(enemy)
+            local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
+            if original and enemyRoot and enemyBody and enemyBody.Health > 0 then
+                pcall(function()
+                    if restorePosition and typeof(original.CFrame) == "CFrame" then
+                        enemyRoot.CFrame = original.CFrame
+                    end
+                    enemyRoot.Size = original.Size
+                    enemyRoot.CanCollide = original.CanCollide
+                    enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                    enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                    enemyBody.WalkSpeed = original.WalkSpeed
+                    enemyBody.JumpPower = original.JumpPower
+                    enemyBody.AutoRotate = original.AutoRotate
+                    enemyBody.PlatformStand = original.PlatformStand
+                    if original.Animate and original.Animate.Parent then
+                        original.Animate.Disabled = original.AnimateDisabled
+                    end
+                end)
+            end
+            if enemy then
+                state.MobAuraPinOriginals[enemy] = nil
+            end
+            state.MobAuraPinnedTarget = nil
+        end
+
+        state.PinMobAuraTarget = function(enemy, anchor)
+            local enemyRoot = modelRoot(enemy)
+            local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
+            if not enemyRoot or not enemyBody or enemyBody.Health <= 0 or typeof(anchor) ~= "Vector3" then
+                state.RestoreMobAuraPin(false)
+                return false
+            end
+            if state.MobAuraPinnedTarget ~= enemy then
+                state.RestoreMobAuraPin(true)
+                local animate = enemy:FindFirstChild("Animate")
+                state.MobAuraPinOriginals[enemy] = {
+                    CFrame = enemyRoot.CFrame,
+                    Size = enemyRoot.Size,
+                    CanCollide = enemyRoot.CanCollide,
+                    WalkSpeed = enemyBody.WalkSpeed,
+                    JumpPower = enemyBody.JumpPower,
+                    AutoRotate = enemyBody.AutoRotate,
+                    PlatformStand = enemyBody.PlatformStand,
+                    Animate = animate and (animate:IsA("Script") or animate:IsA("LocalScript")) and animate or nil,
+                    AnimateDisabled = animate and (animate:IsA("Script") or animate:IsA("LocalScript"))
+                        and animate.Disabled or nil,
+                }
+                state.MobAuraPinnedTarget = enemy
+            end
+            local original = state.MobAuraPinOriginals[enemy]
+            pcall(function()
+                enemyRoot.CFrame = CFrame.new(anchor) * original.CFrame.Rotation
+                enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                enemyRoot.CanCollide = false
+                enemyBody.WalkSpeed = 0
+                enemyBody.JumpPower = 0
+                enemyBody.AutoRotate = false
+                enemyBody.PlatformStand = true
+                enemyBody:ChangeState(Enum.HumanoidStateType.Physics)
+            end)
+            state.FreezeGatherAnimations(enemy, enemyBody)
+            return true
+        end
+
         state.HoldGatherEnemy = function(enemy)
             local enemyRoot = modelRoot(enemy)
             local enemyBody = enemy and enemy:FindFirstChildOfClass("Humanoid")
@@ -3811,10 +3801,13 @@ return function(context)
             pcall(function()
                 enemyRoot.AssemblyLinearVelocity = Vector3.zero
                 enemyRoot.AssemblyAngularVelocity = Vector3.zero
+                enemyRoot.Size = Vector3.new(60, 60, 60)
                 enemyRoot.CanCollide = false
                 enemyBody.WalkSpeed = 0
                 enemyBody.JumpPower = 0
                 enemyBody.AutoRotate = false
+                enemyBody.PlatformStand = true
+                enemyBody:ChangeState(Enum.HumanoidStateType.Physics)
             end)
             state.FreezeGatherAnimations(enemy, enemyBody)
             return true
@@ -3886,8 +3879,6 @@ return function(context)
             -- Normal-sea Magnet only groups copies of the NPC type currently
             -- being attacked. Raid multi-grab remains intentionally unfiltered.
             local targetName = raidGatherEnabled and nil or selectedGatherEnemyName()
-            local primeCapable = state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
-            local primeReady = not state.AutoMagnet or not primeCapable or state.MagnetPrimingComplete
             local candidates = {}
             local candidateSet = {}
             for _, enemy in ipairs(loadedEnemies()) do
@@ -3898,10 +3889,6 @@ return function(context)
                         and (enemyRoot.Position - raidIsland.Part.Position).Magnitude <= 2500
                 )
                 local matchesTarget = not targetName or enemyMatches(enemy, targetName)
-                if state.AutoMagnet and primeCapable then
-                    matchesTarget = matchesTarget and primeReady
-                        and state.MagnetPrimedTargets[enemy] == true
-                end
                 if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
                     matchesTarget = matchesTarget and state.ThirdSeaEnemyAllowed(enemy)
                 end
@@ -3917,8 +3904,7 @@ return function(context)
                 if not candidateSet[enemy] then
                     if not state.AutoMagnet
                         or (targetName and not enemyMatches(enemy, targetName))
-                        or (state.ThirdSeaFarmActive and not state.ThirdSeaEnemyAllowed(enemy))
-                        or (state.AutoMagnet and primeCapable and not primeReady) then
+                        or (state.ThirdSeaFarmActive and not state.ThirdSeaEnemyAllowed(enemy)) then
                         state.RestoreGatherEnemy(enemy, true)
                     else
                         state.HoldGatherEnemy(enemy)
@@ -3999,6 +3985,7 @@ return function(context)
                     if state.GatherOriginalStates[candidate.Enemy] == nil then
                         state.GatherOriginalStates[candidate.Enemy] = {
                             CFrame = candidate.Root.CFrame,
+                            Size = candidate.Root.Size,
                             CanCollide = candidate.Root.CanCollide,
                             WalkSpeed = enemyBody.WalkSpeed,
                             JumpPower = enemyBody.JumpPower,
@@ -4028,10 +4015,13 @@ return function(context)
                         candidate.Root.CFrame = targetCFrame
                         candidate.Root.AssemblyLinearVelocity = Vector3.zero
                         candidate.Root.AssemblyAngularVelocity = Vector3.zero
+                        candidate.Root.Size = Vector3.new(60, 60, 60)
                         candidate.Root.CanCollide = false
                         enemyBody.WalkSpeed = 0
                         enemyBody.JumpPower = 0
                         enemyBody.AutoRotate = false
+                        enemyBody.PlatformStand = true
+                        enemyBody:ChangeState(Enum.HumanoidStateType.Physics)
                     end)
                     state.FreezeGatherAnimations(candidate.Enemy, enemyBody)
                     if moved then
@@ -4949,13 +4939,17 @@ return function(context)
             if not bush or not bush:IsDescendantOf(workspace) then
                 return nil
             end
-            if bush:IsA("Model") then
-                return bush:GetPivot()
+            local source = bush:IsA("Configuration") and bush.Parent or bush
+            if not source then
+                return nil
             end
-            if bush:IsA("BasePart") then
-                return bush.CFrame
+            if source:IsA("Model") then
+                return source:GetPivot()
             end
-            local part = bush:FindFirstChildWhichIsA("BasePart", true)
+            if source:IsA("BasePart") then
+                return source.CFrame
+            end
+            local part = source:FindFirstChildWhichIsA("BasePart", true)
             return part and part.CFrame or nil
         end
 
@@ -6065,13 +6059,6 @@ return function(context)
                 state.AutoMagnet = enabled
                 if not enabled then
                     state.Gathered = 0
-                    state.MagnetPrimeName = nil
-                    state.MagnetPrimeOrigin = nil
-                    state.MagnetPrimeTarget = nil
-                    state.MagnetPrimeStartedAt = 0
-                    state.MagnetPrimeStartHealth = nil
-                    state.MagnetPrimingComplete = false
-                    table.clear(state.MagnetPrimedTargets)
                 end
                 gui:SetAttribute("BloxAutoMagnet", enabled)
             end,
@@ -6090,7 +6077,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Magnet first visits and damages each matching NPC once, then groups the primed same-name targets.")
+        ExploitSection:AddLabel("Magnet keeps same-name NPCs frozen in one enlarged hit pile so every nearby target can register.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
@@ -7454,6 +7441,8 @@ return function(context)
             if state.MobAuraTp or state.SelectedMobFarm or state.ThirdSeaUsesMobAura then
                 applyNoclip()
                 stepMobAuraTp()
+            elseif state.MobAuraPinnedTarget and state.RestoreMobAuraPin then
+                state.RestoreMobAuraPin(true)
             end
             local attackBlocked = state.SafeMode and healthPercent() <= state.SafeHealthPercent
             if not attackBlocked and state.AuraKill then
@@ -7786,9 +7775,8 @@ return function(context)
                     end
 
                     local magnetText = string.format(
-                        "Auto Magnet: %s | %s: %d | Range: %d",
+                        "Auto Magnet: %s | Stacked: %d | Range: %d",
                         state.AutoMagnet and "On" or "Off",
-                        state.AutoMagnet and not state.MagnetPrimingComplete and "Priming" or "Stacked",
                         state.Gathered,
                         state.MagnetRange
                     )
@@ -7856,6 +7844,9 @@ return function(context)
                 state.DamageDebugConnection = nil
             end
             state.Alive = false
+            if state.RestoreMobAuraPin then
+                state.RestoreMobAuraPin(true)
+            end
             state.AutoBerry = false
             state.AutoBerryServerHop = false
             state.AuraAttackGeneration += 1

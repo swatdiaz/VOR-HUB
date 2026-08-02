@@ -252,21 +252,22 @@ if (-not $tyrantNotifier) {
     throw "Tyrant notifier must be readable on PC/mobile and show only estimated enemies remaining"
 }
 
-$magnetPriming = (
-    $bloxText -match 'MagnetPrimedTargets = setmetatable' -and
-    $bloxText -match 'primeBody\.Health < state\.MagnetPrimeStartHealth' -and
-    $bloxText -match 'state\.MagnetPrimedTargets\[enemy\] == true' -and
-    $bloxText -match 'BloxMagnetPrimingComplete' -and
-    $bloxText -match 'BloxMagnetPrimeTarget'
+$mobAuraEnemyHold = (
+    $bloxText -match 'state\.PinMobAuraTarget = function\(enemy, anchor\)' -and
+    $bloxText -match 'enemyRoot\.CFrame = CFrame\.new\(anchor\) \* original\.CFrame\.Rotation' -and
+    $bloxText -match 'enemyBody:ChangeState\(Enum\.HumanoidStateType\.Physics\)' -and
+    $bloxText -match 'SwordTargetLimit = 35' -and
+    $bloxText -match 'FruitTargetLimit = 35'
 )
-if (-not $magnetPriming) {
-    throw "Auto Magnet must damage-prime each same-name NPC before grouping credited targets"
+if (-not $mobAuraEnemyHold) {
+    throw "Mob Aura must pin its active NPC while Magnet exposes every piled target to the attack hitbox"
 }
 
 $berryAutomation = (
     $bloxText -match 'Flag\s*=\s*"blox_auto_berry"' -and
     $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
     $bloxText -match 'CollectionService:GetTagged\("BerryBush"\)' -and
+    $bloxText -match 'local source = bush:IsA\("Configuration"\) and bush\.Parent or bush' -and
     $bloxText -match 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
     $bloxText -match 'ClaimBerry:InvokeServer\(target\.Bush\.Name, target\.Key\)' -and
     $bloxText -match 'state\.HopServer\("Berry sweep complete", true\)' -and
@@ -381,7 +382,10 @@ $mobAuraSameTypeGather = $bloxText -match 'local targetName\s*=\s*raidGatherEnab
 $stickyMagnetCapture = $bloxText -match 'local captured\s*=\s*state\.AutoMagnet and state\.GatherOriginalStates\[enemy\] ~= nil'
 $oldTypeRelease = $bloxText -match 'targetName and not enemyMatches\(enemy, targetName\)'
 $animationFreeze = $bloxText -match 'state\.FreezeGatherAnimations = function\(enemy, enemyBody\)'
-if (-not ($mobAuraSameTypeGather -and $stickyMagnetCapture -and $oldTypeRelease -and $animationFreeze)) {
+$rootFreeze = $bloxText -match 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)' -and
+    $bloxText -match 'enemyBody\.PlatformStand = true' -and
+    $bloxText -match 'enemyRoot\.Size = original\.Size'
+if (-not ($mobAuraSameTypeGather -and $stickyMagnetCapture -and $oldTypeRelease -and $animationFreeze -and $rootFreeze)) {
     throw "Mob Aura Magnet must group only the current NPC type, release old types, and freeze animations"
 }
 
@@ -854,7 +858,8 @@ Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
-Write-Host "Magnet damage priming: PASS (visit, damage, then group same-name NPCs)"
+Write-Host "Mob Aura enemy hold: PASS (fixed ground anchor, stopped animation and physics)"
+Write-Host "Magnet hit registration: PASS (35 targets, enlarged frozen hit roots)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Sea-wide berry automation: PASS (full bush sweep, claim, optional server hop)"
 Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"
