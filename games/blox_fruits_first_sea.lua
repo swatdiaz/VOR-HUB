@@ -379,6 +379,17 @@ return function(context)
             setStatus("Locked", "Requires level 200", context.COLORS.error)
             return
         end
+        local enemies = workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, enemy in ipairs(enemies:GetChildren()) do
+                local body = enemy:FindFirstChildOfClass("Humanoid")
+                if body and body.Health > 0 and string.find(string.lower(enemy.Name), "saber expert", 1, true) then
+                    setStatus("Saber Expert", "Defeating loaded Saber Expert", context.COLORS.warning)
+                    api.FarmFirst({"Saber Expert"}, CFrame.new(-1405, 30, 5), 900, 24)
+                    return
+                end
+            end
+        end
         if stepPlates(jungle:FindFirstChild("QuestPlates")) then return end
         if stepTorch() then return end
         if stepSickMan() then return end
