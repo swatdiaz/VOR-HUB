@@ -759,7 +759,7 @@ return function(context)
         local function movementStillNeedsNoclip()
             return state.Noclip or state.AutoFarmLevel or state.AutoBoss
                 or (state.AutoRaid and state.RaidMovementReady)
-                or state.AutoChest or state.AutoBerry or state.MobAuraTp
+                or state.AutoChest or (state.AutoBerry and state.BerrySweepCompletedAt == 0) or state.MobAuraTp
                 or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
         end
 
@@ -4944,7 +4944,13 @@ return function(context)
                 return nil
             end
             if source:IsA("Model") then
-                return source:GetPivot()
+                local pivot = source:GetPivot()
+                for key, value in pairs(source:GetAttributes()) do
+                    if string.sub(tostring(key), 1, 12) == "_BerryCFrame" and typeof(value) == "CFrame" then
+                        return pivot * value
+                    end
+                end
+                return pivot
             end
             if source:IsA("BasePart") then
                 return source.CFrame
@@ -5123,6 +5129,7 @@ return function(context)
             if state.BerrySweepCompletedAt == 0 then
                 state.BerrySweepCompletedAt = os.clock()
                 state.BerryRescanAt = os.clock() + 30
+                restoreCollision()
             end
             if state.AutoBerryServerHop then
                 berryLabel.Text = "Berries: Sweep complete | hopping server..."
@@ -7498,7 +7505,8 @@ return function(context)
             end
             gatherStep()
             if state.Noclip or state.Traveling or state.MobAuraTp or state.SelectedMobFarm
-                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest or state.AutoBerry
+                or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest
+                or (state.AutoBerry and state.BerrySweepCompletedAt == 0)
                 or state.ThirdSeaFarmActive then
                 applyNoclip()
             end

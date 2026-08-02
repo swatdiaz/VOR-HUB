@@ -268,6 +268,8 @@ $berryAutomation = (
     $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
     $bloxText -match 'CollectionService:GetTagged\("BerryBush"\)' -and
     $bloxText -match 'local source = bush:IsA\("Configuration"\) and bush\.Parent or bush' -and
+    $bloxText -match 'return pivot \* value' -and
+    $bloxText -match 'restoreCollision\(\)' -and
     $bloxText -match 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
     $bloxText -match 'ClaimBerry:InvokeServer\(target\.Bush\.Name, target\.Key\)' -and
     $bloxText -match 'state\.HopServer\("Berry sweep complete", true\)' -and
