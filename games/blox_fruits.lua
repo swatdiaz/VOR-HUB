@@ -390,6 +390,12 @@ return function(context)
             WaterPlatform = nil,
             DamageDebugConnection = nil,
         }
+        state.BerryEnvironment = type(getgenv) == "function" and getgenv() or _G
+        if state.BerryEnvironment.VORBerryResumeHop == true then
+            state.AutoBerry = true
+            state.AutoBerryServerHop = true
+            state.BerryHopStatus = "Resumed cross-sea berry scan"
+        end
         do
             -- Blox Fruits currently fires this debug-only event for every
             -- credited hit without installing a client listener. Aura Kill can
@@ -5146,6 +5152,23 @@ return function(context)
             setStatus("Collecting nearest chest", true)
         end
 
+        state.QueueBerryResume = function()
+            local queue = queue_on_teleport or queueonteleport
+                or (syn and syn.queue_on_teleport)
+                or (fluxus and fluxus.queue_on_teleport)
+            if type(queue) ~= "function" then
+                return false, "This executor does not expose a teleport queue"
+            end
+            local payload = table.concat({
+                "repeat task.wait() until game:IsLoaded()",
+                "task.wait(0.15)",
+                "(type(getgenv) == \"function\" and getgenv() or _G).VORBerryResumeHop = true",
+                "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua?berry_resume=\" .. tostring(os.time())))()",
+            }, "\n")
+            local ok, message = pcall(queue, payload)
+            return ok, ok and "Berry resume queued" or tostring(message)
+        end
+
         state.HopServer = function(reason, berryOnly)
             if state.BerryHopBusy then
                 return false
@@ -5154,6 +5177,25 @@ return function(context)
             state.BerryHopStatus = tostring(reason or "Finding server")
             task.spawn(function()
                 local ok, message = pcall(function()
+                    if berryOnly then
+                        if not state.AutoBerryServerHop then
+                            error("Berry Server Hop was switched off")
+                        end
+                        local queued, queueMessage = state.QueueBerryResume()
+                        if not queued then
+                            error("Cross-sea berry resume failed: " .. tostring(queueMessage))
+                        end
+                        state.BerryEnvironment.VORBerryResumeHop = true
+                        local fromFirstSea = game.PlaceId == 2753915549
+                        local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"
+                        local destination = fromFirstSea and "Third Sea" or "First Sea"
+                        state.BerryHopStatus = "Cross-sea hop to random " .. destination .. " server"
+                        local invoked, result = invoke(travelCommand)
+                        if not invoked or result == false then
+                            error("Travel to " .. destination .. " failed: " .. tostring(result))
+                        end
+                        return
+                    end
                     local cursor = nil
                     local candidates = {}
                     for _ = 1, 5 do
@@ -5174,9 +5216,6 @@ return function(context)
                         if #candidates > 0 or not cursor or cursor == "" then
                             break
                         end
-                    end
-                    if berryOnly and not state.AutoBerryServerHop then
-                        error("Berry Server Hop was switched off")
                     end
                     if #candidates == 0 then
                         error("No different open public server was found")
@@ -6209,7 +6248,7 @@ return function(context)
             Name = "Auto Collect Berries",
             Description = "Scans only live berry spawns, then tweens directly to and claims them in any sea",
             Flag = "blox_auto_berry",
-            Default = false,
+            Default = state.AutoBerry,
             Callback = function(enabled)
                 state.AutoBerry = enabled == true
                 state.BerryEmptySince = 0
@@ -6248,11 +6287,12 @@ return function(context)
         })
         WorldFarmSection:AddToggle({
             Name = "Berry Server Hop",
-            Description = "Hops only when this server has no live berry; stays after collecting the last one",
+            Description = "Alternates First Sea and Third Sea through random public servers when no live berry exists; stays after collecting one",
             Flag = "blox_berry_server_hop",
-            Default = false,
+            Default = state.AutoBerryServerHop,
             Callback = function(enabled)
                 state.AutoBerryServerHop = enabled == true
+                state.BerryEnvironment.VORBerryResumeHop = state.AutoBerryServerHop
                 state.BerryHopStatus = enabled and "Scanning live spawns" or "Off"
                 state.BerryEmptySince = 0
                 if enabled and state.BerryToggle and not state.BerryToggle:Get() then
@@ -6261,7 +6301,7 @@ return function(context)
                 gui:SetAttribute("BloxBerryServerHop", state.AutoBerryServerHop)
             end,
         })
-        WorldFarmSection:AddLabel("Live-spawn only: no bush tour. Hop leaves empty servers, but never leaves after collecting berries.")
+        WorldFarmSection:AddLabel("Live-spawn only: no bush tour. Empty servers alternate First Sea and Third Sea; a collected berry stops hopping.")
 
         FarmSettingsSection:AddSlider({
             Name = "Tween Speed",

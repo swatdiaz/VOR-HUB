@@ -294,13 +294,17 @@ $berryAutomation = (
     $bloxText -match 'state\.BerriesClaimedThisServer \+= 1' -and
     $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
     $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
+    $bloxText -match 'VORBerryResumeHop = true' -and
+    $bloxText -match 'local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"' -and
+    $bloxText -match 'Cross-sea hop to random " \.\. destination \.\. " server' -and
+    $bloxText -match 'Default = state\.AutoBerryServerHop' -and
     $bloxText -match 'TeleportService\.TeleportInitFailed:Connect' -and
     $bloxText -match 'Roblox requires a valid server teleport token' -and
     $bloxText -match 'if state\.AutoBerry then\s+stepBerry\(\)' -and
     $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
 )
 if (-not $berryAutomation) {
-    throw "Berry automation must scan actual live collectible prompts, hold E, hop empty servers, and stay after a successful collection"
+    throw "Berry automation must scan live prompts, hold E, alternate First/Third Sea random servers, resume after teleport, and stay after a collection"
 }
 
 $dualWeaponAttack = (
@@ -398,6 +402,16 @@ $dungeonText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_dung
 $xenoTeleportResume = $dungeonText -match '\(type\(getgenv\) == \\"function\\" and getgenv\(\) or _G\)\.VORDungeonResumeAll'
 if (-not ($xenoExecutorDetection -and $xenoHttpRetry -and $xenoRequestFallback -and $xenoRuntimeMarker -and $xenoHomeIdentity -and $xenoTeleportResume)) {
     throw "Xeno compatibility contract failed"
+}
+
+$dungeonDamageDebugDrain = (
+    $dungeonText -match 'state\.DamageDebugConnection\s*=\s*track\(' -and
+    $dungeonText -match 'damageDebugEvent\.OnClientEvent:Connect\(function\(\) end\)' -and
+    $dungeonText -match 'state\.DamageDebugConnection:Disconnect\(\)' -and
+    $dungeonText -match 'state\.DamageDebugConnection = nil'
+)
+if (-not $dungeonDamageDebugDrain) {
+    throw "Blox Fruits Dungeons must drain DMGDEBUG and release the listener during module cleanup"
 }
 
 $manualFruitMaxOk = $bloxText -match 'DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION\s*=\s*1'
@@ -928,13 +942,14 @@ Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-st
 Write-Host "Aura Kill lifecycle ownership: PASS (generation guard across yield, respawn, timeout, and override)"
 Write-Host "Sword and Melee damage routing: PASS (registered hit first, native fallback only)"
 Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module cleanup)"
+Write-Host "Blox Fruits Dungeon crash guard: PASS (DMGDEBUG queue drained with cleanup)"
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
 Write-Host "Mob Aura enemy hold: PASS (fixed ground anchor, stopped animation and physics)"
 Write-Host "Magnet hit registration: PASS (35 normal-sea targets, original grouped routing)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
-Write-Host "Sea-wide berry automation: PASS (live-spawn claim, empty-server hop, stay after collection)"
+Write-Host "Sea-wide berry automation: PASS (live-spawn claim, First/Third Sea random rotation, teleport resume, stay after collection)"
 Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"

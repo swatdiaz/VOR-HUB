@@ -132,6 +132,7 @@ return function(context)
         TeleportQueueMethod = "Unavailable",
         PlayerEspObjects = {},
         PlayerEspLastTextUpdate = 0,
+        DamageDebugConnection = nil,
     }
 
     local statusLabel = StatusSection:AddLabel("Status: Initializing...")
@@ -249,6 +250,17 @@ return function(context)
     local RegisterAttackEvent = Net and Net:FindFirstChild("RE/RegisterAttack")
     local LegacyRemotes = ReplicatedStorage:FindFirstChild("Remotes")
     local CommE = LegacyRemotes and LegacyRemotes:FindFirstChild("CommE")
+    do
+        -- Fast Sword + Fruit windows generate one debug event per credited hit.
+        -- Without a listener the engine buffers 512 events, then the dungeon
+        -- client becomes unstable or terminates during a sustained run.
+        local damageDebugEvent = LegacyRemotes and LegacyRemotes:FindFirstChild("DMGDEBUG")
+        if damageDebugEvent and damageDebugEvent:IsA("RemoteEvent") then
+            state.DamageDebugConnection = track(
+                damageDebugEvent.OnClientEvent:Connect(function() end)
+            )
+        end
+    end
     local CombatUtil = safeRequire(Modules and Modules:FindFirstChild("CombatUtil"))
     local FruitMouse = safeRequire(ReplicatedStorage:FindFirstChild("Mouse"))
 
@@ -2661,6 +2673,12 @@ return function(context)
         gui:SetAttribute("BloxDungeonTrinketCost", 400)
         track(gui.Destroying:Connect(function()
             state.Alive = false
+            if state.DamageDebugConnection then
+                pcall(function()
+                    state.DamageDebugConnection:Disconnect()
+                end)
+                state.DamageDebugConnection = nil
+            end
             state.AutoFarm = false
             state.AutoJoin = false
             state.AutoStart = false
