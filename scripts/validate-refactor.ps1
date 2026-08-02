@@ -267,6 +267,10 @@ $mobAuraEnemyHold = (
     $bloxText -match 'state\.PinMobAuraTarget\(target, serverAnchor\)' -and
     $bloxText -match 'local creditedMagnetTarget = state\.AutoMagnet and not state\.GatherEnemies' -and
     $bloxText -match 'not creditedMagnetTarget or enemy == creditedMagnetTarget' -and
+    $bloxText -match 'state\.SendNativeControllerAttack = function\(tool\)' -and
+    $bloxText -match 'setIdentity\(2\)' -and
+    $bloxText -match 'combatController:Attack\(tool, nil, nil\)' -and
+    $bloxText -match 'VOR_NativeWeaponHitbox' -and
     $bloxText -notmatch 'candidate\.Root\.Size = Vector3\.new\(60, 60, 60\)'
 )
 if (-not $mobAuraEnemyHold) {

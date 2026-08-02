@@ -1527,6 +1527,126 @@ return function(context)
             return currentBuildFallback
         end
 
+        state.SendNativeControllerAttack = function(tool)
+            local combatController = safeRequire(ReplicatedStorage:FindFirstChild("Controllers")
+                and ReplicatedStorage.Controllers:FindFirstChild("CombatController"))
+            if type(combatController) ~= "table" or type(combatController.Attack) ~= "function" then
+                return false, "native CombatController is unavailable"
+            end
+            local setIdentity = setthreadidentity or setidentity
+                or (syn and syn.set_thread_identity)
+            local getIdentity = getthreadidentity or getidentity
+                or (syn and syn.get_thread_identity)
+            if type(setIdentity) ~= "function" then
+                return false, "thread identity control is unavailable"
+            end
+
+            local char = character()
+            local body = humanoid()
+            local animator = body and body:FindFirstChildOfClass("Animator")
+            local playingBefore = {}
+            if animator then
+                for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
+                    playingBefore[animationTrack] = true
+                end
+            end
+
+            -- Native hit detection owns the new server token/coroutine path.
+            -- Give it one narrow, invisible blade volume reaching the active
+            -- farm target so shared Position Y remains usable without moving
+            -- the character down for every swing.
+            local temporaryHitbox = nil
+            local queryBackups = {}
+            local activeEnemy = state.MobAuraTarget or state.ActiveFarmTarget
+            local playerRoot = rootPart()
+            local targetRoot = modelRoot(activeEnemy)
+            if tool and playerRoot and targetRoot then
+                if state.AutoMagnet then
+                    local enemies = workspace:FindFirstChild("Enemies")
+                    for _, enemy in ipairs(enemies and enemies:GetChildren() or {}) do
+                        if enemy ~= activeEnemy then
+                            for _, descendant in ipairs(enemy:GetDescendants()) do
+                                if descendant:IsA("BasePart") then
+                                    queryBackups[descendant] = descendant.CanQuery
+                                    descendant.CanQuery = false
+                                end
+                            end
+                        end
+                    end
+                end
+                local delta = targetRoot.Position - playerRoot.Position
+                local distance = delta.Magnitude
+                if distance > 4 then
+                    temporaryHitbox = Instance.new("Part")
+                    temporaryHitbox.Name = "VOR_NativeWeaponHitbox"
+                    temporaryHitbox.Size = Vector3.new(6, 6, distance + 4)
+                    temporaryHitbox.CFrame = CFrame.lookAt(
+                        playerRoot.Position + delta * 0.5,
+                        targetRoot.Position
+                    )
+                    temporaryHitbox.Transparency = 1
+                    temporaryHitbox.Anchored = true
+                    temporaryHitbox.CanCollide = false
+                    temporaryHitbox.CanTouch = false
+                    temporaryHitbox.CanQuery = false
+                    temporaryHitbox.Parent = tool
+                    CollectionService:AddTag(temporaryHitbox, "WeaponHitbox")
+                end
+            end
+
+            local previousIdentity = nil
+            if type(getIdentity) == "function" then
+                pcall(function()
+                    previousIdentity = getIdentity()
+                end)
+            end
+            local attackOk, attackError = pcall(function()
+                setIdentity(2)
+                combatController:Attack(tool, nil, nil)
+            end)
+            pcall(function()
+                setIdentity(previousIdentity or 8)
+            end)
+
+            if animator then
+                for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if not playingBefore[animationTrack]
+                        and animationTrack.Priority >= Enum.AnimationPriority.Action then
+                        pcall(function()
+                            animationTrack:AdjustWeight(0, 0)
+                        end)
+                    end
+                end
+            end
+            task.delay(0.45, function()
+                for part, canQuery in pairs(queryBackups) do
+                    if part and part.Parent then
+                        pcall(function()
+                            part.CanQuery = canQuery
+                        end)
+                    end
+                end
+                if temporaryHitbox and temporaryHitbox.Parent then
+                    pcall(function()
+                        CollectionService:RemoveTag(temporaryHitbox, "WeaponHitbox")
+                        temporaryHitbox:Destroy()
+                    end)
+                end
+                if char then
+                    for _, descendant in ipairs(char:GetDescendants()) do
+                        if descendant:IsA("Trail") then
+                            descendant.Enabled = false
+                        end
+                    end
+                end
+            end)
+            if not attackOk then
+                return false, tostring(attackError)
+            end
+            state.AuraStage = "native-controller-sent"
+            return true
+        end
+
         local function auraAttackProfile(tool, weaponData)
             if not tool or type(weaponData) ~= "table"
                 or type(CombatUtil) ~= "table"
@@ -1679,9 +1799,15 @@ return function(context)
                 end
             end
 
+            local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
+            if nativeSent then
+                state.AuraMultiTargetCount = 1
+                return true, nil, 1
+            end
+
             local registerHit = resolveRegisterHitClosure()
             if not RegisterAttackEvent or type(registerHit) ~= "function" then
-                return false, "combat registration is unavailable in this server build"
+                return false, nativeError or "combat registration is unavailable in this server build"
             end
 
             -- Match the exact duration sent by the native combat controller.
@@ -1764,9 +1890,15 @@ return function(context)
                 end
             end
 
+            local nativeSent, nativeError = state.SendNativeControllerAttack(tool)
+            if nativeSent then
+                state.AuraMultiTargetCount = 1
+                return true, nil, 1
+            end
+
             local registerHit = resolveRegisterHitClosure()
             if not RegisterAttackEvent or type(registerHit) ~= "function" then
-                return false, "Double Attack combat registration is unavailable"
+                return false, nativeError or "Double Attack combat registration is unavailable"
             end
             if #DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit) == 0 then
                 return false, "No enemy is inside Double Attack range"
