@@ -1131,12 +1131,25 @@ return function(context)
                 VirtualInputManager:SendMouseMoveEvent(viewport.X * 0.5, viewport.Y * 0.5, game)
             end)
         end
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        local virtualKey = ({
+            [Enum.KeyCode.Z] = 0x5A,
+            [Enum.KeyCode.X] = 0x58,
+            [Enum.KeyCode.C] = 0x43,
+            [Enum.KeyCode.F] = 0x46,
+        })[keyCode]
+        if type(keypress) == "function" and type(keyrelease) == "function" and virtualKey then
+            pcall(keypress, virtualKey)
             task.delay(0.14, function()
-                VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+                pcall(keyrelease, virtualKey)
             end)
-        end)
+        else
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+                task.delay(0.14, function()
+                    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+                end)
+            end)
+        end
         gui:SetAttribute("BloxTyrantLastSkill", selection .. " " .. keyCode.Name)
     end
 
