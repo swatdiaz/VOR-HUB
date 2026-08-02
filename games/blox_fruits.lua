@@ -1617,7 +1617,7 @@ return function(context)
             if animator then
                 for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
                     if not playingBefore[animationTrack]
-                        and animationTrack.Priority >= Enum.AnimationPriority.Action then
+                        and animationTrack.Priority.Value >= Enum.AnimationPriority.Action.Value then
                         pcall(function()
                             animationTrack:AdjustWeight(0, 0)
                         end)
