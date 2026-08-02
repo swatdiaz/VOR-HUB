@@ -1409,11 +1409,23 @@ return function(context)
             elseif state.AutoFarmLevel then
                 selectedFilter = state.CurrentEnemyName
             end
+            local thirdSeaFilter = state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil
             for _, enemy in ipairs(enemies:GetChildren()) do
                 local enemyRoot = modelRoot(enemy)
                 local hitPart = enemyHitPart(enemy)
-                if enemyRoot and hitPart and modelAlive(enemy)
-                    and (not selectedFilter or enemyMatches(enemy, selectedFilter)) then
+                local matchesTarget = not selectedFilter or enemyMatches(enemy, selectedFilter)
+                if thirdSeaFilter then
+                    matchesTarget = false
+                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
+                    for expected in pairs(state.ThirdSeaFarmNames) do
+                        if normalized == expected or string.find(normalized, expected, 1, true)
+                            or string.find(expected, normalized, 1, true) then
+                            matchesTarget = true
+                            break
+                        end
+                    end
+                end
+                if enemyRoot and hitPart and modelAlive(enemy) and matchesTarget then
                     local distance = (enemyRoot.Position - root.Position).Magnitude
                     if distance <= state.AuraRange then
                         table.insert(targets, {
@@ -2269,18 +2281,6 @@ return function(context)
                 -- Grab is off. Fruit independently covers its nearest three.
                 attackTargets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
                 target = attackTargets[1] or target
-            elseif state.ThirdSeaFarmActive and #targets > 1 then
-                -- Third Sea progression stages can require hundreds of normal
-                -- NPC kills. Batch every nearby authorized farm target through
-                -- the same native registered-Melee swing instead of rotating a
-                -- single rig per attack window.
-                attackTargets = {}
-                local multiLimit = math.min(#targets, DoubleAttackEngine.SwordTargetLimit)
-                for offset = 0, multiLimit - 1 do
-                    local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
-                    table.insert(attackTargets, targets[index])
-                end
-                target = attackTargets[1]
             elseif (state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid
@@ -3853,9 +3853,7 @@ return function(context)
                 end
             end
             local gathered = 0
-            local limit = multiGrabEnabled and (
-                state.ThirdSeaFarmActive and DoubleAttackEngine.SwordTargetLimit or MULTI_GRAB_LIMIT
-            ) or math.huge
+            local limit = multiGrabEnabled and MULTI_GRAB_LIMIT or math.huge
             for index, candidate in ipairs(candidates) do
                 if index > limit then
                     break
@@ -8223,7 +8221,6 @@ return function(context)
                         for flag, value in pairs({
                             blox_auto_attack = desired,
                             blox_fast_attack = desired,
-                            blox_double_attack = desired,
                             blox_auto_buso = desired,
                             blox_aura_kill_range = desired and AURA_KILL_MAX_RANGE or state.AuraRange,
                         }) do
@@ -8235,18 +8232,12 @@ return function(context)
                         if desired then
                             state.AutoAttack = true
                             state.FastAttack = true
-                            state.DoubleAttack = true
                             state.AutoBuso = true
                             state.AuraRange = AURA_KILL_MAX_RANGE
                             ensureBuso()
                         end
                         gui:SetAttribute("BloxThirdSeaCombat", desired)
                         gui:SetAttribute("BloxThirdSeaFarmActive", desired)
-                    end,
-                    SetGather = function(enabled)
-                        state.GatherEnemies = enabled == true
-                        state.LastGatherScan = 0
-                        gui:SetAttribute("BloxMultiGrabEnemies", state.GatherEnemies)
                     end,
                     FarmFirst = function(names, center, radius, heightOverride)
                         local root = rootPart()

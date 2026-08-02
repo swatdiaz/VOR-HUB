@@ -221,10 +221,9 @@ $tyrantSummon = (
     $thirdSeaText -match 'CuttableObject' -and
     $thirdSeaText -match 'not object:IsDescendantOf\(gui\)' -and
     $thirdSeaText -match 'local function recoverTyrantTeam\(\)' -and
-    $bloxText -match 'state\.ThirdSeaFarmActive and #targets > 1' -and
-    $bloxText -match 'SetGather = function\(enabled\)' -and
-    $bloxText -match 'state\.ThirdSeaFarmActive and DoubleAttackEngine\.SwordTargetLimit' -and
-    $thirdSeaText -match 'api\.SetGather\(key == "tyrant"\)' -and
+    $bloxText -notmatch 'state\.ThirdSeaFarmActive and #targets > 1' -and
+    $thirdSeaText -notmatch 'api\.SetGather|PersistentControls\["blox_weapon_type"\]' -and
+    $bloxText -match 'local thirdSeaFilter = state\.ThirdSeaFarmActive and next\(state\.ThirdSeaFarmNames\) ~= nil' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
