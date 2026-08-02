@@ -238,7 +238,7 @@ $tyrantSummon = (
     $thirdSeaText -match 'Flag\s*=\s*"blox_tyrant_progress_notifier"' -and
     $thirdSeaText -match 'TyrantProgressNotifier' -and
     $thirdSeaText -match 'UserInputService\.TouchEnabled' -and
-    $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
+    $thirdSeaText -match 'local function nearestTyrantPot\(excluded\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.X' -and

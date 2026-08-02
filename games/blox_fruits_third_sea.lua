@@ -64,6 +64,7 @@ return function(context)
         TyrantBossActive = false,
         TyrantHeldRoot = nil,
         TyrantHeldRootWasAnchored = false,
+        TyrantPotTarget = nil,
     }
 
     local function setTyrantPotHold(enabled)
@@ -1036,7 +1037,7 @@ return function(context)
         return typeof(center) == "Vector3" and (object.Position - center).Magnitude <= 2200
     end
 
-    local function nearestTyrantPot()
+    local function nearestTyrantPot(excluded)
         local root = api.RootPart()
         local map = workspace:FindFirstChild("Map")
         if not root or not map then
@@ -1052,7 +1053,7 @@ return function(context)
                 if position then
                     exactUrns += 1
                     local distance = (position - root.Position).Magnitude
-                    if distance < bestDistance then
+                    if object ~= excluded and distance < bestDistance then
                         best = object
                         bestDistance = distance
                     end
@@ -1067,7 +1068,7 @@ return function(context)
         for _, object in ipairs(map:GetDescendants()) do
             if isTyrantPot(object, center) then
                 local position = rootPosition(object)
-                if position then
+                if position and object ~= excluded then
                     local distance = (position - root.Position).Magnitude
                     if distance < bestDistance then
                         best = object
@@ -1164,6 +1165,8 @@ return function(context)
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
             setTyrantPotHold(false)
+            runtime.TyrantPotTarget = nil
+            runtime.TyrantSkillIndex = 0
             api.SetCombat(true)
             runtime.TyrantBossActive = true
             runtime.TyrantPotRound = 0
@@ -1184,6 +1187,8 @@ return function(context)
         local eyes, eyeParts = tyrantEyeProgress()
         if eyes < 4 then
             setTyrantPotHold(false)
+            runtime.TyrantPotTarget = nil
+            runtime.TyrantSkillIndex = 0
             api.SetCombat(true)
             local confirmedKills = math.max(runtime.TyrantSessionKills, eyes * 75)
             local remaining = math.max(300 - confirmedKills, 0)
@@ -1206,7 +1211,20 @@ return function(context)
         -- attack loop otherwise re-equips its selected weapon between our settle
         -- frame and the native skill input. Boss/NPC branches re-arm it above.
         api.SetCombat(false)
-        local pot, center = nearestTyrantPot()
+        local pot = runtime.TyrantPotTarget
+        local center = tikiCenter()
+        local potValid = pot and pot.Parent and rootPosition(pot) ~= nil
+        local burstComplete = potValid and runtime.TyrantSkillIndex >= 4
+        if not potValid or burstComplete then
+            local previous = pot
+            setTyrantPotHold(false)
+            pot, center = nearestTyrantPot(previous)
+            if not pot then
+                pot, center = nearestTyrantPot()
+            end
+            runtime.TyrantPotTarget = pot
+            runtime.TyrantSkillIndex = 0
+        end
         if pot then
             runtime.TyrantLastPotSeen = os.clock()
             runtime.TyrantLastEmptyRoundAt = 0
@@ -1223,6 +1241,7 @@ return function(context)
             return
         end
         setTyrantPotHold(false)
+        runtime.TyrantPotTarget = nil
         if runtime.TyrantLastPotSeen > 0 and os.clock() - runtime.TyrantLastPotSeen >= 2
             and os.clock() - runtime.TyrantLastEmptyRoundAt >= 2 then
             runtime.TyrantPotRound = math.min(runtime.TyrantPotRound + 1, 3)
