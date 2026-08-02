@@ -740,7 +740,7 @@ return function(context)
         Flag = "practical_basketball_release_fine_tune_ms",
         Min = -50,
         Max = 50,
-        Step = 0.25,
+        Step = 0.05,
         Round = 2,
         Default = 0,
         Suffix = " ms",
@@ -753,17 +753,17 @@ return function(context)
         end,
     })
     AutoGreenSection:AddButton({
-        Name = "Later +0.25 ms",
-        Description = "Hold the shot a quarter millisecond longer",
+        Name = "Later +0.05 ms",
+        Description = "Hold the shot five-hundredths of a millisecond longer",
         Callback = function()
-            releaseFineTuneControl:Set(state.ManualReleaseDelayMs + 0.25)
+            releaseFineTuneControl:Set(state.ManualReleaseDelayMs + 0.05)
         end,
     })
     AutoGreenSection:AddButton({
-        Name = "Earlier -0.25 ms",
-        Description = "Release the shot a quarter millisecond sooner",
+        Name = "Earlier -0.05 ms",
+        Description = "Release the shot five-hundredths of a millisecond sooner",
         Callback = function()
-            releaseFineTuneControl:Set(state.ManualReleaseDelayMs - 0.25)
+            releaseFineTuneControl:Set(state.ManualReleaseDelayMs - 0.05)
         end,
     })
     AutoGreenSection:AddButton({
