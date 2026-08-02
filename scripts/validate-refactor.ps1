@@ -219,6 +219,8 @@ $tyrantSummon = (
     $thirdSeaText -match 'Cube\.010' -and
     $thirdSeaText -match 'TikiUrn' -and
     $thirdSeaText -match 'CuttableObject' -and
+    $thirdSeaText -match 'not object:IsDescendantOf\(gui\)' -and
+    $thirdSeaText -match 'local function recoverTyrantTeam\(\)' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and

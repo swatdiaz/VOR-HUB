@@ -46,6 +46,7 @@ return function(context)
         TyrantPotRound = 0,
         TyrantLastPotSeen = 0,
         TyrantLastEmptyRoundAt = 0,
+        TyrantLastTeamSelect = 0,
     }
 
     local taskNames = {
@@ -749,36 +750,39 @@ return function(context)
                 end
             end
         end
-        for name, value in pairs(LocalPlayer:GetAttributes()) do
-            local lower = string.lower(tostring(name))
-            if type(value) == "number" then
-                if string.find(lower, "tyrant", 1, true) or string.find(lower, "tiki", 1, true)
-                    or string.find(lower, "eye", 1, true) then
-                    if string.find(lower, "kill", 1, true) and value >= 300 then
-                        red = math.max(red, 4)
-                    elseif string.find(lower, "eye", 1, true) and value >= 4 then
-                        red = math.max(red, 4)
-                    end
-                end
-            end
-        end
-        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        if playerGui then
-            for _, object in ipairs(playerGui:GetDescendants()) do
-                if object:IsA("TextLabel") and object.Visible then
-                    local text = string.lower(object.Text)
-                    if string.find(text, "eye", 1, true) or string.find(text, "tyrant", 1, true)
-                        or string.find(text, "owl", 1, true) or string.find(text, "bird", 1, true) then
-                        local current = tonumber(string.match(text, "(%d+)%s*/%s*4"))
-                        if current then
-                            red = math.max(red, math.clamp(current, 0, 4))
+        local exactEyesDetected = total > 0
+        if not exactEyesDetected then
+            for name, value in pairs(LocalPlayer:GetAttributes()) do
+                local lower = string.lower(tostring(name))
+                if type(value) == "number" then
+                    if string.find(lower, "tyrant", 1, true) or string.find(lower, "tiki", 1, true)
+                        or string.find(lower, "eye", 1, true) then
+                        if string.find(lower, "kill", 1, true) and value >= 300 then
+                            red = math.max(red, 4)
+                        elseif string.find(lower, "eye", 1, true) and value >= 4 then
+                            red = math.max(red, 4)
                         end
                     end
                 end
             end
-        end
-        if runtime.TyrantSessionKills >= 300 then
-            red = math.max(red, 4)
+            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if playerGui then
+                for _, object in ipairs(playerGui:GetDescendants()) do
+                    if object:IsA("TextLabel") and object.Visible and not object:IsDescendantOf(gui) then
+                        local text = string.lower(object.Text)
+                        if string.find(text, "eye", 1, true) or string.find(text, "tyrant", 1, true)
+                            or string.find(text, "owl", 1, true) or string.find(text, "bird", 1, true) then
+                            local current = tonumber(string.match(text, "(%d+)%s*/%s*4"))
+                            if current then
+                                red = math.max(red, math.clamp(current, 0, 4))
+                            end
+                        end
+                    end
+                end
+            end
+            if runtime.TyrantSessionKills >= 300 then
+                red = math.max(red, 4)
+            end
         end
         runtime.TyrantEyes = math.clamp(red, 0, 4)
         runtime.TyrantEyeParts = total
@@ -933,7 +937,33 @@ return function(context)
         gui:SetAttribute("BloxTyrantLastSkill", keyCode.Name)
     end
 
+    local function recoverTyrantTeam()
+        if LocalPlayer.Team then
+            return false
+        end
+        if os.clock() - runtime.TyrantLastTeamSelect < 2 then
+            return true
+        end
+        runtime.TyrantLastTeamSelect = os.clock()
+        setStatus("Selecting Pirates", "Third Sea travel cleared the team; restoring Pirates automatically")
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local main = playerGui and (playerGui:FindFirstChild("Main (minimal)") or playerGui:FindFirstChild("Main"))
+        local chooseTeam = main and main:FindFirstChild("ChooseTeam")
+        local container = chooseTeam and chooseTeam:FindFirstChild("Container")
+        local pirates = container and container:FindFirstChild("Pirates")
+        local frame = pirates and pirates:FindFirstChild("Frame")
+        local button = frame and frame:FindFirstChildOfClass("TextButton")
+        if button and type(firesignal) == "function" then
+            pcall(firesignal, button.Activated)
+            pcall(firesignal, button.MouseButton1Click)
+        end
+        return true
+    end
+
     local function stepTyrant()
+        if recoverTyrantTeam() then
+            return
+        end
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
             runtime.TyrantPotRound = 0
