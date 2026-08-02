@@ -1351,6 +1351,33 @@ return function(context)
         end
     end
 
+    if context.ThirdSeaAPI
+        and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
+        runtime.FirstSeaLoaded, runtime.FirstSeaBuilder = context.LoadModule("games/blox_fruits_first_sea.lua")
+        if not runtime.FirstSeaLoaded then
+            error("First Sea module compile failed: " .. tostring(runtime.FirstSeaBuilder))
+        end
+        runtime.FirstSeaOk, runtime.FirstSeaError = context.RunBuilder(
+            "games/blox_fruits_first_sea.lua",
+            runtime.FirstSeaBuilder,
+            {
+                Window = Window,
+                Gui = gui,
+                Track = track,
+                Pages = pages,
+                State = sharedState,
+                Remotes = remotes,
+                Helpers = helpers,
+                COLORS = COLORS,
+                AutomationAPI = context.ThirdSeaAPI,
+            }
+        )
+        runtime.FirstSeaBuilder = nil
+        if not runtime.FirstSeaOk then
+            error("First Sea module builder failed: " .. tostring(runtime.FirstSeaError))
+        end
+    end
+
     if context.ThirdSeaAPI and context.ThirdSeaAPI.IsThirdSea
         and type(context.LoadModule) == "function" and type(context.RunBuilder) == "function" then
         runtime.ThirdSeaLoaded, runtime.ThirdSeaBuilder = context.LoadModule("games/blox_fruits_third_sea.lua")

@@ -581,6 +581,9 @@ return function(context)
             [2753915549] = {
                 "Greybeard",
             },
+            [85211729168715] = {
+                "Greybeard",
+            },
             [4442272183] = {
                 "Darkbeard",
                 "Order",
@@ -591,13 +594,18 @@ return function(context)
                 "Dough King",
                 "Soul Reaper",
                 "rip_indra True Form",
+                "Tyrant of the Skies",
             },
             [100117331123089] = {
                 "Cake Prince",
                 "Dough King",
                 "Soul Reaper",
                 "rip_indra True Form",
+                "Tyrant of the Skies",
             },
+            FirstSea = {"Greybeard"},
+            SecondSea = {"Darkbeard", "Order", "Cursed Captain"},
+            ThirdSea = {"Cake Prince", "Dough King", "Soul Reaper", "rip_indra True Form", "Tyrant of the Skies"},
         }
 
         local function modelRoot(model)
@@ -3168,7 +3176,19 @@ return function(context)
                     end
                 end
             end
-            for _, raidBoss in ipairs(state.RaidBossFallbacks[game.PlaceId] or {}) do
+            local liveMap = workspace:FindFirstChild("Map")
+            local fallbackBosses = state.RaidBossFallbacks[game.PlaceId]
+            if not fallbackBosses and liveMap then
+                if liveMap:FindFirstChild("Jungle") and liveMap:FindFirstChild("Desert") then
+                    fallbackBosses = state.RaidBossFallbacks.FirstSea
+                elseif liveMap:FindFirstChild("Dressrosa") or liveMap:FindFirstChild("IceCastle") then
+                    fallbackBosses = state.RaidBossFallbacks.SecondSea
+                elseif liveMap:FindFirstChild("Turtle") or liveMap:FindFirstChild("Hydra")
+                    or liveMap:FindFirstChild("Tiki") or liveMap:FindFirstChild("HauntedCastle") then
+                    fallbackBosses = state.RaidBossFallbacks.ThirdSea
+                end
+            end
+            for _, raidBoss in ipairs(fallbackBosses or {}) do
                 addBoss(raidBoss)
             end
             table.sort(names, function(left, right)
@@ -8172,11 +8192,14 @@ return function(context)
                     ModelAlive = modelAlive,
                 },
                 ThirdSeaAPI = {
-                    -- StreamingEnabled can unload Turtle even while the player
-                    -- is in Third Sea or its Submerged Island place. PlaceId is
-                    -- the stable router; map children are not.
                     IsThirdSea = game.PlaceId == 7449423635
-                        or game.PlaceId == 100117331123089,
+                        or game.PlaceId == 100117331123089
+                        or (workspace:FindFirstChild("Map") and (
+                            workspace.Map:FindFirstChild("Turtle") ~= nil
+                            or workspace.Map:FindFirstChild("Hydra") ~= nil
+                            or workspace.Map:FindFirstChild("Tiki") ~= nil
+                            or workspace.Map:FindFirstChild("HauntedCastle") ~= nil
+                        )),
                     SetCombat = function(enabled)
                         local desired = enabled == true
                         state.ThirdSeaFarmActive = desired

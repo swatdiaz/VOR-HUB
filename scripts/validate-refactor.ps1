@@ -24,6 +24,7 @@ $required = @(
     "games/blox_fruits_parity.lua",
     "games/blox_fruits_race.lua",
     "games/blox_fruits_pvp.lua",
+    "games/blox_fruits_first_sea.lua",
     "games/blox_fruits_third_sea.lua",
     "games/blox_fruits_dungeons.lua"
 )
@@ -137,6 +138,8 @@ if ($bloxText -notmatch 'game\.PlaceId == 100117331123089 and -2161\.889 or 0') 
 }
 
 $parityText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_parity.lua") -Raw
+$firstSeaText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_first_sea.lua") -Raw
+$pvpText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_pvp.lua") -Raw
 $thirdSeaText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_third_sea.lua") -Raw
 $routingChecks = @(
     @($bloxText, 'FarmingPage:AddSection\("Auto Magnet"'),
@@ -146,6 +149,7 @@ $routingChecks = @(
     @($parityText, 'pages\.Shop:AddSection\("Buso Color"'),
     @($parityText, 'pages\.Farming:AddSection\("Farming ESP & Alerts"'),
     @($parityText, 'pages\.Sea:AddSection\("Rare Island ESP & Alerts"'),
+    @($firstSeaText, 'pages\.Farming:AddSection\("First Sea Unlocks"'),
     @($thirdSeaText, 'pages\.Player:AddSection\("Race Progression"'),
     @($thirdSeaText, 'pages\.Farming:AddSection\("Third Sea Bosses"')
 )
@@ -166,6 +170,59 @@ $raidBossSelection = (
 )
 if (-not $raidBossSelection) {
     throw "Blox Fruits boss selection must include active, replicated, and despawned raid bosses"
+}
+
+$autoSaber = (
+    $parityText -match 'context\.LoadModule\("games/blox_fruits_first_sea\.lua"\)' -and
+    $firstSeaText -match 'Name\s*=\s*"Auto Saber Unlock"' -and
+    $firstSeaText -match 'Flag\s*=\s*"blox_auto_saber_unlock"' -and
+    $firstSeaText -match 'getInventoryWeapons' -and
+    $firstSeaText -match 'QuestPlates' -and
+    $firstSeaText -match 'ProQuestProgress", "SickMan"' -and
+    $firstSeaText -match 'ProQuestProgress", "RichSon"' -and
+    $firstSeaText -match 'ProQuestProgress", "PlaceRelic"' -and
+    $firstSeaText -match 'api\.FarmFirst\(\{"Mob Leader"\}' -and
+    $firstSeaText -match 'api\.FarmFirst\(\{"Saber Expert"\}' -and
+    $firstSeaText -match 'runtime\.Toggle:Set\(false\)'
+)
+if (-not $autoSaber) {
+    throw "Auto Saber must resume every server-backed stage and stop only after verified ownership"
+}
+
+$spectate = (
+    $pvpText -match 'Name\s*=\s*"Spectate Target"' -and
+    $pvpText -match 'Camera\.CameraSubject = humanoid\(target\)' -and
+    $pvpText -match 'Camera\.CameraSubject = body' -and
+    $pvpText -match 'Players\.PlayerRemoving:Connect' -and
+    $pvpText -match 'stopSpectating\(\)\s*\r?\n\s*state\.Alive = false'
+)
+if (-not $spectate) {
+    throw "Spectate must follow respawns, stop on player removal, and restore the local camera"
+}
+
+$tyrantSkillBlock = [regex]::Match(
+    $thirdSeaText,
+    '(?s)local function useTyrantPotSkill\(pot\).*?\r?\n\s*end\r?\n\r?\n\s*local function stepTyrant'
+).Value
+$tyrantSummon = (
+    $thirdSeaText -match '"Isle Outlaw"' -and
+    $thirdSeaText -match '"Island Boy"' -and
+    $thirdSeaText -match '"Isle Champion"' -and
+    $thirdSeaText -match '"Sun-kissed Warrior"' -and
+    $thirdSeaText -match '"Serpent Hunter"' -and
+    $thirdSeaText -match '"Skull Slayer"' -and
+    $thirdSeaText -match 'local function tyrantEyeProgress\(\)' -and
+    $thirdSeaText -match 'runtime\.TyrantSessionKills >= 300' -and
+    $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
+    $thirdSeaText -match 'local function stepTyrant\(\)' -and
+    $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
+    $tyrantSkillBlock -match 'Enum\.KeyCode\.X' -and
+    $tyrantSkillBlock -match 'Enum\.KeyCode\.C' -and
+    $tyrantSkillBlock -match 'Enum\.KeyCode\.F' -and
+    $tyrantSkillBlock -notmatch 'Enum\.KeyCode\.V|0x56|keypress\(86\)'
+)
+if (-not $tyrantSummon) {
+    throw "Auto Tyrant must charge four eyes, clear Tiki vases with Z/X/C/F, and never use transformation key V"
 }
 
 $raidFruitInventory = (

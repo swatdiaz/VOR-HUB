@@ -11,6 +11,8 @@ return function(context)
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
+    local CollectionService = game:GetService("CollectionService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
     local LocalPlayer = Players.LocalPlayer
 
     if not api.IsThirdSea then
@@ -35,6 +37,15 @@ return function(context)
         CakeLabel = nil,
         CakeRemaining = nil,
         CakePortalReady = false,
+        TyrantEyes = 0,
+        TyrantEyeParts = 0,
+        TyrantSessionKills = 0,
+        TyrantTracked = setmetatable({}, {__mode = "k"}),
+        TyrantSkillIndex = 0,
+        TyrantLastSkill = 0,
+        TyrantPotRound = 0,
+        TyrantLastPotSeen = 0,
+        TyrantLastEmptyRoundAt = 0,
     }
 
     local taskNames = {
@@ -619,6 +630,298 @@ return function(context)
         farm(bosses, nil, nil, 28)
     end
 
+    local TYRANT_TIKI_ENEMIES = {
+        "Isle Outlaw",
+        "Island Boy",
+        "Isle Champion",
+        "Sun-kissed Warrior",
+        "Serpent Hunter",
+        "Skull Slayer",
+    }
+
+    local TYRANT_TIKI_LOOKUP = (function()
+        local lookup = {}
+        for _, name in ipairs(TYRANT_TIKI_ENEMIES) do
+            lookup[string.lower(name)] = true
+        end
+        return lookup
+    end)()
+
+    local function normalizedEnemyName(name)
+        return string.lower(tostring(name or "")
+            :gsub("%s*%[Lv[^%]]*%]", "")
+            :gsub("%s*%[[Rr][Aa][Ii][Dd]%s+[Bb][Oo][Ss][Ss]%]", "")
+            :gsub("%s*%[[Bb][Oo][Ss][Ss]%]", "")
+            :gsub("%s+$", ""))
+    end
+
+    local function loadedEnemy(names)
+        local wanted = {}
+        for _, name in ipairs(names) do
+            wanted[normalizedEnemyName(name)] = true
+        end
+        local enemies = workspace:FindFirstChild("Enemies")
+        if not enemies then
+            return nil
+        end
+        for _, enemy in ipairs(enemies:GetChildren()) do
+            local body = enemy:FindFirstChildOfClass("Humanoid")
+            if body and body.Health > 0 and wanted[normalizedEnemyName(enemy.Name)] then
+                return enemy
+            end
+        end
+        return nil
+    end
+
+    local function trackTikiDeaths()
+        local enemies = workspace:FindFirstChild("Enemies")
+        if not enemies then
+            return
+        end
+        for _, enemy in ipairs(enemies:GetChildren()) do
+            local body = enemy:FindFirstChildOfClass("Humanoid")
+            if body and TYRANT_TIKI_LOOKUP[normalizedEnemyName(enemy.Name)] and not runtime.TyrantTracked[body] then
+                runtime.TyrantTracked[body] = true
+                track(body.Died:Once(function()
+                    runtime.TyrantSessionKills += 1
+                    gui:SetAttribute("BloxTyrantSessionKills", runtime.TyrantSessionKills)
+                end))
+            end
+        end
+    end
+
+    local function redColor(color)
+        return typeof(color) == "Color3"
+            and color.R >= 0.45
+            and color.R >= color.G * 1.35
+            and color.R >= color.B * 1.25
+    end
+
+    local function tyrantEyeProgress()
+        local red = 0
+        local total = 0
+        local seen = {}
+        local map = workspace:FindFirstChild("Map")
+        if map then
+            for _, object in ipairs(map:GetDescendants()) do
+                if object:IsA("BasePart") then
+                    local path = string.lower(object:GetFullName())
+                    local eyeNamed = string.find(path, "eye", 1, true)
+                        or string.find(path, "owl", 1, true)
+                        or string.find(path, "falcon", 1, true)
+                        or string.find(path, "bird", 1, true)
+                    local tikiRelated = string.find(path, "tiki", 1, true)
+                        or string.find(path, "tyrant", 1, true)
+                    if eyeNamed and tikiRelated and not seen[object] then
+                        seen[object] = true
+                        total += 1
+                        if redColor(object.Color) or string.find(string.lower(object.BrickColor.Name), "red", 1, true) then
+                            red += 1
+                        end
+                    end
+                end
+            end
+        end
+        for name, value in pairs(LocalPlayer:GetAttributes()) do
+            local lower = string.lower(tostring(name))
+            if type(value) == "number" then
+                if string.find(lower, "tyrant", 1, true) or string.find(lower, "tiki", 1, true)
+                    or string.find(lower, "eye", 1, true) then
+                    if string.find(lower, "kill", 1, true) and value >= 300 then
+                        red = math.max(red, 4)
+                    elseif string.find(lower, "eye", 1, true) and value >= 4 then
+                        red = math.max(red, 4)
+                    end
+                end
+            end
+        end
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            for _, object in ipairs(playerGui:GetDescendants()) do
+                if object:IsA("TextLabel") and object.Visible then
+                    local text = string.lower(object.Text)
+                    if string.find(text, "eye", 1, true) or string.find(text, "tyrant", 1, true)
+                        or string.find(text, "owl", 1, true) or string.find(text, "bird", 1, true) then
+                        local current = tonumber(string.match(text, "(%d+)%s*/%s*4"))
+                        if current then
+                            red = math.max(red, math.clamp(current, 0, 4))
+                        end
+                    end
+                end
+            end
+        end
+        if runtime.TyrantSessionKills >= 300 then
+            red = math.max(red, 4)
+        end
+        runtime.TyrantEyes = math.clamp(red, 0, 4)
+        runtime.TyrantEyeParts = total
+        gui:SetAttribute("BloxTyrantRedEyes", runtime.TyrantEyes)
+        gui:SetAttribute("BloxTyrantEyeParts", total)
+        return runtime.TyrantEyes, total
+    end
+
+    local function tikiCenter()
+        local origin = workspace:FindFirstChild("_WorldOrigin")
+        local spawns = origin and origin:FindFirstChild("EnemySpawns")
+        if not spawns then
+            return nil
+        end
+        local sum = Vector3.zero
+        local count = 0
+        for _, object in ipairs(spawns:GetDescendants()) do
+            if object:IsA("BasePart") and TYRANT_TIKI_LOOKUP[normalizedEnemyName(object.Name)] then
+                sum += object.Position
+                count += 1
+            end
+        end
+        return count > 0 and (sum / count) or nil
+    end
+
+    local function isTyrantPot(object, center)
+        if not object:IsA("BasePart") or object.Transparency >= 0.98 or not object.CanQuery then
+            return false
+        end
+        local path = string.lower(object:GetFullName())
+        local named = string.find(path, "vase", 1, true)
+            or string.find(path, "pot", 1, true)
+            or string.find(path, "urn", 1, true)
+        if not named then
+            for _, tag in ipairs(CollectionService:GetTags(object)) do
+                local lower = string.lower(tag)
+                if string.find(lower, "vase", 1, true) or string.find(lower, "pot", 1, true)
+                    or string.find(lower, "breakable", 1, true) or string.find(lower, "destroy", 1, true) then
+                    named = true
+                    break
+                end
+            end
+        end
+        if not named then
+            return false
+        end
+        if string.find(path, "tiki", 1, true) or string.find(path, "tyrant", 1, true) then
+            return true
+        end
+        return typeof(center) == "Vector3" and (object.Position - center).Magnitude <= 2200
+    end
+
+    local function nearestTyrantPot()
+        local root = api.RootPart()
+        local map = workspace:FindFirstChild("Map")
+        if not root or not map then
+            return nil, nil
+        end
+        local center = tikiCenter()
+        local best = nil
+        local bestDistance = math.huge
+        for _, object in ipairs(map:GetDescendants()) do
+            if isTyrantPot(object, center) then
+                local distance = (object.Position - root.Position).Magnitude
+                if distance < bestDistance then
+                    best = object
+                    bestDistance = distance
+                end
+            end
+        end
+        return best, center
+    end
+
+    local function equipTyrantSkillTool()
+        local char = helpers.Character()
+        local body = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not body then
+            return nil
+        end
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("Tool") then
+                return child
+            end
+        end
+        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+        if backpack then
+            for _, tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name ~= "Holy Torch" and tool.Name ~= "God's Chalice" then
+                    body:EquipTool(tool)
+                    return tool
+                end
+            end
+        end
+        return nil
+    end
+
+    local function useTyrantPotSkill(pot)
+        local root = api.RootPart()
+        if not root or not pot then
+            return
+        end
+        local distance = (root.Position - pot.Position).Magnitude
+        local destination = CFrame.lookAt(pot.Position + Vector3.new(0, 7, 12), pot.Position)
+        if distance > 24 then
+            api.MoveTo(destination)
+            return
+        end
+        api.MoveTo(destination)
+        if not equipTyrantSkillTool() or os.clock() - runtime.TyrantLastSkill < 0.22 then
+            return
+        end
+        runtime.TyrantLastSkill = os.clock()
+        local allowedSkills = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.F}
+        runtime.TyrantSkillIndex = runtime.TyrantSkillIndex % #allowedSkills + 1
+        local keyCode = allowedSkills[runtime.TyrantSkillIndex]
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+            task.delay(0.07, function()
+                VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+            end)
+        end)
+        gui:SetAttribute("BloxTyrantLastSkill", keyCode.Name)
+    end
+
+    local function stepTyrant()
+        local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
+        if boss then
+            runtime.TyrantPotRound = 0
+            farm({"Tyrant of the Skies", "Tyrant"}, nil, nil, 28)
+            return
+        end
+        trackTikiDeaths()
+        local eyes, eyeParts = tyrantEyeProgress()
+        if eyes < 4 then
+            local detail = string.format(
+                "Tiki NPCs | red eyes %d/4%s | session kills %d/300",
+                eyes,
+                eyeParts > 0 and (" (detected " .. eyeParts .. " eye parts)") or "",
+                runtime.TyrantSessionKills
+            )
+            setStatus("Charging owl eyes", detail)
+            api.FarmFirst(TYRANT_TIKI_ENEMIES, tikiCenter(), 3200, 24)
+            return
+        end
+        local pot, center = nearestTyrantPot()
+        if pot then
+            runtime.TyrantLastPotSeen = os.clock()
+            runtime.TyrantLastEmptyRoundAt = 0
+            setStatus(
+                "Destroying Tiki vases",
+                string.format("Round %d/3 | %s | skills Z/X/C/F only", math.min(runtime.TyrantPotRound + 1, 3), pot.Name)
+            )
+            useTyrantPotSkill(pot)
+            return
+        end
+        if runtime.TyrantLastPotSeen > 0 and os.clock() - runtime.TyrantLastPotSeen >= 2
+            and os.clock() - runtime.TyrantLastEmptyRoundAt >= 2 then
+            runtime.TyrantPotRound = math.min(runtime.TyrantPotRound + 1, 3)
+            runtime.TyrantLastEmptyRoundAt = os.clock()
+            runtime.TyrantLastPotSeen = 0
+        end
+        setStatus(
+            "Waiting for Tiki vases/boss",
+            string.format("All 4 eyes red | vase rounds cleared %d/3", runtime.TyrantPotRound)
+        )
+        if typeof(center) == "Vector3" then
+            api.MoveTo(CFrame.new(center + Vector3.new(0, 35, 0)))
+        end
+    end
+
     local function stepActive()
         local key = runtime.Active
         if not key or runtime.Busy then
@@ -627,7 +930,7 @@ return function(context)
         runtime.Busy = true
         local ok, message = xpcall(function()
             if key == "pirate" then stepPirateRaid()
-            elseif key == "tyrant" then farm({"Tyrant of the Skies", "Tyrant"}, nil, nil, 28)
+            elseif key == "tyrant" then stepTyrant()
             elseif key == "yama" then stepYama()
             elseif key == "tushita" then stepTushita()
             elseif key == "hallow" then stepHallow()
@@ -682,7 +985,7 @@ return function(context)
         runtime.DragonLabel = dragon:AddLabel("Dragon Hunter: Not checked")
         addTask(dragon, "dojo", "blox_third_auto_dojo_trainer", "Requests and claims the live Dojo Trainer quest; collects Embers or farms its targets.")
         addTask(dragon, "dragon", "blox_third_auto_dragon_hunter", "Requests the current Dragon Hunter quest and follows its live progress.")
-        addTask(dragon, "tyrant", "blox_third_auto_tyrant", "Farms Tyrant of the Skies when the boss exists; otherwise waits without fake progress.")
+        addTask(dragon, "tyrant", "blox_third_auto_tyrant", "Kills Tiki NPCs for all four red owl eyes, destroys all vase rounds with Z/X/C/F skills only, then farms Tyrant.")
 
         local race = pages.Player:AddSection("Race Progression", "Right")
         addTask(race, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")

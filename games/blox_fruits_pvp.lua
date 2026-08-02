@@ -478,6 +478,8 @@ return function(context)
         if state.Spectating and alive(target) then
             Camera.CameraSubject = humanoid(target)
         end
+        gui:SetAttribute("BloxSpectating", state.Spectating and target ~= nil)
+        gui:SetAttribute("BloxSpectateTarget", state.Spectating and target and target.Name or "")
     end))
 
     track(RunService.Heartbeat:Connect(function()
@@ -510,8 +512,9 @@ return function(context)
 
     gui:SetAttribute("BloxPvpSkillTracking", false)
     track(gui.Destroying:Connect(function()
+        stopSpectating()
         state.Alive = false
     end))
     gui:SetAttribute("BloxPvpModule", true)
-    gui:SetAttribute("BloxPvpModuleVersion", "4")
+    gui:SetAttribute("BloxPvpModuleVersion", "5")
 end
