@@ -5210,6 +5210,13 @@ return function(context)
                         if not invoked or result == false then
                             error("Travel to " .. destination .. " failed: " .. tostring(result))
                         end
+                        local hopJobId = game.JobId
+                        task.delay(6, function()
+                            if state.Alive and game.JobId == hopJobId and state.BerryHopBusy then
+                                state.BerryHopBusy = false
+                                state.BerryHopStatus = "Travel did not start; retrying " .. destination
+                            end
+                        end)
                         return
                     end
                     local cursor = nil
@@ -5368,7 +5375,30 @@ return function(context)
             return best
         end
 
+        state.RecoverBerryTeam = function()
+            if LocalPlayer.Team then
+                return false
+            end
+            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            local main = playerGui and (playerGui:FindFirstChild("Main (minimal)") or playerGui:FindFirstChild("Main"))
+            local chooseTeam = main and main:FindFirstChild("ChooseTeam")
+            local container = chooseTeam and chooseTeam:FindFirstChild("Container")
+            local pirates = container and container:FindFirstChild("Pirates")
+            local frame = pirates and pirates:FindFirstChild("Frame")
+            local button = frame and frame:FindFirstChildOfClass("TextButton")
+            if button and type(firesignal) == "function" then
+                pcall(firesignal, button.Activated)
+                pcall(firesignal, button.MouseButton1Click)
+            end
+            berryLabel.Text = "Berries: Selecting Pirates after sea travel"
+            state.BerryHopStatus = "Selecting Pirates before berry scan"
+            return true
+        end
+
         local function stepBerry()
+            if state.RecoverBerryTeam() then
+                return
+            end
             if state.BerryPromptBusy then
                 return
             end

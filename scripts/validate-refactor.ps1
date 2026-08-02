@@ -298,6 +298,9 @@ $berryAutomation = (
     $bloxText -match 'TeleportService:GetTeleportSetting\("VORBerryResumeHop"\)' -and
     $bloxText -match 'TeleportService:SetTeleportSetting\("VORBerryResumeHop", true\)' -and
     $bloxText -match 'local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"' -and
+    $bloxText -match 'state\.RecoverBerryTeam = function\(\)' -and
+    $bloxText -match 'pcall\(firesignal, button\.Activated\)' -and
+    $bloxText -match 'Travel did not start; retrying " \.\. destination' -and
     $bloxText -match 'Cross-sea hop to random " \.\. destination \.\. " server' -and
     $bloxText -match 'Default = state\.AutoBerryServerHop' -and
     $bloxText -match 'game\.PlaceId == 2753915549 or game\.PlaceId == 85211729168715' -and
