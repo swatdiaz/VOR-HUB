@@ -22,6 +22,13 @@ return function(context)
         return
     end
 
+    local environment = type(getgenv) == "function" and getgenv() or _G
+    local tyrantProgressCache = environment.__VOR_TyrantProgress
+    if type(tyrantProgressCache) ~= "table" or tyrantProgressCache.JobId ~= game.JobId then
+        tyrantProgressCache = {JobId = game.JobId, Kills = 0}
+        environment.__VOR_TyrantProgress = tyrantProgressCache
+    end
+
     local runtime = {
         Alive = true,
         Active = nil,
@@ -42,7 +49,7 @@ return function(context)
         CakePortalReady = false,
         TyrantEyes = 0,
         TyrantEyeParts = 0,
-        TyrantSessionKills = 0,
+        TyrantSessionKills = math.max(tonumber(tyrantProgressCache.Kills) or 0, 0),
         TyrantTracked = setmetatable({}, {__mode = "k"}),
         TyrantSkillIndex = 0,
         TyrantLastSkill = 0,
@@ -811,6 +818,16 @@ return function(context)
         return nil
     end
 
+    local function confirmTyrantKill(record)
+        if not runtime.Alive or record.Counted then
+            return
+        end
+        record.Counted = true
+        runtime.TyrantSessionKills += 1
+        tyrantProgressCache.Kills = runtime.TyrantSessionKills
+        gui:SetAttribute("BloxTyrantSessionKills", runtime.TyrantSessionKills)
+    end
+
     local function trackTikiDeaths()
         local enemies = workspace:FindFirstChild("Enemies")
         if not enemies then
@@ -819,10 +836,30 @@ return function(context)
         for _, enemy in ipairs(enemies:GetChildren()) do
             local body = enemy:FindFirstChildOfClass("Humanoid")
             if body and TYRANT_TIKI_LOOKUP[normalizedEnemyName(enemy.Name)] and not runtime.TyrantTracked[body] then
-                runtime.TyrantTracked[body] = true
-                track(body.Died:Once(function()
-                    runtime.TyrantSessionKills += 1
-                    gui:SetAttribute("BloxTyrantSessionKills", runtime.TyrantSessionKills)
+                local record = {
+                    Counted = false,
+                    LastHealth = body.Health,
+                    LastDamageAt = 0,
+                }
+                runtime.TyrantTracked[body] = record
+                track(body.HealthChanged:Connect(function(health)
+                    if health < record.LastHealth then
+                        record.LastDamageAt = os.clock()
+                    end
+                    record.LastHealth = health
+                    if health <= 0 then
+                        confirmTyrantKill(record)
+                    end
+                end))
+                track(body.Died:Connect(function()
+                    confirmTyrantKill(record)
+                end))
+                track(enemy.AncestryChanged:Connect(function()
+                    if not enemy:IsDescendantOf(enemies)
+                        and (record.LastHealth <= 0
+                            or os.clock() - record.LastDamageAt <= 8) then
+                        confirmTyrantKill(record)
+                    end
                 end))
             end
         end
@@ -1102,6 +1139,7 @@ return function(context)
         if runtime.TyrantBossActive then
             runtime.TyrantBossActive = false
             runtime.TyrantSessionKills = 0
+            tyrantProgressCache.Kills = 0
             runtime.TyrantPotRound = 0
             gui:SetAttribute("BloxTyrantSessionKills", 0)
             runtime.TyrantLastPhase = nil

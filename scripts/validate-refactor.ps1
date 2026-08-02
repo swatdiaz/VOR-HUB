@@ -216,6 +216,12 @@ $tyrantSummon = (
     $thirdSeaText -match '"Skull Slayer"' -and
     $thirdSeaText -match 'local function tyrantEyeProgress\(\)' -and
     $thirdSeaText -match 'runtime\.TyrantSessionKills >= 300' -and
+    $thirdSeaText -match 'local function confirmTyrantKill\(record\)' -and
+    $thirdSeaText -match 'body\.HealthChanged:Connect' -and
+    $thirdSeaText -match 'enemy\.AncestryChanged:Connect' -and
+    $thirdSeaText -match 'os\.clock\(\) - record\.LastDamageAt <= 8' -and
+    $thirdSeaText -match '__VOR_TyrantProgress' -and
+    $thirdSeaText -match 'tyrantProgressCache\.JobId ~= game\.JobId' -and
     $thirdSeaText -match 'BirdStatue' -and
     $thirdSeaText -match 'Cube\.010' -and
     $thirdSeaText -match 'TikiUrn' -and
