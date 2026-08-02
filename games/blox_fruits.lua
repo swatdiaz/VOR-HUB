@@ -5468,7 +5468,7 @@ return function(context)
                 state.BerryEmptySince = os.clock()
             end
             if state.AutoBerryServerHop and state.BerriesClaimedThisServer == 0 then
-                local waitLeft = math.max(0, math.ceil(5 - (os.clock() - state.BerryEmptySince)))
+                local waitLeft = math.max(0, math.ceil(10 - (os.clock() - state.BerryEmptySince)))
                 if waitLeft <= 0 then
                     berryLabel.Text = "Berries: None spawned | hopping server..."
                     setStatus("No live berries; finding another server", true)
