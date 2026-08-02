@@ -1,6 +1,6 @@
 -- VOR Hub compatibility bootstrap.
 -- This follows one reviewed loader commit, never the writable main branch.
-local LOADER_COMMIT = "0bc216db2554ebbc73243f196ada6bef88d14323"
+local LOADER_COMMIT = "c08750a080211185d7a6ef2fb17d8f6cb67af7a3"
 local url = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/"
     .. LOADER_COMMIT .. "/loader.lua"
 local source = game:HttpGet(url)
