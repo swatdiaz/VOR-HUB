@@ -13,6 +13,9 @@ return function(context)
     local RunService = game:GetService("RunService")
     local CollectionService = game:GetService("CollectionService")
     local VirtualInputManager = game:GetService("VirtualInputManager")
+    local UserInputService = game:GetService("UserInputService")
+    local TextChatService = game:GetService("TextChatService")
+    local StarterGui = game:GetService("StarterGui")
     local LocalPlayer = Players.LocalPlayer
 
     if not api.IsThirdSea then
@@ -47,6 +50,11 @@ return function(context)
         TyrantLastPotSeen = 0,
         TyrantLastEmptyRoundAt = 0,
         TyrantLastTeamSelect = 0,
+        TyrantNotifierEnabled = true,
+        TyrantNotifier = nil,
+        TyrantLastPhase = nil,
+        TyrantLastNotifiedEyes = -1,
+        TyrantBossActive = false,
     }
 
     local taskNames = {
@@ -73,6 +81,114 @@ return function(context)
 
     local function notify(title, message, duration)
         Window:Notify(title, tostring(message), duration or 4)
+    end
+
+    local function tyrantChat(message)
+        if not runtime.TyrantNotifierEnabled then
+            return
+        end
+        local text = "[Tyrant] " .. tostring(message)
+        local sent = pcall(function()
+            local channels = TextChatService:FindFirstChild("TextChannels")
+            local general = channels and channels:FindFirstChild("RBXGeneral")
+            if not general then
+                error("RBXGeneral is unavailable")
+            end
+            general:DisplaySystemMessage(text)
+        end)
+        if not sent then
+            pcall(function()
+                StarterGui:SetCore("ChatMakeSystemMessage", {
+                    Text = text,
+                    Color = Color3.fromRGB(180, 105, 255),
+                })
+            end)
+        end
+    end
+
+    local function createTyrantNotifier()
+        if runtime.TyrantNotifier then
+            return runtime.TyrantNotifier
+        end
+        local label = Instance.new("TextLabel")
+        label.Name = "TyrantProgressNotifier"
+        label.AnchorPoint = Vector2.new(0.5, 0)
+        label.Position = UDim2.new(0.5, 0, 0, UserInputService.TouchEnabled and 54 or 62)
+        label.Size = UDim2.fromOffset(UserInputService.TouchEnabled and 210 or 260, UserInputService.TouchEnabled and 32 or 36)
+        label.BackgroundColor3 = Color3.fromRGB(20, 14, 31)
+        label.BackgroundTransparency = 0.08
+        label.BorderSizePixel = 0
+        label.TextColor3 = Color3.fromRGB(239, 224, 255)
+        label.TextStrokeTransparency = 0.72
+        label.Font = Enum.Font.GothamSemibold
+        label.TextScaled = true
+        label.TextWrapped = false
+        label.Active = true
+        label.Visible = false
+        label.ZIndex = 250
+        label.Parent = gui
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = label
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(145, 70, 240)
+        stroke.Transparency = 0.22
+        stroke.Thickness = 1.5
+        stroke.Parent = label
+        local padding = Instance.new("UIPadding")
+        padding.PaddingLeft = UDim.new(0, 9)
+        padding.PaddingRight = UDim.new(0, 9)
+        padding.Parent = label
+
+        local dragging = false
+        local dragInput = nil
+        local dragStart = nil
+        local startPosition = nil
+        track(label.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragInput = input
+                dragStart = input.Position
+                startPosition = label.Position
+            end
+        end))
+        track(UserInputService.InputChanged:Connect(function(input)
+            if dragging and dragInput and (input == dragInput
+                or input.UserInputType == Enum.UserInputType.MouseMovement) then
+                local delta = input.Position - dragStart
+                label.Position = UDim2.new(
+                    startPosition.X.Scale,
+                    startPosition.X.Offset + delta.X,
+                    startPosition.Y.Scale,
+                    startPosition.Y.Offset + delta.Y
+                )
+            end
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if input == dragInput or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+                dragInput = nil
+            end
+        end))
+        runtime.TyrantNotifier = label
+        return label
+    end
+
+    local function updateTyrantNotifier(text, phase, eyes)
+        local label = createTyrantNotifier()
+        label.Visible = runtime.TyrantNotifierEnabled and runtime.Active == "tyrant"
+        label.Text = tostring(text)
+        if not label.Visible then
+            return
+        end
+        if phase and phase ~= runtime.TyrantLastPhase then
+            runtime.TyrantLastPhase = phase
+            tyrantChat(text)
+        elseif type(eyes) == "number" and eyes > runtime.TyrantLastNotifiedEyes then
+            runtime.TyrantLastNotifiedEyes = eyes
+            tyrantChat(text)
+        end
     end
 
     local function setStatus(message, detail)
@@ -192,6 +308,9 @@ return function(context)
                 api.Stop()
                 setStatus("Stopped", "Automation stopped")
             end
+            if key == "tyrant" and runtime.TyrantNotifier then
+                runtime.TyrantNotifier.Visible = false
+            end
             return
         end
         for other in pairs(runtime.Controls) do
@@ -202,6 +321,11 @@ return function(context)
         end
         runtime.Active = key
         api.SetCombat(true)
+        if key == "tyrant" then
+            runtime.TyrantLastPhase = nil
+            runtime.TyrantLastNotifiedEyes = -1
+            updateTyrantNotifier("Tyrant | Reading live progress...", "start", runtime.TyrantEyes)
+        end
         setStatus("Started", "Reading live quest state...")
     end
 
@@ -962,13 +1086,25 @@ return function(context)
         end
         local boss = loadedEnemy({"Tyrant of the Skies", "Tyrant"})
         if boss then
+            runtime.TyrantBossActive = true
             runtime.TyrantPotRound = 0
+            updateTyrantNotifier("Tyrant | BOSS LIVE", "boss", 4)
             farmMobAura({"Tyrant of the Skies", "Tyrant"})
             return
+        end
+        if runtime.TyrantBossActive then
+            runtime.TyrantBossActive = false
+            runtime.TyrantSessionKills = 0
+            runtime.TyrantPotRound = 0
+            gui:SetAttribute("BloxTyrantSessionKills", 0)
+            runtime.TyrantLastPhase = nil
+            tyrantChat("Boss defeated | restarting Tiki cycle")
         end
         trackTikiDeaths()
         local eyes, eyeParts = tyrantEyeProgress()
         if eyes < 4 then
+            local confirmedKills = math.max(runtime.TyrantSessionKills, eyes * 75)
+            local remaining = math.max(300 - confirmedKills, 0)
             local detail = string.format(
                 "Tiki NPCs | red eyes %d/4%s | session kills %d/300",
                 eyes,
@@ -976,6 +1112,11 @@ return function(context)
                 runtime.TyrantSessionKills
             )
             setStatus("Charging owl eyes", detail)
+            updateTyrantNotifier(
+                string.format("Tyrant | ~%d NPCs left | Eyes %d/4", remaining, eyes),
+                "npcs",
+                eyes
+            )
             api.FarmMobAura(TYRANT_TIKI_ENEMIES)
             return
         end
@@ -987,6 +1128,11 @@ return function(context)
             setStatus(
                 "Destroying Tiki vases",
                 string.format("Round %d/3 | %s | skills Z/X/C/F only", math.min(runtime.TyrantPotRound + 1, 3), pot.Name)
+            )
+            updateTyrantNotifier(
+                string.format("Tyrant | Urns round %d/3", math.min(runtime.TyrantPotRound + 1, 3)),
+                "urns-" .. tostring(runtime.TyrantPotRound + 1),
+                4
             )
             useTyrantPotSkill(pot)
             return
@@ -1000,6 +1146,11 @@ return function(context)
         setStatus(
             "Waiting for Tiki vases/boss",
             string.format("All 4 eyes red | vase rounds cleared %d/3", runtime.TyrantPotRound)
+        )
+        updateTyrantNotifier(
+            string.format("Tyrant | Waiting for boss | Urns %d/3", runtime.TyrantPotRound),
+            "waiting-boss",
+            4
         )
         if typeof(center) == "Vector3" then
             api.MoveTo(CFrame.new(center + Vector3.new(0, 35, 0)))
@@ -1073,6 +1224,20 @@ return function(context)
 
         local race = pages.Player:AddSection("Race Progression", "Right")
         addTask(race, "race", "blox_third_auto_race_v4", "Reads RaceV4Progress and enters the Temple of Time when prerequisites are complete.")
+
+        local notifications = pages.Player:AddSection("Notifications", "Right")
+        notifications:AddToggle({
+            Name = "Tyrant Progress Notifier",
+            Flag = "blox_tyrant_progress_notifier",
+            Default = true,
+            Description = "Shows a small draggable PC/mobile progress chip and local chat messages only when the Tyrant phase changes",
+            Callback = function(value)
+                runtime.TyrantNotifierEnabled = value == true
+                if runtime.TyrantNotifier then
+                    runtime.TyrantNotifier.Visible = runtime.TyrantNotifierEnabled and runtime.Active == "tyrant"
+                end
+            end,
+        })
 
         local bosses = pages.Farming:AddSection("Third Sea Bosses", "Right")
         runtime.CakeLabel = bosses:AddLabel("Cake Prince Portal: Reading progress...")

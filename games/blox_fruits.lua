@@ -1923,7 +1923,7 @@ return function(context)
                 if lifecycleChanged() then
                     return false, "the attack lifecycle changed before Fruit M1"
                 end
-                -- Solix-compatible native Fruit M1: fire the Backpack remote
+                -- Native Fruit M1: fire the Backpack remote
                 -- with the full 3D direction and combo 1. Flattening Y made
                 -- attacks from above miss, cycling 1-5 introduced the long
                 -- fifth-hit cooldown, and a third argument changed the native
@@ -3654,10 +3654,30 @@ return function(context)
                     enemyBody.JumpPower = original.JumpPower
                     enemyBody.AutoRotate = original.AutoRotate
                     enemyBody.PlatformStand = original.PlatformStand
+                    if original.Animate and original.Animate.Parent then
+                        original.Animate.Disabled = original.AnimateDisabled
+                    end
                 end)
             end
             state.GatherOriginalStates[enemy] = nil
             state.GatherOriginalCFrames[enemy] = nil
+        end
+
+        state.FreezeGatherAnimations = function(enemy, enemyBody)
+            local animate = enemy and enemy:FindFirstChild("Animate")
+            if animate and (animate:IsA("Script") or animate:IsA("LocalScript")) then
+                pcall(function()
+                    animate.Disabled = true
+                end)
+            end
+            local animator = enemyBody and enemyBody:FindFirstChildOfClass("Animator")
+            if animator then
+                pcall(function()
+                    for _, animationTrack in ipairs(animator:GetPlayingAnimationTracks()) do
+                        animationTrack:Stop(0)
+                    end
+                end)
+            end
         end
 
         state.HoldGatherEnemy = function(enemy)
@@ -3682,6 +3702,7 @@ return function(context)
                 enemyBody.JumpPower = 0
                 enemyBody.AutoRotate = false
             end)
+            state.FreezeGatherAnimations(enemy, enemyBody)
             return true
         end
 
@@ -3738,25 +3759,19 @@ return function(context)
                 end
             end)
             if state.AutoMagnet and not farmMagnetActive and not multiGrabEnabled then
-                local retained = 0
                 for enemy in pairs(state.GatherOriginalStates) do
-                    if state.HoldGatherEnemy(enemy) then
-                        retained += 1
-                    end
+                    state.RestoreGatherEnemy(enemy, true)
                 end
-                state.Gathered = retained
+                state.Gathered = 0
                 state.RaidGathered = 0
-                gui:SetAttribute("BloxAutoMagnetCount", retained)
+                gui:SetAttribute("BloxAutoMagnetCount", 0)
                 gui:SetAttribute("BloxAutoMagnetRange", state.MagnetRange)
                 return
             end
             local gatherRange = multiGrabEnabled and MULTI_GRAB_RANGE or state.MagnetRange
-            -- Mob Aura supplies the anchor target while Auto Magnet drags every
-            -- living NPC inside its configured range into that target's pile.
-            -- The normal Aura cursor then rotates damage through the pile; it
-            -- does not depend on Double Attack or a same-name filter.
-            local targetName = (raidGatherEnabled or (state.AutoMagnet and state.MobAuraTp)) and nil
-                or (state.GatherEnemies and selectedGatherEnemyName() or state.CurrentEnemyName)
+            -- Normal-sea Magnet only groups copies of the NPC type currently
+            -- being attacked. Raid multi-grab remains intentionally unfiltered.
+            local targetName = raidGatherEnabled and nil or selectedGatherEnemyName()
             local candidates = {}
             local candidateSet = {}
             for _, enemy in ipairs(loadedEnemies()) do
@@ -3768,16 +3783,7 @@ return function(context)
                 )
                 local matchesTarget = not targetName or enemyMatches(enemy, targetName)
                 if state.ThirdSeaFarmActive and next(state.ThirdSeaFarmNames) ~= nil then
-                    matchesTarget = false
-                    local normalized = string.lower(normalizeEnemyName(enemy.Name))
-                    for expected in pairs(state.ThirdSeaFarmNames) do
-                        if normalized == expected
-                            or string.find(normalized, expected, 1, true)
-                            or string.find(expected, normalized, 1, true) then
-                            matchesTarget = true
-                            break
-                        end
-                    end
+                    matchesTarget = matchesTarget and state.ThirdSeaEnemyAllowed(enemy)
                 end
                 local captured = state.AutoMagnet and state.GatherOriginalStates[enemy] ~= nil
                 if enemyRoot and modelAlive(enemy) and (distance <= gatherRange or captured) and insideRaid then
@@ -3789,7 +3795,9 @@ return function(context)
             end
             for enemy in pairs(state.GatherOriginalStates) do
                 if not candidateSet[enemy] then
-                    if not state.AutoMagnet then
+                    if not state.AutoMagnet
+                        or (targetName and not enemyMatches(enemy, targetName))
+                        or (state.ThirdSeaFarmActive and not state.ThirdSeaEnemyAllowed(enemy)) then
                         state.RestoreGatherEnemy(enemy, true)
                     else
                         state.HoldGatherEnemy(enemy)
@@ -3799,8 +3807,8 @@ return function(context)
             table.sort(candidates, function(left, right)
                 return left.Distance < right.Distance
             end)
-            -- Multi Grab follows the player. Auto Magnet instead keeps the farm
-            -- target's original world CFrame as a stable Solix-style pile anchor.
+            -- Multi Grab follows the player. Auto Magnet keeps the current
+            -- same-type farm target's original world CFrame as a stable anchor.
             local targetCFrame = CFrame.new(root.Position - Vector3.new(0, state.GatherDistance, 0))
             if not multiGrabEnabled then
                 local anchorCandidate = nil
@@ -3875,6 +3883,14 @@ return function(context)
                             JumpPower = enemyBody.JumpPower,
                             AutoRotate = enemyBody.AutoRotate,
                             PlatformStand = enemyBody.PlatformStand,
+                            Animate = (candidate.Enemy:FindFirstChild("Animate")
+                                and (candidate.Enemy.Animate:IsA("Script")
+                                    or candidate.Enemy.Animate:IsA("LocalScript")))
+                                and candidate.Enemy.Animate or nil,
+                            AnimateDisabled = (candidate.Enemy:FindFirstChild("Animate")
+                                and (candidate.Enemy.Animate:IsA("Script")
+                                    or candidate.Enemy.Animate:IsA("LocalScript")))
+                                and candidate.Enemy.Animate.Disabled or nil,
                         }
                     end
                     local moved = pcall(function()
@@ -3896,6 +3912,7 @@ return function(context)
                         enemyBody.JumpPower = 0
                         enemyBody.AutoRotate = false
                     end)
+                    state.FreezeGatherAnimations(candidate.Enemy, enemyBody)
                     if moved then
                         gathered += 1
                     end
@@ -5703,7 +5720,7 @@ return function(context)
 
         ExploitSection:AddToggle({
             Name = "Auto Magnet",
-            Description = "Continuously locks every eligible NPC into the farm target's pile so server corrections cannot leave mobs behind",
+            Description = "Locks matching copies of the NPC currently being attacked into one stable pile",
             Flag = "blox_auto_magnet",
             Default = false,
             Callback = function(enabled)
@@ -5716,7 +5733,7 @@ return function(context)
         })
         ExploitSection:AddSlider({
             Name = "Magnet Range",
-            Description = "Pull magnitude from 0 to 500 studs, matching Solix Hub's range",
+            Description = "Pull matching NPCs from 0 to 500 studs around the current farm target",
             Flag = "blox_magnet_range",
             Min = 0,
             Max = 500,
@@ -5728,7 +5745,7 @@ return function(context)
                 gui:SetAttribute("BloxMagnetRange", state.MagnetRange)
             end,
         })
-        ExploitSection:AddLabel("Mob Aura anchors the target while Auto Magnet drags every nearby NPC into its pile; normal Aura rotates damage through them.")
+        ExploitSection:AddLabel("Auto Magnet only groups the same NPC type currently targeted; switching targets releases the old pile.")
         local auraRangeSlider
         local mobAuraHeightSlider
         local mobAuraToggle
@@ -5783,7 +5800,7 @@ return function(context)
                 state.FarmAnimateScript = animate
                 state.FarmAnimateWasDisabled = animate.Disabled
             end
-            -- Solix-style calm travel: keep Roblox's animator alive so the rig
+            -- Calm travel keeps Roblox's animator alive so the rig
             -- retains its natural idle pose, but remove movement/attack tracks
             -- that flicker when CFrame tweening reports a fake Running state.
             animate.Disabled = false

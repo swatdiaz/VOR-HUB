@@ -227,6 +227,9 @@ $tyrantSummon = (
     $bloxText -match 'state\.ThirdSeaUsesMobAura' -and
     $thirdSeaText -match 'api\.FarmMobAura\(TYRANT_TIKI_ENEMIES\)' -and
     $thirdSeaText -match 'farmMobAura\(\{"Tyrant of the Skies", "Tyrant"\}\)' -and
+    $thirdSeaText -match 'Flag\s*=\s*"blox_tyrant_progress_notifier"' -and
+    $thirdSeaText -match 'TyrantProgressNotifier' -and
+    $thirdSeaText -match 'UserInputService\.TouchEnabled' -and
     $thirdSeaText -match 'local function nearestTyrantPot\(\)' -and
     $thirdSeaText -match 'local function stepTyrant\(\)' -and
     $tyrantSkillBlock -match 'Enum\.KeyCode\.Z' -and
@@ -325,7 +328,7 @@ $typedMobSearchCount = ([regex]::Matches(
     '(?s)MobFarmSection:AddInput\(\{\s*Name\s*=\s*"(?:Mob Aura|Selected Mob) Search Distance"'
 )).Count
 if (-not $magnetOwnershipGateRemoved -or -not $magnetSimulationRadius -or -not $magnetRangeCapped -or $typedMobSearchCount -lt 2) {
-    throw "Solix-compatible Magnet range or typed mob-search contract failed"
+    throw "Magnet range or typed mob-search contract failed"
 }
 
 $stableMagnetAnchor = $bloxText -match 'targetCFrame\s*=\s*CFrame\.new\(state\.MagnetAnchorCFrame\.Position\)'
@@ -339,17 +342,18 @@ if (-not ($stableMagnetAnchor -and $magnetDirectRetry -and $oneShotMagnetTweenRe
     throw "Auto Magnet must continuously reapply a stable pile without taking ownership of character movement"
 }
 
-$mobAuraCrossTypeGather = $bloxText -match 'local targetName\s*=\s*\(raidGatherEnabled or \(state\.AutoMagnet and state\.MobAuraTp\)\) and nil'
+$mobAuraSameTypeGather = $bloxText -match 'local targetName\s*=\s*raidGatherEnabled and nil or selectedGatherEnemyName\(\)'
 $stickyMagnetCapture = $bloxText -match 'local captured\s*=\s*state\.AutoMagnet and state\.GatherOriginalStates\[enemy\] ~= nil'
-$idleCaptureRetention = $bloxText -match 'state\.AutoMagnet and not farmMagnetActive and not multiGrabEnabled'
-if (-not ($mobAuraCrossTypeGather -and $stickyMagnetCapture -and $idleCaptureRetention)) {
-    throw "Mob Aura Magnet must drag every in-range NPC into the target pile while retaining captured enemies"
+$oldTypeRelease = $bloxText -match 'targetName and not enemyMatches\(enemy, targetName\)'
+$animationFreeze = $bloxText -match 'state\.FreezeGatherAnimations = function\(enemy, enemyBody\)'
+if (-not ($mobAuraSameTypeGather -and $stickyMagnetCapture -and $oldTypeRelease -and $animationFreeze)) {
+    throw "Mob Aura Magnet must group only the current NPC type, release old types, and freeze animations"
 }
 
 $autoMagnetAuraFilterRemoved = $bloxText -notmatch 'elseif state\.AutoMagnet and state\.CurrentEnemyName then'
 $autoMagnetPairBatchRemoved = $bloxText -notmatch 'elseif \(state\.AutoMagnet or state\.GatherEnemies or \('
 $creditedPairLimit = $bloxText -match 'MULTI_ATTACK_TARGET_LIMIT\s*=\s*2'
-$thirdSeaConfiguredGroupGather = $bloxText -match 'if state\.ThirdSeaFarmActive and next\(state\.ThirdSeaFarmNames\)'
+$thirdSeaConfiguredGroupGather = $bloxText -match 'matchesTarget = matchesTarget and state\.ThirdSeaEnemyAllowed\(enemy\)'
 if (-not ($autoMagnetAuraFilterRemoved -and $autoMagnetPairBatchRemoved -and $creditedPairLimit -and $thirdSeaConfiguredGroupGather)) {
     throw "Auto Magnet must leave normal Aura target rotation independent from Double Attack"
 }
@@ -808,14 +812,14 @@ Write-Host "Manual Fruit M1 cooldown removal: PASS (1.0)"
 Write-Host "Typed mob search distances: PASS (numeric input)"
 Write-Host "Auto Magnet range: PASS (0-500 magnitude)"
 Write-Host "Ownership-independent Auto Magnet: PASS"
-Write-Host "Solix-style stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
+Write-Host "Stable Magnet anchor and pull: PASS (continuous server-correction retry, character movement decoupled)"
 Write-Host "Double Attack credited-engine ownership: PASS (idempotent pending-state handoff)"
 Write-Host "Aura Kill lifecycle ownership: PASS (generation guard across yield, respawn, timeout, and override)"
 Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module cleanup)"
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
-Write-Host "Solix Magnet capture retention: PASS (cross-type Mob Aura pile, sticky after entry)"
-Write-Host "Solix Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
+Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"
+Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
