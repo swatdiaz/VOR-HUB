@@ -289,8 +289,17 @@ return function(context)
         end
         if stage == 1 then
             local relic = toolNamed("Relic")
-            if runtime.RelicPlacementRequestedAt > 0 and not relic
-                and os.clock() - runtime.RelicPlacementRequestedAt >= 0.2 then
+            if runtime.RelicPlacementRequestedAt > 0 then
+                if relic then
+                    runtime.RelicPlacementRequestedAt = 0
+                    runtime.RelicPlaced = false
+                    gui:SetAttribute("BloxAutoSaberRelicPlaced", false)
+                    return false
+                end
+                if os.clock() - runtime.RelicPlacementRequestedAt < 1.5 then
+                    setStatus("Relic", "Verifying personal Relic consumption", context.COLORS.warning)
+                    return true
+                end
                 runtime.RelicPlaced = true
                 gui:SetAttribute("BloxAutoSaberRelicPlaced", true)
                 return false
@@ -333,7 +342,11 @@ return function(context)
         if relic then
             equip(relic)
             setStatus("Relic", "Placing personal Relic in the Jungle door", context.COLORS.warning)
-            if moveNear(finalPart, Vector3.new(0, 3, 0), 9) then
+            local root = rootPart()
+            local relicSlot = CFrame.new(-1404.915, 29.9773, 3.806)
+            if root and (root.Position - relicSlot.Position).Magnitude > 3 then
+                api.MoveTo(relicSlot)
+            else
                 local ok = rawInvoke("ProQuestProgress", "PlaceRelic")
                 if ok then
                     runtime.RelicPlacementRequestedAt = os.clock()
