@@ -133,8 +133,9 @@ $nativeFruitShape = 'silentRemote:FireServer(direction.Unit, 1, grounded)'
 if (([regex]::Matches($bloxText, [regex]::Escape($nativeFruitShape))).Count -ne 2) {
     throw "Fruit M1 calls must use the live direction/combo/grounded remote shape twice"
 }
-if ($bloxText -notmatch 'game\.PlaceId == 100117331123089 and -2161\.889 or 0') {
-    throw "Walk on Water is missing its fixed Submerged Island inner-water surface"
+if ($bloxText -notmatch 'state\.IsAtSubmergedIsland and state\.IsAtSubmergedIsland\(\)' -or
+    $bloxText -notmatch 'atSubmergedIsland and -2161\.889 or 0') {
+    throw "Walk on Water must use the inner-water surface only while actually at Submerged Island"
 }
 
 $parityText = Get-Content -LiteralPath (Join-Path $repo "games/blox_fruits_parity.lua") -Raw
@@ -255,6 +256,8 @@ if (-not $tyrantNotifier) {
 $mobAuraEnemyHold = (
     $bloxText -match 'state\.PinMobAuraTarget = function\(enemy, anchor\)' -and
     $bloxText -match 'enemyRoot\.CFrame = CFrame\.new\(anchor\) \* original\.CFrame\.Rotation' -and
+    $bloxText -match 'enemyRoot\.Anchored = true' -and
+    $bloxText -match 'enemyRoot\.Anchored = original\.Anchored' -and
     $bloxText -match 'enemyBody:ChangeState\(Enum\.HumanoidStateType\.Physics\)' -and
     $bloxText -match 'SwordTargetLimit = 35' -and
     $bloxText -match 'FruitTargetLimit = 35'
@@ -266,18 +269,16 @@ if (-not $mobAuraEnemyHold) {
 $berryAutomation = (
     $bloxText -match 'Flag\s*=\s*"blox_auto_berry"' -and
     $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
-    $bloxText -match 'CollectionService:GetTagged\("BerryBush"\)' -and
-    $bloxText -match 'local source = bush:IsA\("Configuration"\) and bush\.Parent or bush' -and
-    $bloxText -match 'return pivot \* value' -and
-    $bloxText -match 'restoreCollision\(\)' -and
     $bloxText -match 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
     $bloxText -match 'ClaimBerry:InvokeServer\(target\.Bush\.Name, target\.Key\)' -and
-    $bloxText -match 'state\.HopServer\("Berry sweep complete", true\)' -and
+    $bloxText -match 'state\.BerriesClaimedThisServer \+= 1' -and
+    $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
+    $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
     $bloxText -match 'if state\.AutoBerry then\s+stepBerry\(\)' -and
     $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
 )
 if (-not $berryAutomation) {
-    throw "Berry automation must sweep tagged bushes in every sea, claim live berries, and optionally hop after a full sweep"
+    throw "Berry automation must claim only live spawns in every sea, hop empty servers, and stay after a successful collection"
 }
 
 $raidFruitInventory = (
@@ -863,7 +864,7 @@ Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen
 Write-Host "Mob Aura enemy hold: PASS (fixed ground anchor, stopped animation and physics)"
 Write-Host "Magnet hit registration: PASS (35 targets, enlarged frozen hit roots)"
 Write-Host "Magnet damage routing: PASS (normal Aura rotation independent from Double Attack)"
-Write-Host "Sea-wide berry automation: PASS (full bush sweep, claim, optional server hop)"
+Write-Host "Sea-wide berry automation: PASS (live-spawn claim, empty-server hop, stay after collection)"
 Write-Host "Tyrant notifier: PASS (readable PC/mobile chip, enemies-left text)"
 Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation icons, no AdminKit)"
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"

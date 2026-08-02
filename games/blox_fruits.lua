@@ -112,13 +112,10 @@ return function(context)
             AutoBerryServerHop = false,
             LastBerryClaim = 0,
             BerriesClaimed = 0,
-            BerryScanTarget = nil,
-            BerryScanArrivedAt = 0,
-            BerrySweepCompletedAt = 0,
-            BerryRescanAt = 0,
+            BerriesClaimedThisServer = 0,
+            BerryEmptySince = 0,
             BerryHopBusy = false,
             BerryHopStatus = "Idle",
-            BerryScannedBushes = setmetatable({}, {__mode = "k"}),
             BerryVisitedServers = {[game.JobId] = true},
             AutoBoss = false,
             SelectedBoss = "None",
@@ -759,7 +756,7 @@ return function(context)
         local function movementStillNeedsNoclip()
             return state.Noclip or state.AutoFarmLevel or state.AutoBoss
                 or (state.AutoRaid and state.RaidMovementReady)
-                or state.AutoChest or (state.AutoBerry and state.BerrySweepCompletedAt == 0) or state.MobAuraTp
+                or state.AutoChest or state.Traveling or state.MobAuraTp
                 or state.SelectedMobFarm or state.ThirdSeaUsesMobAura
         end
 
@@ -3684,6 +3681,7 @@ return function(context)
                     enemyRoot.AssemblyLinearVelocity = Vector3.zero
                     enemyRoot.AssemblyAngularVelocity = Vector3.zero
                     enemyRoot.Size = original.Size
+                    enemyRoot.Anchored = original.Anchored
                     enemyRoot.CanCollide = original.CanCollide
                     enemyBody.WalkSpeed = original.WalkSpeed
                     enemyBody.JumpPower = original.JumpPower
@@ -3726,6 +3724,7 @@ return function(context)
                         enemyRoot.CFrame = original.CFrame
                     end
                     enemyRoot.Size = original.Size
+                    enemyRoot.Anchored = original.Anchored
                     enemyRoot.CanCollide = original.CanCollide
                     enemyRoot.AssemblyLinearVelocity = Vector3.zero
                     enemyRoot.AssemblyAngularVelocity = Vector3.zero
@@ -3757,6 +3756,7 @@ return function(context)
                 state.MobAuraPinOriginals[enemy] = {
                     CFrame = enemyRoot.CFrame,
                     Size = enemyRoot.Size,
+                    Anchored = enemyRoot.Anchored,
                     CanCollide = enemyRoot.CanCollide,
                     WalkSpeed = enemyBody.WalkSpeed,
                     JumpPower = enemyBody.JumpPower,
@@ -3771,6 +3771,7 @@ return function(context)
             local original = state.MobAuraPinOriginals[enemy]
             pcall(function()
                 enemyRoot.CFrame = CFrame.new(anchor) * original.CFrame.Rotation
+                enemyRoot.Anchored = true
                 enemyRoot.AssemblyLinearVelocity = Vector3.zero
                 enemyRoot.AssemblyAngularVelocity = Vector3.zero
                 enemyRoot.CanCollide = false
@@ -3986,6 +3987,7 @@ return function(context)
                         state.GatherOriginalStates[candidate.Enemy] = {
                             CFrame = candidate.Root.CFrame,
                             Size = candidate.Root.Size,
+                            Anchored = candidate.Root.Anchored,
                             CanCollide = candidate.Root.CanCollide,
                             WalkSpeed = enemyBody.WalkSpeed,
                             JumpPower = enemyBody.JumpPower,
@@ -4927,38 +4929,6 @@ return function(context)
             setStatus("Collecting nearest chest", true)
         end
 
-        state.ResetBerrySweep = function()
-            state.BerryScanTarget = nil
-            state.BerryScanArrivedAt = 0
-            state.BerrySweepCompletedAt = 0
-            state.BerryRescanAt = 0
-            table.clear(state.BerryScannedBushes)
-        end
-
-        state.BerryBushCFrame = function(bush)
-            if not bush or not bush:IsDescendantOf(workspace) then
-                return nil
-            end
-            local source = bush:IsA("Configuration") and bush.Parent or bush
-            if not source then
-                return nil
-            end
-            if source:IsA("Model") then
-                local pivot = source:GetPivot()
-                for key, value in pairs(source:GetAttributes()) do
-                    if string.sub(tostring(key), 1, 12) == "_BerryCFrame" and typeof(value) == "CFrame" then
-                        return pivot * value
-                    end
-                end
-                return pivot
-            end
-            if source:IsA("BasePart") then
-                return source.CFrame
-            end
-            local part = source:FindFirstChildWhichIsA("BasePart", true)
-            return part and part.CFrame or nil
-        end
-
         state.HopServer = function(reason, berryOnly)
             if state.BerryHopBusy then
                 return false
@@ -5059,10 +5029,7 @@ return function(context)
             end
             local target = berryTarget()
             if target then
-                state.BerrySweepCompletedAt = 0
-                state.BerryRescanAt = 0
-                state.BerryScanTarget = nil
-                state.BerryScanArrivedAt = 0
+                state.BerryEmptySince = 0
                 moveTo(target.CFrame + Vector3.new(0, 3, 0))
                 berryLabel.Text = string.format("Berry: %s | %.0f studs", target.Name, target.Distance)
             end
@@ -5073,6 +5040,7 @@ return function(context)
                 end)
                 if ok and claimed ~= false then
                     state.BerriesClaimed += 1
+                    state.BerriesClaimedThisServer += 1
                     berryLabel.Text = string.format("Berries claimed: %d | Last: %s", state.BerriesClaimed, target.Name)
                     setStatus("Claimed " .. target.Name, true)
                 elseif not ok then
@@ -5084,68 +5052,31 @@ return function(context)
                 return
             end
 
-            local root = rootPart()
-            if not root then
-                return
-            end
-            local scanTarget = state.BerryScanTarget
-            local scanCFrame = state.BerryBushCFrame(scanTarget)
-            if not scanCFrame or state.BerryScannedBushes[scanTarget] then
-                scanTarget = nil
-                scanCFrame = nil
-                local nearestDistance = math.huge
-                for _, bush in ipairs(CollectionService:GetTagged("BerryBush")) do
-                    local bushCFrame = state.BerryBushCFrame(bush)
-                    if bushCFrame and not state.BerryScannedBushes[bush] then
-                        local distance = (bushCFrame.Position - root.Position).Magnitude
-                        if distance < nearestDistance then
-                            scanTarget = bush
-                            scanCFrame = bushCFrame
-                            nearestDistance = distance
-                        end
-                    end
-                end
-                state.BerryScanTarget = scanTarget
-                state.BerryScanArrivedAt = 0
-            end
-            if scanTarget and scanCFrame then
-                local distance = (scanCFrame.Position - root.Position).Magnitude
-                berryLabel.Text = string.format("Berries: Scanning bush | %.0f studs", distance)
-                setStatus("Scanning berry bushes", nil)
-                if distance > 110 then
-                    moveTo(scanCFrame + Vector3.new(0, 5, 0))
-                elseif state.BerryScanArrivedAt == 0 then
-                    cancelMove(false)
-                    state.BerryScanArrivedAt = os.clock()
-                elseif os.clock() - state.BerryScanArrivedAt >= 1.1 then
-                    state.BerryScannedBushes[scanTarget] = true
-                    state.BerryScanTarget = nil
-                    state.BerryScanArrivedAt = 0
-                end
-                return
-            end
-
             cancelMove(false)
-            if state.BerrySweepCompletedAt == 0 then
-                state.BerrySweepCompletedAt = os.clock()
-                state.BerryRescanAt = os.clock() + 30
+            if not movementStillNeedsNoclip() then
                 restoreCollision()
             end
-            if state.AutoBerryServerHop then
-                berryLabel.Text = "Berries: Sweep complete | hopping server..."
-                setStatus("Berry sweep complete; finding another server", true)
-                if os.clock() - state.BerrySweepCompletedAt >= 1.5 then
-                    state.HopServer("Berry sweep complete", true)
+            if state.BerryEmptySince == 0 then
+                state.BerryEmptySince = os.clock()
+            end
+            if state.AutoBerryServerHop and state.BerriesClaimedThisServer == 0 then
+                local waitLeft = math.max(0, math.ceil(5 - (os.clock() - state.BerryEmptySince)))
+                if waitLeft <= 0 then
+                    berryLabel.Text = "Berries: None spawned | hopping server..."
+                    setStatus("No live berries; finding another server", true)
+                    state.HopServer("No live berry spawned", true)
+                else
+                    berryLabel.Text = string.format("Berries: None spawned | hop in %ds", waitLeft)
                 end
-            elseif os.clock() >= state.BerryRescanAt then
-                state.ResetBerrySweep()
-                berryLabel.Text = "Berries: Rescanning all bushes"
-            else
+            elseif state.BerriesClaimedThisServer > 0 then
                 berryLabel.Text = string.format(
-                    "Berries: No spawn found | rescan in %ds",
-                    math.max(0, math.ceil(state.BerryRescanAt - os.clock()))
+                    "Berries: %d collected here | waiting for another spawn",
+                    state.BerriesClaimedThisServer
                 )
-                setStatus("Waiting for berries to respawn", nil)
+                setStatus("Berry server complete; staying here", true)
+            else
+                berryLabel.Text = "Berries: No live spawn in this server"
+                setStatus("Waiting for a live berry", nil)
             end
         end
 
@@ -5572,7 +5503,8 @@ return function(context)
             -- invisible one-stud platform's TOP at that waterline. Only X/Z
             -- follows the player; following root.Y would make the floor sink
             -- along with a falling character and provide no support at all.
-            local supportY = game.PlaceId == 100117331123089 and -2161.889 or 0
+            local atSubmergedIsland = state.IsAtSubmergedIsland and state.IsAtSubmergedIsland()
+            local supportY = atSubmergedIsland and -2161.889 or 0
             state.WaterPlatform.CFrame = CFrame.new(root.Position.X, supportY, root.Position.Z)
         end
 
@@ -5952,12 +5884,13 @@ return function(context)
 
         state.BerryToggle = WorldFarmSection:AddToggle({
             Name = "Auto Collect Berries",
-            Description = "Tweens through every tagged berry bush in First, Second, or Third Sea and claims each spawned berry",
+            Description = "Scans only live berry spawns, then tweens directly to and claims them in any sea",
             Flag = "blox_auto_berry",
             Default = false,
             Callback = function(enabled)
                 state.AutoBerry = enabled == true
-                state.ResetBerrySweep()
+                state.BerryEmptySince = 0
+                state.BerriesClaimedThisServer = 0
                 if enabled then
                     state.AutoFarmLevel = false
                     state.AutoBoss = false
@@ -5978,7 +5911,7 @@ return function(context)
                         end
                     end
                     cancelMove(false)
-                    berryLabel.Text = "Berries: Starting full bush sweep"
+                    berryLabel.Text = "Berries: Scanning live spawns"
                 else
                     local hopControl = Window.PersistentControls["blox_berry_server_hop"]
                     if hopControl and hopControl:Get() then
@@ -5992,20 +5925,20 @@ return function(context)
         })
         WorldFarmSection:AddToggle({
             Name = "Berry Server Hop",
-            Description = "Collects every berry found, then joins a different public server and repeats the full sweep",
+            Description = "Hops only when this server has no live berry; stays after collecting the last one",
             Flag = "blox_berry_server_hop",
             Default = false,
             Callback = function(enabled)
                 state.AutoBerryServerHop = enabled == true
-                state.BerryHopStatus = enabled and "Waiting for full bush sweep" or "Off"
-                state.ResetBerrySweep()
+                state.BerryHopStatus = enabled and "Scanning live spawns" or "Off"
+                state.BerryEmptySince = 0
                 if enabled and state.BerryToggle and not state.BerryToggle:Get() then
                     state.BerryToggle:Set(true)
                 end
                 gui:SetAttribute("BloxBerryServerHop", state.AutoBerryServerHop)
             end,
         })
-        WorldFarmSection:AddLabel("Berry hop scans every loaded BerryBush before leaving; normal Auto Collect waits and rescans instead.")
+        WorldFarmSection:AddLabel("Live-spawn only: no bush tour. Hop leaves empty servers, but never leaves after collecting berries.")
 
         FarmSettingsSection:AddSlider({
             Name = "Tween Speed",
@@ -7506,7 +7439,6 @@ return function(context)
             gatherStep()
             if state.Noclip or state.Traveling or state.MobAuraTp or state.SelectedMobFarm
                 or state.AutoFarmLevel or state.AutoBoss or state.AutoRaid or state.AutoChest
-                or (state.AutoBerry and state.BerrySweepCompletedAt == 0)
                 or state.ThirdSeaFarmActive then
                 applyNoclip()
             end
