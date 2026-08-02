@@ -30,6 +30,8 @@ return function(context)
         CachedRemote = {},
         LastInventory = 0,
         SaberOwned = false,
+        RelicPlacementRequestedAt = 0,
+        RelicPlaced = false,
         StatusLabel = nil,
         Toggle = nil,
     }
@@ -287,6 +289,15 @@ return function(context)
         end
         if stage == 1 then
             local relic = toolNamed("Relic")
+            if runtime.RelicPlacementRequestedAt > 0 and not relic
+                and os.clock() - runtime.RelicPlacementRequestedAt >= 0.2 then
+                runtime.RelicPlaced = true
+                gui:SetAttribute("BloxAutoSaberRelicPlaced", true)
+                return false
+            end
+            if runtime.RelicPlaced then
+                return false
+            end
             if relic then
                 return false
             end
@@ -311,6 +322,9 @@ return function(context)
         if not finalPart then
             return false
         end
+        if runtime.RelicPlaced then
+            return false
+        end
         local relic = toolNamed("Relic")
         -- Final.Part is shared world geometry and can already be transparent
         -- because another player opened the room. The player's Relic is the
@@ -320,7 +334,11 @@ return function(context)
             equip(relic)
             setStatus("Relic", "Placing personal Relic in the Jungle door", context.COLORS.warning)
             if moveNear(finalPart, Vector3.new(0, 3, 0), 9) then
-                rawInvoke("ProQuestProgress", "PlaceRelic")
+                local ok = rawInvoke("ProQuestProgress", "PlaceRelic")
+                if ok then
+                    runtime.RelicPlacementRequestedAt = os.clock()
+                    gui:SetAttribute("BloxAutoSaberRelicRequestAt", runtime.RelicPlacementRequestedAt)
+                end
             end
             return true
         end
@@ -363,6 +381,9 @@ return function(context)
             runtime.Enabled = enabled == true
             runtime.CachedRemote = {}
             runtime.LastRemote = {}
+            runtime.RelicPlacementRequestedAt = 0
+            runtime.RelicPlaced = false
+            gui:SetAttribute("BloxAutoSaberRelicPlaced", false)
             if runtime.Enabled then
                 setExclusive()
                 api.SetCombat(true)
