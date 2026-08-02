@@ -317,8 +317,8 @@ if (-not $dualWeaponAttack) {
 }
 
 $raidRangeSafety = (
-    $bloxText -match 'RaidHitMargin = 1\.5' -and
-    $bloxText -match 'RaidMaxHitHeight = 36\.5' -and
+    $bloxText -match 'RaidHitMargin = 0\.5' -and
+    $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
     $bloxText -match 'RaidSafeHeight = DoubleAttackEngine\.RaidMaxHitHeight' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
     $bloxText -match 'math\.min\(\s*math\.max\(state\.RaidSafeHeight, tonumber\(state\.MobAuraHeight\) or 20\),\s*DoubleAttackEngine\.RaidMaxHitHeight' -and

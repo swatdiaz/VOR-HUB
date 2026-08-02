@@ -86,8 +86,8 @@ return function(context)
             SwordTargetLimit = 35,
             FruitTargetLimit = 35,
             FruitCadence = 0.075,
-            RaidHitMargin = 1.5,
-            RaidMaxHitHeight = 36.5,
+            RaidHitMargin = 0.5,
+            RaidMaxHitHeight = 37.5,
             RaidRecoveryPercent = 70,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
