@@ -569,20 +569,25 @@ $practicalBasketballReliableGreen = (
     $practicalBasketballText -match 'if offsetChanged then\s*state\.LastMeterSampleAt\s*=\s*sampleAt' -and
     $practicalBasketballText -match 'observedSpeed\s*>\s*0\s*and\s*observedSpeed\s*<\s*5' -and
     $practicalBasketballText -match 'state\.MeterSpeed\s*\*\s*0\.7\s*\+\s*observedSpeed\s*\*\s*0\.3' -and
-    $practicalBasketballText -match 'predictedDelay\s*<=\s*0\.004' -and
+    $practicalBasketballText -match 'predictedDelay\s*<=\s*0\.025' -and
+    $practicalBasketballText -match 'ScheduledReleaseId\s*=\s*nil' -and
+    $practicalBasketballText -match 'RenderStepDuration\s*=\s*1\s*/\s*60' -and
+    $practicalBasketballText -match 'state\.RenderStepDuration\s*\*\s*1\.5' -and
+    $practicalBasketballText -match 'task\.delay\(math\.max\(0,\s*releaseDelay\s*-\s*schedulerLead\)' -and
     $practicalBasketballText -match 'repeat until os\.clock\(\)\s*>=\s*deadline' -and
+    $practicalBasketballText -match 'character:GetAttribute\("ShotStartTime"\)\s*==\s*expectedShotToken' -and
+    $practicalBasketballText -match 'commitScheduledRelease\(' -and
     $practicalBasketballText -match 'state\.PendingReleaseTravel\s*=\s*releaseTravel' -and
-    $practicalBasketballText -match '\[4\]\s*=\s*0\.0002' -and
     $practicalBasketballText -match 'state\.PendingReleaseDirection\s*=\s*releaseDirection' -and
-    $practicalBasketballText -match 'local travelCorrection\s*=\s*\(\{' -and
-    $practicalBasketballText -match 'TargetLowerTravels\s*=\s*\{' -and
-    $practicalBasketballText -match 'TargetUpperTravels\s*=\s*\{' -and
-    $practicalBasketballText -match 'nextTravel\s*=\s*\(lowerTravel\s*\+\s*upperTravel\)\s*\*\s*0\.5' -and
+    $practicalBasketballText -notmatch 'local travelCorrection\s*=\s*\(\{' -and
+    $practicalBasketballText -notmatch 'TargetLowerTravels\s*=\s*\{' -and
+    $practicalBasketballText -notmatch 'TargetUpperTravels\s*=\s*\{' -and
+    $practicalBasketballText -match 'fixed per-shot target' -and
     $practicalBasketballText -match 'ShotFurthestOffset\s*=\s*nil' -and
     $practicalBasketballText -match 'FullOffsets\s*=\s*\{' -and
     $practicalBasketballText -match 'Vertical\s*=\s*Vector2\.new\(0,\s*-1\.46824694\)' -and
-    $practicalBasketballText -match 'TweenService:Create\(fillGradient,\s*TweenInfo\.new\(0\)' -and
-    $practicalBasketballText -match 'state\.FullOffsets\[releaseMeter\]\s*or\s*releaseOffset' -and
+    $practicalBasketballText -match 'syncVisibleMeter\(' -and
+    $practicalBasketballText -match 'state\.FullOffsets\[releaseMeter\]' -and
     $practicalBasketballText -notmatch 'previousTarget:Lerp\(correctedTarget' -and
     $practicalBasketballText -match 'Shoot remote unavailable; retrying'
 )
@@ -706,7 +711,7 @@ Write-Host "Bid for Anime support: PASS (native auto-farm, semantic navigation i
 Write-Host "Mine a Mountain support: PASS (baseline Godspeed mining, rare-crystal auto-hop/resume, purchases, movement safety, no admin remotes)"
 Write-Host "Bee Swarm Simulator support: PASS (native collector, hive, quest, toy, and progression routes)"
 Write-Host "Practical Basketball support: PASS (native Aero character, safe meter release, rail icons, and ball tag)"
-Write-Host "Practical Basketball Auto Green: PASS (locked controls with feedback-bracketed direct release travel)"
+Write-Host "Practical Basketball Auto Green: PASS (fixed target with frame-aware scheduled release)"
 Write-Host "Practical Basketball Auto Guard: PASS (authoritative HoldingG reassertion and cleanup)"
 Write-Host "Practical Basketball profiles: PASS (shared universe scope with non-destructive legacy migration)"
 Write-Host "Practical Basketball timing profiles: PASS (legacy manual offset and delay controls are discarded)"
