@@ -285,8 +285,12 @@ if (-not $mobAuraEnemyHold) {
 $berryAutomation = (
     $bloxText -match 'Flag\s*=\s*"blox_auto_berry"' -and
     $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
-    $bloxText -match 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
-    $bloxText -match 'ClaimBerry:InvokeServer\(target\.Bush\.Name, target\.Key\)' -and
+    $bloxText -match 'for _, prompt in ipairs\(workspace:GetDescendants\(\)\) do' -and
+    $bloxText -match 'prompt:IsA\("ProximityPrompt"\)' -and
+    $bloxText -match 'keypress\(0x45\)' -and
+    $bloxText -match 'VirtualInputManager:SendKeyEvent\(true, Enum\.KeyCode\.E' -and
+    $bloxText -notmatch 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
+    $bloxText -notmatch 'ClaimBerry:InvokeServer' -and
     $bloxText -match 'state\.BerriesClaimedThisServer \+= 1' -and
     $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
     $bloxText -match 'state\.HopServer\("No live berry spawned", true\)' -and
@@ -296,7 +300,32 @@ $berryAutomation = (
     $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
 )
 if (-not $berryAutomation) {
-    throw "Berry automation must claim only live spawns in every sea, hop empty servers, and stay after a successful collection"
+    throw "Berry automation must scan actual live collectible prompts, hold E, hop empty servers, and stay after a successful collection"
+}
+
+$dualWeaponAttack = (
+    $bloxText -match 'Flag\s*=\s*"blox_dual_weapon_attack"' -and
+    $bloxText -match 'Name\s*=\s*"Double Attack \(Sword \+ Melee\)"' -and
+    $bloxText -match 'plan = \{Double = state\.DoubleAttack, DualWeapon = state\.DualWeaponAttack\}' -and
+    $bloxText -match 'DoubleAttackEngine\.SendSword\(' -and
+    $bloxText -match 'state\.ExperimentalDispatchRegistered\(\s*"Melee",\s*true' -and
+    $bloxText -match '\(not state\.DoubleAttack and not state\.DualWeaponAttack\)' -and
+    $bloxText -match 'gui:SetAttribute\("BloxDualWeaponAttack", state\.DualWeaponAttack\)'
+)
+if (-not $dualWeaponAttack) {
+    throw "Sword + Melee Double Attack must share the registered hit engine and its dispatch lifecycle"
+}
+
+$raidRangeSafety = (
+    $bloxText -match 'RaidHitMargin = 1\.5' -and
+    $bloxText -match 'RaidMaxHitHeight = 36\.5' -and
+    $bloxText -match 'RaidSafeHeight = DoubleAttackEngine\.RaidMaxHitHeight' -and
+    $bloxText -match 'RaidRecoveryPercent = 70' -and
+    $bloxText -match 'math\.min\(\s*math\.max\(state\.RaidSafeHeight, tonumber\(state\.MobAuraHeight\) or 20\),\s*DoubleAttackEngine\.RaidMaxHitHeight' -and
+    $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent'
+)
+if (-not $raidRangeSafety) {
+    throw "Raid farming must stay just inside registered hit range and retreat before burst damage becomes lethal"
 }
 
 $raidFruitInventory = (

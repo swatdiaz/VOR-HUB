@@ -64,7 +64,6 @@ return function(context)
         local Redeem = Remotes and Remotes:FindFirstChild("Redeem")
         local Net = ReplicatedStorage:FindFirstChild("Modules")
         Net = Net and Net:FindFirstChild("Net")
-        local ClaimBerry = Net and (Net:FindFirstChild("ClaimBerry", true) or Net:FindFirstChild("RF/ClaimBerry"))
         local Quests = safeRequire(ReplicatedStorage:FindFirstChild("Quests")) or {}
         local Guide = safeRequire(ReplicatedStorage:FindFirstChild("GuideModule"))
         local CombatUtil = safeRequire(ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("CombatUtil"))
@@ -87,6 +86,9 @@ return function(context)
             SwordTargetLimit = 35,
             FruitTargetLimit = 35,
             FruitCadence = 0.075,
+            RaidHitMargin = 1.5,
+            RaidMaxHitHeight = 36.5,
+            RaidRecoveryPercent = 70,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
         -- both its regular 0.3-second gate and its fifth-hit 1-second gate.
@@ -111,6 +113,9 @@ return function(context)
             AutoBerry = false,
             AutoBerryServerHop = false,
             LastBerryClaim = 0,
+            LastBerryScan = 0,
+            BerryCachedTarget = nil,
+            BerryPromptBusy = false,
             BerriesClaimed = 0,
             BerriesClaimedThisServer = 0,
             BerryEmptySince = 0,
@@ -133,7 +138,7 @@ return function(context)
             RaidVoidTargets = setmetatable({}, {__mode = "k"}),
             RaidVoidOriginalCFrames = setmetatable({}, {__mode = "k"}),
             LastRaidVoidStep = 0,
-            RaidSafeHeight = 35,
+            RaidSafeHeight = DoubleAttackEngine.RaidMaxHitHeight,
             RaidEnteredAt = 0,
             RaidEntryGrace = 8,
             RaidHasEntered = false,
@@ -233,6 +238,7 @@ return function(context)
             AuraFruitLastDistance = nil,
             FruitM1ReadyAt = 0,
             DoubleAttack = false,
+            DualWeaponAttack = false,
             DoubleAttackWeapon = "Sword",
             NativeCombatBusyAt = 0,
             FruitM1CooldownReduction = DEFAULT_FRUIT_M1_COOLDOWN_REDUCTION,
@@ -1374,7 +1380,15 @@ return function(context)
         end
 
         local function equipSelectedTool()
-            if state.DoubleAttack then
+            if state.DualWeaponAttack then
+                local sword = toolForSelection("Sword")
+                local melee = toolForSelection("Melee")
+                equipTool(sword)
+                state.AuraWeaponName = sword and melee and (sword.Name .. " + " .. melee.Name) or nil
+                state.AuraWeaponType = sword and melee and "Sword + Melee" or nil
+                state.AuraAttackMode = "Double Attack: Sword + Melee"
+                return sword
+            elseif state.DoubleAttack then
                 local weaponSelection = state.DoubleAttackWeaponSelection()
                 local sword = toolForSelection(weaponSelection)
                 local fruit = toolForSelection("M1 Fruit")
@@ -1903,7 +1917,8 @@ return function(context)
             state.AuraStage = "double-sword-started"
             task.wait(state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY)
             if state.AuraAttackGeneration ~= attackGeneration
-                or not state.Alive or not state.AuraKill or not state.DoubleAttack then
+                or not state.Alive or not state.AuraKill
+                or (not state.DoubleAttack and not state.DualWeaponAttack) then
                 return false, "the target left before the hit window"
             end
 
@@ -2424,7 +2439,7 @@ return function(context)
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
             local attackTargets = {target}
-            if state.DoubleAttack then
+            if state.DoubleAttack or state.DualWeaponAttack then
                 -- Double Attack mirrors the Dungeon engine: every eligible
                 -- nearby rig is part of the same Sword window even when Multi
                 -- Grab is off. Fruit independently covers its nearest three.
@@ -2449,9 +2464,35 @@ return function(context)
             end
             state.AuraMultiTargetCount = #attackTargets
             local extraDelay = math.max(tonumber(state.AttackInterval) or 0, 0)
-            local plan = {Double = state.DoubleAttack}
+            local plan = {Double = state.DoubleAttack, DualWeapon = state.DualWeaponAttack}
 
-            if state.DoubleAttack then
+            if state.DualWeaponAttack then
+                plan.Sword = toolForSelection("Sword")
+                plan.Melee = toolForSelection("Melee")
+                if not plan.Sword or not plan.Melee then
+                    state.AuraPendingError = "Sword + Melee requires both registered combat Tools"
+                    return false
+                end
+                plan.SwordData = weaponDataForTool(plan.Sword)
+                if not hasRegisteredBasicMoveset(plan.SwordData) then
+                    state.AuraPendingError = "Sword + Melee could not resolve the Sword M1 moveset"
+                    return false
+                end
+                local _, swordChanged = equipTool(plan.Sword)
+                if swordChanged then
+                    task.wait(0.04)
+                end
+                local swordProfile, swordError = DoubleAttackEngine.SwordProfile(plan.Sword, plan.SwordData)
+                if not swordProfile then
+                    state.AuraPendingError = "Sword + Melee could not read Sword: " .. tostring(swordError)
+                    return false
+                end
+                plan.SwordProfile = swordProfile
+                plan.Cadence = (state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY) + extraDelay
+                state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Melee.Name
+                state.AuraWeaponType = "Sword + Melee"
+                state.AuraAttackMode = "Double Attack: Sword + Melee"
+            elseif state.DoubleAttack then
                 plan.SwordSelection = state.DoubleAttackWeaponSelection()
                 plan.Sword = toolForSelection(plan.SwordSelection)
                 plan.Fruit = toolForSelection("M1 Fruit")
@@ -2535,7 +2576,7 @@ return function(context)
             state.AuraAttackPending = true
             state.AuraAttackPendingAt = os.clock()
             state.LastAttack = now
-            state.AuraStage = state.DoubleAttack and "double-queued" or "queued"
+            state.AuraStage = (state.DoubleAttack or state.DualWeaponAttack) and "double-queued" or "queued"
             state.AuraLastRequestAt = now
             state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
             state.AuraLastDistance = target.Distance
@@ -2550,7 +2591,30 @@ return function(context)
             local dispatched = 0
             local fruitOutOfRange = false
             local hitOk, hitError = pcall(function()
-                if plan.Double then
+                if plan.DualWeapon then
+                    local swordSent, swordSendError, swordHitCount = DoubleAttackEngine.SendSword(
+                        plan.Sword,
+                        plan.SwordData,
+                        plan.SwordProfile,
+                        attackGeneration
+                    )
+                    if not swordSent then
+                        error("Sword + Melee Sword M1 failed: " .. tostring(swordSendError))
+                    end
+                    swordHitCount = math.max(tonumber(swordHitCount) or 1, 1)
+                    dispatched += swordHitCount
+                    state.AuraSwordRequests += swordHitCount
+                    local meleeSent, meleeError, meleeHitCount = state.ExperimentalDispatchRegistered(
+                        "Melee",
+                        true,
+                        state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY
+                    )
+                    if not meleeSent then
+                        error("Sword + Melee Melee M1 failed: " .. tostring(meleeError))
+                    end
+                    meleeHitCount = math.max(tonumber(meleeHitCount) or 1, 1)
+                    dispatched += meleeHitCount
+                elseif plan.Double then
                     local swordSent, swordSendError, swordHitCount = DoubleAttackEngine.SendSword(
                         plan.Sword,
                         plan.SwordData,
@@ -2869,6 +2933,7 @@ return function(context)
             gui:SetAttribute("BloxAuraWeaponType", state.AuraWeaponType or "")
             gui:SetAttribute("BloxAuraAttackMode", state.AuraAttackMode or "")
             gui:SetAttribute("BloxDoubleAttack", state.DoubleAttack)
+            gui:SetAttribute("BloxDualWeaponAttack", state.DualWeaponAttack)
             gui:SetAttribute("BloxFruitM1CooldownReduction", state.FruitM1CooldownReduction)
             gui:SetAttribute(
                 "BloxAuraFruitNativeRange",
@@ -3733,7 +3798,13 @@ return function(context)
             state.RaidMovementReady = true
             state.RaidIslandIndex = island.Index
             state.RaidIslandName = island.Name
-            local safeHeight = math.max(state.RaidSafeHeight, tonumber(state.MobAuraHeight) or 20)
+            -- Registered M1 targeting stops at DoubleAttackEngine.HitRange. Stay
+            -- as high as possible while keeping a small replication/motion margin
+            -- so Dough enemies cannot force the player outside the hit window.
+            local safeHeight = math.min(
+                math.max(state.RaidSafeHeight, tonumber(state.MobAuraHeight) or 20),
+                DoubleAttackEngine.RaidMaxHitHeight
+            )
             state.ActiveFarmHeightOverride = safeHeight
             local voided = RaidRuntime.VoidKillStep(island)
             if state.RaidVoidActive then
@@ -3766,7 +3837,7 @@ return function(context)
                 state.ActiveFarmVerticalLock = true
                 state.CurrentEnemyName = normalizeEnemyName(enemy.Name)
                 state.RaidTargetName = state.CurrentEnemyName
-                if healthPercent() <= 50 then
+                if healthPercent() <= DoubleAttackEngine.RaidRecoveryPercent then
                     state.ActiveFarmTarget = nil
                     local enemyRoot = modelRoot(enemy)
                     if enemyRoot then
@@ -5170,65 +5241,137 @@ return function(context)
             if not root then
                 return nil
             end
+            local cached = state.BerryCachedTarget
+            if cached and cached.Prompt and cached.Prompt.Parent and cached.Prompt.Enabled
+                and cached.Part and cached.Part:IsDescendantOf(workspace) then
+                cached.CFrame = cached.Part.CFrame
+                cached.Distance = (cached.Part.Position - root.Position).Magnitude
+                return cached
+            end
+            if os.clock() - state.LastBerryScan < 0.75 then
+                return nil
+            end
+            state.LastBerryScan = os.clock()
+            state.BerryCachedTarget = nil
+            pcall(function()
+                if type(sethiddenproperty) == "function" then
+                    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                    sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+                end
+                if type(setsimulationradius) == "function" then
+                    setsimulationradius(math.huge, math.huge)
+                end
+            end)
             local best = nil
             local bestDistance = math.huge
-            for _, streamed in ipairs(CollectionService:GetTagged("BerryBushStreamed")) do
-                local berries = streamed:IsA("Configuration") and streamed
-                    or streamed:FindFirstChild("Berries")
-                    or streamed:FindFirstChildWhichIsA("Configuration")
-                local bush = berries and berries.Parent
-                if berries and bush and bush:IsDescendantOf(workspace) then
-                    for key, berryName in pairs(berries:GetAttributes()) do
-                        if string.sub(tostring(key), 1, 12) == "_BerryCFrame" and tostring(berryName) ~= "" then
-                            local localCFrame = bush:GetAttribute(key)
-                            if typeof(localCFrame) == "CFrame" then
-                                local pivot = bush:IsA("Model") and bush:GetPivot()
-                                    or (bush:IsA("BasePart") and bush.CFrame)
-                                if pivot then
-                                    local worldCFrame = pivot * localCFrame
-                                    local distance = (worldCFrame.Position - root.Position).Magnitude
-                                    if distance < bestDistance then
-                                        bestDistance = distance
-                                        best = {
-                                            Bush = bush,
-                                            Key = key,
-                                            Name = tostring(berryName),
-                                            CFrame = worldCFrame,
-                                            Distance = distance,
-                                        }
-                                    end
-                                end
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                    local promptText = string.lower(table.concat({
+                        prompt.Name,
+                        prompt.ActionText,
+                        prompt.ObjectText,
+                    }, " "))
+                    local berryNamed = string.find(promptText, "berry", 1, true) ~= nil
+                    local owner = prompt.Parent
+                    local ancestor = owner
+                    local depth = 0
+                    while ancestor and ancestor ~= workspace and depth < 5 do
+                        local lowerName = string.lower(ancestor.Name)
+                        if string.find(lowerName, "berry", 1, true)
+                            and not string.find(lowerName, "berrybush", 1, true)
+                            and lowerName ~= "berries" then
+                            berryNamed = true
+                            owner = ancestor
+                            break
+                        end
+                        ancestor = ancestor.Parent
+                        depth += 1
+                    end
+                    if berryNamed then
+                        local part = prompt.Parent
+                        while part and part ~= workspace and not part:IsA("BasePart") do
+                            part = part.Parent
+                        end
+                        if part and part:IsA("BasePart") then
+                            local distance = (part.Position - root.Position).Magnitude
+                            if distance < bestDistance then
+                                bestDistance = distance
+                                best = {
+                                    Object = owner,
+                                    Prompt = prompt,
+                                    Part = part,
+                                    Name = prompt.ObjectText ~= "" and prompt.ObjectText or owner.Name,
+                                    CFrame = part.CFrame,
+                                    Distance = distance,
+                                }
                             end
                         end
                     end
                 end
             end
+            state.BerryCachedTarget = best
             return best
         end
 
         local function stepBerry()
+            if state.BerryPromptBusy then
+                return
+            end
             if os.clock() - state.LastBerryClaim < 0.35 then
                 return
             end
             local target = berryTarget()
             if target then
                 state.BerryEmptySince = 0
-                moveTo(target.CFrame + Vector3.new(0, 3, 0))
+                local liveRoot = rootPart()
+                if not liveRoot or not target.Part or not target.Part:IsDescendantOf(workspace) then
+                    state.BerryCachedTarget = nil
+                    return
+                end
+                target.Distance = (target.Part.Position - liveRoot.Position).Magnitude
+                moveTo(target.CFrame + Vector3.new(0, 2.5, 0))
                 berryLabel.Text = string.format("Berry: %s | %.0f studs", target.Name, target.Distance)
             end
-            if target and target.Distance <= 14 and ClaimBerry and ClaimBerry:IsA("RemoteFunction") then
+            if target and target.Distance <= math.max(3, target.Prompt.MaxActivationDistance - 1) then
                 state.LastBerryClaim = os.clock()
-                local ok, claimed = pcall(function()
-                    return ClaimBerry:InvokeServer(target.Bush.Name, target.Key)
+                state.BerryPromptBusy = true
+                cancelMove(false)
+                task.spawn(function()
+                    local prompt = target.Prompt
+                    local heldFor = math.max(tonumber(prompt.HoldDuration) or 0, 0) + 0.15
+                    local inputOk = false
+                    if type(keypress) == "function" and type(keyrelease) == "function" then
+                        inputOk = pcall(function()
+                            keypress(0x45)
+                            task.wait(math.max(heldFor, 0.25))
+                            keyrelease(0x45)
+                        end)
+                    else
+                        inputOk = pcall(function()
+                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                            task.wait(math.max(heldFor, 0.25))
+                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        end)
+                    end
+                    if not inputOk and type(fireproximityprompt) == "function" then
+                        inputOk = pcall(fireproximityprompt, prompt, heldFor)
+                    end
+                    task.wait(0.3)
+                    local claimed = not prompt.Parent or not prompt:IsDescendantOf(workspace) or not prompt.Enabled
+                    if claimed then
+                        state.BerriesClaimed += 1
+                        state.BerriesClaimedThisServer += 1
+                        berryLabel.Text = string.format("Berries collected: %d | Last: %s", state.BerriesClaimed, target.Name)
+                        setStatus("Collected " .. target.Name, true)
+                    elseif not inputOk then
+                        setError("Berry E hold could not be sent")
+                    else
+                        berryLabel.Text = "Berry still present | retrying E hold"
+                    end
+                    state.BerryCachedTarget = nil
+                    state.LastBerryScan = 0
+                    state.BerryPromptBusy = false
                 end)
-                if ok and claimed ~= false then
-                    state.BerriesClaimed += 1
-                    state.BerriesClaimedThisServer += 1
-                    berryLabel.Text = string.format("Berries claimed: %d | Last: %s", state.BerriesClaimed, target.Name)
-                    setStatus("Claimed " .. target.Name, true)
-                elseif not ok then
-                    setError("Berry claim failed: " .. tostring(claimed))
-                end
                 return
             elseif target then
                 setStatus("Traveling to " .. target.Name, nil)
@@ -5381,7 +5524,7 @@ return function(context)
                 task.wait(0.08)
                 if previousTool and previousTool.Parent then
                     body:EquipTool(previousTool)
-                elseif state.DoubleAttack then
+                elseif state.DoubleAttack or state.DualWeaponAttack then
                     local sword = toolForSelection("Sword")
                     if sword then
                         body:EquipTool(sword)
@@ -6474,6 +6617,12 @@ return function(context)
             Flag = "blox_double_attack",
             Default = false,
             Callback = function(enabled)
+                if enabled then
+                    local dualControl = Window.PersistentControls["blox_dual_weapon_attack"]
+                    if dualControl and dualControl:Get() then
+                        dualControl:Set(false)
+                    end
+                end
                 if state.DoubleAttack ~= enabled then
                     state.AuraAttackGeneration += 1
                     state.FruitDispatchGeneration += 1
@@ -6718,6 +6867,49 @@ return function(context)
                 state.FarmPositionX = math.clamp(tonumber(value) or 0, -30, 30)
                 syncMobAuraRange()
                 gui:SetAttribute("BloxFarmPositionX", state.FarmPositionX)
+            end,
+        })
+        AttackSection:AddToggle({
+            Name = "Double Attack (Sword + Melee)",
+            Description = "Uses the existing credited registered-hit path for Sword and Melee; mutually exclusive with Fruit double attack",
+            Flag = "blox_dual_weapon_attack",
+            Default = false,
+            Callback = function(enabled)
+                if enabled then
+                    local fruitControl = Window.PersistentControls["blox_double_attack"]
+                    if fruitControl and fruitControl:Get() then
+                        fruitControl:Set(false)
+                    end
+                end
+                if state.DualWeaponAttack ~= enabled then
+                    state.AuraAttackGeneration += 1
+                    state.FruitDispatchGeneration += 1
+                    state.AuraAttackPending = false
+                    state.AuraAttackPendingAt = 0
+                    state.FruitDispatchPending = false
+                    state.FruitDispatchPendingAt = 0
+                    state.AuraFruitBusy = false
+                end
+                state.DualWeaponAttack = enabled
+                state.LastAttack = 0
+                state.NativeCombatBusy = false
+                state.NativeCombatBusyAt = 0
+                table.clear(state.AuraCombos)
+                gui:SetAttribute("BloxDualWeaponAttack", enabled)
+                if enabled then
+                    local sword = toolForSelection("Sword")
+                    local melee = toolForSelection("Melee")
+                    if sword and melee then
+                        state.AuraWeaponName = sword.Name .. " + " .. melee.Name
+                        state.AuraWeaponType = "Sword + Melee"
+                        state.AuraAttackMode = "Double Attack: Sword + Melee"
+                    else
+                        state.AuraPendingError = "Sword + Melee requires both registered combat Tools"
+                    end
+                else
+                    local tool = selectedTool()
+                    updateAuraWeaponState(tool, state.WeaponType)
+                end
             end,
         })
         mobAuraHeightSlider = FarmPositionSection:AddSlider({
@@ -8116,6 +8308,7 @@ return function(context)
             gui:SetAttribute("BloxAuraWeaponType", state.AuraWeaponType or "")
             gui:SetAttribute("BloxAuraAttackMode", state.AuraAttackMode or "")
             gui:SetAttribute("BloxDoubleAttack", state.DoubleAttack)
+            gui:SetAttribute("BloxDualWeaponAttack", state.DualWeaponAttack)
             gui:SetAttribute("BloxFruitM1CooldownReduction", state.FruitM1CooldownReduction)
             gui:SetAttribute("BloxAuraFruitNativeRange", NATIVE_FRUIT_MAX_RANGE)
             gui:SetAttribute("BloxAuraFruitInRange", false)
