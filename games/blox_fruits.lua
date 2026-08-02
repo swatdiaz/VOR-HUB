@@ -3142,7 +3142,13 @@ return function(context)
             state.CurrentSeaQuestCount = #candidates
             state.CurrentSeaMinimumLevel = minimumLevel == math.huge and 0 or minimumLevel
             state.CurrentSeaMaximumLevel = maximumLevel
-            if #candidates == 0 then
+            if game.PlaceId == 2753915549 or game.PlaceId == 85211729168715 then
+                state.CurrentSeaName = "First Sea"
+            elseif game.PlaceId == 4442272183 then
+                state.CurrentSeaName = "Second Sea"
+            elseif game.PlaceId == 7449423635 or game.PlaceId == 100117331123089 then
+                state.CurrentSeaName = "Third Sea"
+            elseif #candidates == 0 then
                 state.CurrentSeaName = "Detecting"
             elseif maximumLevel <= 700 then
                 state.CurrentSeaName = "First Sea"

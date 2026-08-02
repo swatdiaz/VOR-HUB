@@ -300,6 +300,7 @@ $berryAutomation = (
     $bloxText -match 'local travelCommand = fromFirstSea and "TravelZou" or "TravelMain"' -and
     $bloxText -match 'Cross-sea hop to random " \.\. destination \.\. " server' -and
     $bloxText -match 'Default = state\.AutoBerryServerHop' -and
+    $bloxText -match 'game\.PlaceId == 2753915549 or game\.PlaceId == 85211729168715' -and
     $bloxText -match 'TeleportService\.TeleportInitFailed:Connect' -and
     $bloxText -match 'Roblox requires a valid server teleport token' -and
     $bloxText -match 'if state\.AutoBerry then\s+stepBerry\(\)' -and
