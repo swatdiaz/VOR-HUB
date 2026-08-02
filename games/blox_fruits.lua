@@ -5224,9 +5224,6 @@ return function(context)
             end
 
             cancelMove(false)
-            if not movementStillNeedsNoclip() then
-                restoreCollision()
-            end
             if state.BerryEmptySince == 0 then
                 state.BerryEmptySince = os.clock()
             end
