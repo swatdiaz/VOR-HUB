@@ -12,6 +12,7 @@ return function(context)
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
     local VirtualInputManager = game:GetService("VirtualInputManager")
+    local CollectionService = game:GetService("CollectionService")
     local LocalPlayer = Players.LocalPlayer
 
     local runtime = {
@@ -53,6 +54,9 @@ return function(context)
         RaidFruitReserved = false,
         RaidFruitSawActive = false,
         LastLaw = 0,
+        LawChipReserved = false,
+        LawSawActive = false,
+        LawPurchaseBusy = false,
         LastGrab = 0,
         LastProfileProgress = 0,
         CachedMeleeProgress = "Reading...",
@@ -660,6 +664,84 @@ return function(context)
             end
         end
 
+        -- Inventory Update: stored fruits now live in the initialized inventory
+        -- controller as ItemId tiles. CommF_ ownership queries return nil and the
+        -- older React tile-prop tables are no longer authoritative.
+        local controllerCandidateCount = 0
+        local controllerOk, inventoryController = pcall(function()
+            return require(ReplicatedStorage.Controllers.UI.Inventory)
+        end)
+        local itemConfigOk, itemConfig = pcall(function()
+            return require(ReplicatedStorage.ItemConfig)
+        end)
+        if controllerOk and itemConfigOk and inventoryController and itemConfig then
+            local initialized = false
+            pcall(function()
+                initialized = inventoryController:GetIfInitialized() == true
+            end)
+            if not initialized then
+                local initDeadline = os.clock() + 2
+                repeat
+                    task.wait(0.2)
+                    pcall(function()
+                        initialized = inventoryController:GetIfInitialized() == true
+                    end)
+                until initialized or os.clock() >= initDeadline or not active()
+            end
+            -- A fresh post-update client can expose the Inventory module before
+            -- the game's controller bootstrap has initialized it. Initialize the
+            -- public controller once, then allow its async tile request to land.
+            if not initialized and active() and type(inventoryController.init) == "function" then
+                pcall(inventoryController.init)
+                pcall(function()
+                    initialized = inventoryController:GetIfInitialized() == true
+                end)
+            end
+            gui:SetAttribute("BloxRaidFruitInventoryInitialized", initialized)
+            local tilesOk, tiles = false, nil
+            local tilesDeadline = os.clock() + 6
+            repeat
+                tilesOk, tiles = pcall(function()
+                    return inventoryController:GetTiles()
+                end)
+                if tilesOk and type(tiles) == "table" and #tiles > 0 then
+                    break
+                end
+                task.wait(0.25)
+            until os.clock() >= tilesDeadline or not active()
+            if tilesOk and type(tiles) == "table" then
+                for _, tile in ipairs(tiles) do
+                    if type(tile) == "table" and tonumber(tile.ItemId) then
+                        local configOk, config = pcall(function()
+                            return itemConfig.match(tile.ItemId):unwrap()
+                        end)
+                        local display = configOk and type(config) == "table" and config.Display or nil
+                        local index = configOk and type(config) == "table" and config.Index or nil
+                        local quality = configOk and type(config) == "table" and config.Quality or nil
+                        local storage = configOk and type(config) == "table" and config.State or nil
+                        if type(display) == "table" and display.Category == "Blox Fruit"
+                            and type(index) == "table" and type(index.StorageKey) == "string"
+                            and type(storage) == "table" and storage.StorageMethod == "StoredFruits" then
+                            local price = type(quality) == "table" and tonumber(quality.MoneyPrice) or nil
+                            local catalogEntry = catalog[normalizeName(index.StorageKey)]
+                            local internalName = catalogEntry and catalogEntry.Name or index.StorageKey
+                            local displayName = catalogEntry and catalogEntry.DisplayName or display.Name
+                            price = catalogEntry and catalogEntry.Price or price
+                            if price and price <= runtime.RaidFruitValue then
+                                candidates[internalName] = {
+                                    Name = internalName,
+                                    DisplayName = type(displayName) == "string" and displayName or nil,
+                                    Price = price,
+                                }
+                                controllerCandidateCount += 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        gui:SetAttribute("BloxRaidFruitControllerCandidates", controllerCandidateCount)
+
         -- Current servers return weapons from getInventoryWeapons, but older
         -- layouts exposed fruits here. Keep the ownership probes independent
         -- from the weapon cache so one successful weapon response cannot hide
@@ -820,6 +902,24 @@ return function(context)
         return false
     end
 
+    local function lawRaidActive()
+        for _, containerName in ipairs({"Enemies", "Characters"}) do
+            local container = workspace:FindFirstChild(containerName)
+            if container then
+                for _, enemy in ipairs(container:GetChildren()) do
+                    local lower = string.lower(enemy.Name)
+                    local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health > 0
+                        and (string.find(lower, "order", 1, true)
+                            or string.find(lower, "law raid", 1, true)) then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
+
     local function stepRaidExtras()
         if runtime.RaidFruitBusy and os.clock() - runtime.RaidFruitBusyAt >= 15 then
             runtime.RaidFruitGeneration += 1
@@ -863,24 +963,42 @@ return function(context)
                 end
             end)
         end
-        if os.clock() - runtime.LastLaw < 4 then
-            return
+        local lawChip = raidChip()
+        local lawActive = lawRaidActive()
+        if lawActive then
+            runtime.LawChipReserved = true
+            runtime.LawSawActive = true
+        elseif runtime.LawSawActive then
+            runtime.LawChipReserved = false
+            runtime.LawSawActive = false
+        elseif lawChip then
+            runtime.LawChipReserved = true
         end
-        runtime.LastLaw = os.clock()
-        if runtime.AutoLawChip then
-            buyLawChip()
+        local wantsLawChip = runtime.AutoLawChip or runtime.AutoLawRaid
+        local wantsLawStart = runtime.AutoStartLaw or runtime.AutoLawRaid
+        if wantsLawChip and not lawActive and not lawChip
+            and not runtime.LawChipReserved and not runtime.LawPurchaseBusy
+            and os.clock() - runtime.LastLaw >= 10 then
+            runtime.LastLaw = os.clock()
+            runtime.LawChipReserved = true
+            runtime.LawPurchaseBusy = true
+            task.spawn(function()
+                local ok, result = buyLawChip()
+                runtime.LawPurchaseBusy = false
+                gui:SetAttribute("BloxLawChipPurchaseStatus", ok
+                    and "One Law chip purchase reserved for this raid cycle"
+                    or ("Law chip request failed safely: " .. tostring(result)))
+            end)
         end
-        if runtime.AutoStartLaw then
+        if wantsLawStart and not lawActive and lawChip and os.clock() - runtime.LastLaw >= 1 then
+            runtime.LastLaw = os.clock()
             startLawRaid()
         end
         if runtime.AutoLawRaid then
-            runtime.AutoLawChip = true
-            runtime.AutoStartLaw = true
             local control = Window.PersistentControls["blox_auto_raid"]
-            if control and not control:Get() then
-                control:Set(true)
-            end
+            if control and not control:Get() then control:Set(true) end
         end
+        gui:SetAttribute("BloxLawChipReserved", runtime.LawChipReserved)
         if runtime.BetterAwakening then
             for _, npcName in ipairs({"Mysterious Entity", "Awakener"}) do
                 if helpers.TeleportToNpc(npcName) then
@@ -959,12 +1077,33 @@ return function(context)
                 end
             end
         end
-        if runtime.Esp.Berry or runtime.Esp.Flower then
+        if runtime.Esp.Berry then
+            for _, config in ipairs(CollectionService:GetTagged("BerryBush")) do
+                if config:IsDescendantOf(workspace) then
+                    for slot, berryName in pairs(config:GetAttributes()) do
+                        if string.sub(slot, 1, 12) == "_BerryCFrame" and type(berryName) == "string" then
+                            local model = nil
+                            for _, child in ipairs(config:GetChildren()) do
+                                local prompt = child:FindFirstChildWhichIsA("ProximityPrompt", true)
+                                if prompt and prompt.ActionText == berryName then
+                                    model = child
+                                    break
+                                end
+                            end
+                            if model then
+                                local part = model:FindFirstChildWhichIsA("BasePart", true)
+                                local distance = root and part and math.floor((root.Position - part.Position).Magnitude) or 0
+                                addEsp(model, berryName .. " [" .. distance .. "m]", Color3.fromRGB(255, 96, 190))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if runtime.Esp.Flower then
             for _, object in ipairs(workspace:GetDescendants()) do
                 local lower = string.lower(object.Name)
-                if runtime.Esp.Berry and lower:find("berry", 1, true) then
-                    addEsp(object, object.Name, Color3.fromRGB(255, 96, 190))
-                elseif runtime.Esp.Flower and lower:find("flower", 1, true) then
+                if lower:find("flower", 1, true) then
                     addEsp(object, object.Name, Color3.fromRGB(96, 220, 255))
                 end
             end
@@ -1198,7 +1337,13 @@ return function(context)
         end})
         law:AddToggle({
             Name = "Auto Buy Law Chip", Flag = "blox_auto_buy_law_chip", Default = false,
-            Callback = function(enabled) runtime.AutoLawChip = enabled == true end,
+            Callback = function(enabled)
+                runtime.AutoLawChip = enabled == true
+                if enabled then
+                    runtime.LawChipReserved = raidChip() ~= nil or lawRaidActive()
+                    runtime.LastLaw = -math.huge
+                end
+            end,
         })
         law:AddToggle({
             Name = "Auto Start Law Raid", Flag = "blox_auto_start_law_raid", Default = false,
@@ -1206,7 +1351,13 @@ return function(context)
         })
         law:AddToggle({
             Name = "Auto Law Raid", Flag = "blox_auto_law_raid", Default = false,
-            Callback = function(enabled) runtime.AutoLawRaid = enabled == true end,
+            Callback = function(enabled)
+                runtime.AutoLawRaid = enabled == true
+                if enabled then
+                    runtime.LawChipReserved = raidChip() ~= nil or lawRaidActive()
+                    runtime.LastLaw = -math.huge
+                end
+            end,
         })
     end
 

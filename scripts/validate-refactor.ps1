@@ -285,11 +285,12 @@ if (-not $mobAuraEnemyHold) {
 $berryAutomation = (
     $bloxText -match 'Flag\s*=\s*"blox_auto_berry"' -and
     $bloxText -match 'Flag\s*=\s*"blox_berry_server_hop"' -and
-    $bloxText -match 'for _, prompt in ipairs\(workspace:GetDescendants\(\)\) do' -and
-    $bloxText -match 'prompt:IsA\("ProximityPrompt"\)' -and
+    $bloxText -match 'CollectionService:GetTagged\("BerryBush"\)' -and
+    $bloxText -match 'string\.sub\(slot, 1, 12\) == "_BerryCFrame"' -and
+    $bloxText -match 'baseCFrame:ToWorldSpace\(slotCFrame\)' -and
+    $bloxText -match 'berryPromptForTarget\(target\)' -and
     $bloxText -match 'keypress\(0x45\)' -and
     $bloxText -match 'VirtualInputManager:SendKeyEvent\(true, Enum\.KeyCode\.E' -and
-    $bloxText -notmatch 'CollectionService:GetTagged\("BerryBushStreamed"\)' -and
     $bloxText -notmatch 'ClaimBerry:InvokeServer' -and
     $bloxText -match 'state\.BerriesClaimedThisServer \+= 1' -and
     $bloxText -match 'state\.AutoBerryServerHop and state\.BerriesClaimedThisServer == 0' -and
@@ -312,20 +313,46 @@ $berryAutomation = (
     $thirdSeaText -match '\{"blox_berry_server_hop", "blox_auto_berry"\}'
 )
 if (-not $berryAutomation) {
-    throw "Berry automation must scan live prompts, hold E, alternate First/Third Sea random servers, resume after teleport, and stay after a collection"
+    throw "Berry automation must read live BerryBush attributes server-wide, stream the real E prompt, alternate seas, and stay after a collection"
 }
 
-$dualWeaponAttack = (
-    $bloxText -match 'Flag\s*=\s*"blox_dual_weapon_attack"' -and
-    $bloxText -match 'Name\s*=\s*"Double Attack \(Sword \+ Melee\)"' -and
-    $bloxText -match 'plan = \{Double = state\.DoubleAttack, DualWeapon = state\.DualWeaponAttack\}' -and
+$fruitDoubleAttack = (
+    $bloxText -match 'Flag\s*=\s*"blox_double_attack"' -and
+    $bloxText -match 'Name\s*=\s*"Double Attack \(Weapon \+ Fruit M1\)"' -and
+    $bloxText -match 'Options\s*=\s*\{"Sword", "Melee"\}' -and
+    $bloxText -match 'plan = \{Double = state\.DoubleAttack\}' -and
     $bloxText -match 'DoubleAttackEngine\.SendSword\(' -and
-    $bloxText -match 'state\.ExperimentalDispatchRegistered\(\s*"Melee",\s*true' -and
-    $bloxText -match '\(not state\.DoubleAttack and not state\.DualWeaponAttack\)' -and
-    $bloxText -match 'gui:SetAttribute\("BloxDualWeaponAttack", state\.DualWeaponAttack\)'
+    $bloxText -notmatch 'blox_dual_weapon_attack' -and
+    $bloxText -notmatch 'DualWeaponAttack'
 )
-if (-not $dualWeaponAttack) {
-    throw "Sword + Melee Double Attack must share the registered hit engine and its dispatch lifecycle"
+if (-not $fruitDoubleAttack) {
+    throw "Weapon + Fruit M1 Double Attack must keep Sword/Melee selection while Sword + Melee is removed"
+}
+
+$fruitGachaRewardClose = (
+    $bloxText -match 'SpinnerWindow' -and
+    $bloxText -match 'AboveSpinner' -and
+    $bloxText -match 'Navigation' -and
+    $bloxText -match 'CloseButton' -and
+    $bloxText -match 'BloxGachaRewardClosed' -and
+    $bloxText -match 'pcall\(firesignal, closeButton\.Activated\)'
+)
+if (-not $fruitGachaRewardClose) {
+    throw "Fruit Gacha must close the current SpinnerWindow reward UI after a successful roll"
+}
+
+$raidPurchaseGuards = (
+    $bloxText -match 'RaidChipPurchaseReserved\s*=\s*false' -and
+    $bloxText -match 'RaidChipSawActive\s*=\s*false' -and
+    $bloxText -match 'not state\.RaidChipPurchaseReserved' -and
+    $bloxText -match 'state\.RaidChipPurchaseReserved = true\s+local purchaseOk, purchaseResult = invoke\("RaidsNpc", "Select", state\.SelectedRaid\)' -and
+    $parityText -match 'LawChipReserved\s*=\s*false' -and
+    $parityText -match 'LawPurchaseBusy\s*=\s*false' -and
+    $parityText -match 'not runtime\.LawChipReserved and not runtime\.LawPurchaseBusy' -and
+    $parityText -match 'runtime\.LawChipReserved = true\s+runtime\.LawPurchaseBusy = true\s+task\.spawn'
+)
+if (-not $raidPurchaseGuards) {
+    throw "Normal and Law raid chip automation must reserve exactly one purchase per observed raid cycle"
 }
 
 $raidRangeSafety = (
@@ -342,6 +369,16 @@ if (-not $raidRangeSafety) {
 
 $raidFruitInventory = (
     $parityText -match 'rawInvoke\("GetFruits"\)' -and
+    $parityText -match 'require\(ReplicatedStorage\.Controllers\.UI\.Inventory\)' -and
+    $parityText -match 'inventoryController:GetIfInitialized\(\)' -and
+    $parityText -match 'type\(inventoryController\.init\) == "function"' -and
+    $parityText -match 'pcall\(inventoryController\.init\)' -and
+    $parityText -match 'local tilesDeadline = os\.clock\(\) \+ 6' -and
+    $parityText -match 'inventoryController:GetTiles\(\)' -and
+    $parityText -match 'itemConfig\.match\(tile\.ItemId\):unwrap\(\)' -and
+    $parityText -match 'display\.Category == "Blox Fruit"' -and
+    $parityText -match 'storage\.StorageMethod == "StoredFruits"' -and
+    $parityText -match 'quality\.MoneyPrice' -and
     $parityText -match '\{"getInventoryFruits", "getInventory", "getInventoryWeapons"\}' -and
     $parityText -match 'category == "Blox Fruit"' -and
     $parityText -match 'rawget\(object, "IsPurchase"\) == false' -and
