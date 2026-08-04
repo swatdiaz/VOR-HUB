@@ -597,6 +597,22 @@ if (-not $damageDebugDrain) {
     throw "Blox Fruits DMGDEBUG must be drained and disconnected during module cleanup"
 }
 
+$dashLengthChanger = (
+    $bloxText -match 'Name\s*=\s*"Dash Length Changer"' -and
+    $bloxText -match 'Flag\s*=\s*"blox_dash_length_modifier"' -and
+    $bloxText -match 'Min\s*=\s*-50' -and
+    $bloxText -match 'Max\s*=\s*500' -and
+    $bloxText -match 'GetAttributeChangedSignal\("DashLength"\)' -and
+    $bloxText -match 'dashCharacter:SetAttribute\("DashLength", applied\)' -and
+    $bloxText -match 'state\.ApplyDashLengthModifier\s*=\s*function\(\)' -and
+    $bloxText -match 'task\.defer\(state\.ApplyDashLengthModifier\)' -and
+    $bloxText -match 'state\.RestoreDashLength\(\)' -and
+    $bloxText -match 'BloxDashLengthModifier'
+)
+if (-not $dashLengthChanger) {
+    throw "Dash Length Changer must use the native Dodge DashLength attribute, survive respawn, and restore the original value"
+}
+
 $movementModes = @{
     "Auto Farm Level" = @("blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm", "blox_auto_chest")
     "Auto Collect Chests" = @("blox_auto_level", "blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm")
@@ -992,6 +1008,7 @@ Write-Host "Aura Kill lifecycle ownership: PASS (generation guard across yield, 
 Write-Host "Sword and Melee damage routing: PASS (registered hit first, native fallback only)"
 Write-Host "Blox Fruits damage-debug drain: PASS (tracked connection with module cleanup)"
 Write-Host "Blox Fruits Dungeon crash guard: PASS (DMGDEBUG queue drained with cleanup)"
+Write-Host "Blox Fruits Dash Length Changer: PASS (native DashLength attribute, respawn and cleanup safe)"
 Write-Host "Blox Fruits movement modes: PASS (stored controls are mutually exclusive)"
 Write-Host "Mob Aura target travel: PASS (shared tween controller)"
 Write-Host "Magnet target filter: PASS (same-type pile, old-type release, frozen animations)"

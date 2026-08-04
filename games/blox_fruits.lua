@@ -277,6 +277,14 @@ return function(context)
             WeaponType = "Best Available",
             AutoBuso = true,
             LastBuso = 0,
+            DashLengthModifier = 0,
+            DashLengthCharacter = nil,
+            DashLengthBase = nil,
+            DashLengthHadBase = false,
+            DashLengthApplying = false,
+            DashLengthHasApplied = false,
+            DashLengthLastApplied = nil,
+            DashLengthConnection = nil,
             SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak"),
             LastSubmergedTravel = -math.huge,
             SubmergedTravelRequestedAt = -math.huge,
@@ -463,6 +471,70 @@ return function(context)
         local function humanoid()
             local value = character()
             return value and value:FindFirstChildOfClass("Humanoid") or nil
+        end
+
+        state.RestoreDashLength = function()
+            local dashCharacter = state.DashLengthCharacter
+            if state.DashLengthConnection then
+                pcall(function()
+                    state.DashLengthConnection:Disconnect()
+                end)
+                state.DashLengthConnection = nil
+            end
+            if dashCharacter and dashCharacter.Parent then
+                state.DashLengthApplying = true
+                dashCharacter:SetAttribute(
+                    "DashLength",
+                    state.DashLengthHadBase and state.DashLengthBase or nil
+                )
+                state.DashLengthApplying = false
+            end
+            state.DashLengthCharacter = nil
+            state.DashLengthBase = nil
+            state.DashLengthHadBase = false
+            state.DashLengthHasApplied = false
+            state.DashLengthLastApplied = nil
+        end
+
+        state.ApplyDashLengthModifier = function()
+            local dashCharacter = character()
+            if not dashCharacter then
+                return
+            end
+            if state.DashLengthCharacter ~= dashCharacter then
+                state.RestoreDashLength()
+                state.DashLengthCharacter = dashCharacter
+                state.DashLengthBase = dashCharacter:GetAttribute("DashLength")
+                state.DashLengthHadBase = state.DashLengthBase ~= nil
+                local observedCharacter = dashCharacter
+                state.DashLengthConnection = track(
+                    observedCharacter:GetAttributeChangedSignal("DashLength"):Connect(function()
+                        if state.DashLengthApplying or state.DashLengthCharacter ~= observedCharacter then
+                            return
+                        end
+                        local current = observedCharacter:GetAttribute("DashLength")
+                        if state.DashLengthHasApplied and current == state.DashLengthLastApplied then
+                            return
+                        end
+                        -- Preserve race, fruit, and equipment bonuses that update
+                        -- the same native attribute while VOR's modifier is active.
+                        state.DashLengthBase = current
+                        state.DashLengthHadBase = state.DashLengthBase ~= nil
+                        task.defer(state.ApplyDashLengthModifier)
+                    end)
+                )
+            end
+            local modifier = math.clamp(tonumber(state.DashLengthModifier) or 0, -50, 500)
+            local base = tonumber(state.DashLengthBase) or 0
+            local applied = modifier == 0 and (state.DashLengthHadBase and state.DashLengthBase or nil)
+                or base + modifier
+            state.DashLengthApplying = true
+            state.DashLengthHasApplied = true
+            state.DashLengthLastApplied = applied
+            dashCharacter:SetAttribute("DashLength", applied)
+            state.DashLengthApplying = false
+            gui:SetAttribute("BloxDashLengthModifier", modifier)
+            gui:SetAttribute("BloxDashLengthEffectiveBonus", base + modifier)
         end
 
         local function invoke(command, ...)
@@ -7647,6 +7719,19 @@ return function(context)
                 state.InfiniteEnergy = enabled
             end,
         })
+        PlayerStateSection:AddSlider({
+            Name = "Dash Length Changer",
+            Description = "Changes the game's native Q/mobile dash length; 0 is normal, negative is shorter",
+            Flag = "blox_dash_length_modifier",
+            Min = -50,
+            Max = 500,
+            Step = 5,
+            Default = 0,
+            Callback = function(value)
+                state.DashLengthModifier = math.clamp(tonumber(value) or 0, -50, 500)
+                state.ApplyDashLengthModifier()
+            end,
+        })
         PlayerStateSection:AddToggle({
             Name = "Walk on Water",
             Flag = "blox_walk_water",
@@ -7750,6 +7835,7 @@ return function(context)
             state.AuraFruitLastDistance = nil
             state.OriginalFruitTapCooldown = tonumber(newCharacter:GetAttribute("FruitTAPCooldown")) or 0
             newCharacter:SetAttribute("FruitTAPCooldown", state.FruitM1CooldownReduction)
+            task.defer(state.ApplyDashLengthModifier)
             resetMobAuraOrbit()
             state.MobAuraTarget = nil
             state.MobAuraTargetName = nil
@@ -8278,6 +8364,7 @@ return function(context)
             state.SeaEvent.StopBoat(state.SeaEvent.Boat)
             state.SeaEvent.RestoreBoatNoclip()
             state.SeaEvent.DestroySafety()
+            state.RestoreDashLength()
             FarmVertical.SetAntiRagdoll(false)
             FarmVertical.SetCalmPose(false)
             FarmVertical.Release()
@@ -8406,6 +8493,8 @@ return function(context)
             gui:SetAttribute("BloxBossAnchorY", 0)
             gui:SetAttribute("BloxAutoBuso", state.AutoBuso)
             gui:SetAttribute("BloxWalkOnWater", state.WalkOnWater)
+            gui:SetAttribute("BloxDashLengthModifier", state.DashLengthModifier)
+            gui:SetAttribute("BloxDashLengthEffectiveBonus", 0)
             gui:SetAttribute("BloxPlayerESP", state.PlayerESP)
             gui:SetAttribute("BloxPlayerESPCount", 0)
             gui:SetAttribute(
