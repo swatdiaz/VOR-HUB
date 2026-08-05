@@ -9,15 +9,15 @@ return function(runtime)
     local universeId = tonumber(runtime.UniverseId) or game.GameId
 
     local supportedGames = {
-        Revive = {
-            Key = "Revive",
-            DisplayName = "+1 DMG Per Revive",
-            UniverseId = 10171934713,
-            RootPlaceId = 110806816173057,
+        MurderMystery2 = {
+            Key = "MurderMystery2",
+            DisplayName = "Murder Mystery 2",
+            UniverseId = 66654135,
+            RootPlaceId = 142823291,
             PlaceIds = {
-                [110806816173057] = true,
+                [142823291] = true,
             },
-            Module = "games/revive.lua",
+            Module = "games/murder_mystery_2.lua",
         },
         MyPark = {
             Key = "MyPark",
@@ -125,7 +125,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.11.0",
+        Version = "3.12.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",

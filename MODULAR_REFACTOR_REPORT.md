@@ -7,7 +7,7 @@ Baseline audited: `59547d8286ec2e130e9733cfddac3725b5875dbb` (`VOR_HUB.lua`, 18,
 | Original source | Modular destination | Notes |
 | --- | --- | --- |
 | `VOR_HUB.lua:1-5254` | `core/settings.lua`, `core/utilities.lua`, `core/ui.lua`, `core/profiles.lua`, `core/access.lua` | Shared registry, services, cleanup, luxury UI, profiles, access gate, intro, notifications, and appearance state were rebuilt behind context contracts. |
-| `VOR_HUB.lua:5255-8901` | `games/revive.lua` | Complete Revive builder. |
+| MM2 adapter | `games/murder_mystery_2.lua` | Native role, combat, farm, movement, ESP, world, and server utilities. |
 | `VOR_HUB.lua:8903-10566` | `games/mypark.lua` | Complete MyPark / Basketball builder. |
 | `VOR_HUB.lua:10568-10596` plus legacy adapter | `games/anime_expeditions.lua` | Monolith wrapper removed; the complete isolated adapter is now selected directly. |
 | `VOR_HUB.lua:10598-10625` plus legacy adapter | `games/blox_fruits_dungeons.lua` | Monolith wrapper removed; the complete isolated dungeon adapter is now selected directly. |

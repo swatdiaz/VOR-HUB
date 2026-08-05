@@ -12,7 +12,7 @@ $required = @(
     "core/profiles.lua",
     "core/access.lua",
     "core/utilities.lua",
-    "games/revive.lua",
+    "games/murder_mystery_2.lua",
     "games/mypark.lua",
     "games/practical_basketball.lua",
     "games/anime_expeditions.lua",
@@ -30,13 +30,17 @@ $required = @(
 )
 $compileFiles = $required + @(
     "VOR_HUB.lua",
-    "codex_revive_hub.lua",
     "anime_expeditions.lua",
     "blox_fruits_dungeons.lua"
 )
 
 if (-not (Test-Path -LiteralPath $Compiler)) {
-    throw "Luau compiler was not found: $Compiler"
+    $workspaceCompiler = Join-Path (Split-Path $repo -Parent) ".codex-tools\luau-0.730\luau-compile.exe"
+    if (Test-Path -LiteralPath $workspaceCompiler) {
+        $Compiler = $workspaceCompiler
+    } else {
+        throw "Luau compiler was not found: $Compiler"
+    }
 }
 
 foreach ($relative in $compileFiles) {
@@ -94,10 +98,16 @@ $retiredFlags = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
     "blox_enemy_gather",
     "blox_gather_distance",
     "blox_multi_grab_enemy",
-    "blox_raid_multi_grab"
+    "blox_raid_multi_grab",
+    # Revive support and its standalone developer outfit controls were
+    # deliberately removed when Murder Mystery 2 replaced that adapter.
+    "codex_tools_frozen_everest_outfit",
+    "codex_tools_marketplace_outfit_id"
 ))
 $missing = @($baselineFlags | Where-Object {
-    -not $modularFlags.Contains($_) -and -not $retiredFlags.Contains($_)
+    -not $modularFlags.Contains($_) -and
+    -not $retiredFlags.Contains($_) -and
+    -not $_.StartsWith("revive_")
 } | Sort-Object)
 if ($missing.Count -gt 0) {
     throw "Persistent flag parity failed. Missing: $($missing -join ', ')"
@@ -986,9 +996,48 @@ if (-not ($practicalBasketballRouted -and $practicalBasketballCharacter -and $pr
     throw "Practical Basketball routing or Aero adapter contract failed"
 }
 
+$mm2Text = Get-Content -LiteralPath (Join-Path $repo "games/murder_mystery_2.lua") -Raw
+$reviveRemoved = (
+    -not (Test-Path -LiteralPath (Join-Path $repo "games/revive.lua")) -and
+    -not (Test-Path -LiteralPath (Join-Path $repo "codex_revive_hub.lua")) -and
+    $settingsText -notmatch 'Key\s*=\s*"Revive"' -and
+    $settingsText -notmatch 'games/revive\.lua'
+)
+$mm2Routing = (
+    $settingsText -match 'Key\s*=\s*"MurderMystery2"' -and
+    $settingsText -match 'DisplayName\s*=\s*"Murder Mystery 2"' -and
+    $settingsText -match 'UniverseId\s*=\s*66654135' -and
+    $settingsText -match 'RootPlaceId\s*=\s*142823291' -and
+    $settingsText -match 'Module\s*=\s*"games/murder_mystery_2\.lua"'
+)
+$mm2NativeBehavior = (
+    $mm2Text -match 'CurrentRoundClient' -and
+    $mm2Text -match 'CollectionService:HasTag\(tool,\s*"Weapon_Gun"\)' -and
+    $mm2Text -match 'CollectionService:HasTag\(tool,\s*"Weapon_Knife"\)' -and
+    $mm2Text -match 'remote:FireServer\(origin,\s*CFrame\.new\(targetRoot\.Position\)\)' -and
+    $mm2Text -match 'KnifeStabbed' -and
+    $mm2Text -match 'HandleTouched:FireServer\(targetRoot\)' -and
+    $mm2Text -match 'FindFirstChild\("CoinContainer"\)' -and
+    $mm2Text -match 'OpenCrate' -and
+    $mm2Text -match 'InvokeServer\(state\.SelectedBox,\s*"MysteryBox",\s*"Coins"\)' -and
+    $mm2Text -match 'FindFirstChild\("Prestige"\)'
+)
+$mm2Pages = @("Combat", "Autofarm", "Character", "Visuals", "World", "Misc")
+foreach ($page in $mm2Pages) {
+    if ($mm2Text -notmatch ('addHomeCategory\("' + [regex]::Escape($page) + '"')) {
+        throw "Murder Mystery 2 page is missing: $page"
+    }
+}
+if (-not ($reviveRemoved -and $mm2Routing -and $mm2NativeBehavior)) {
+    throw "Murder Mystery 2 routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
 Write-Host "Game builder contract: PASS (9/9)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
+Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
+Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
+Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"
