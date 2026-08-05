@@ -578,6 +578,7 @@ return function(context)
                     return bag.Name .. ": " .. count, full ~= nil and full.Visible
                 end
             end
+            return "Waiting for round", false
         end
         local best = "Unknown"
         for _, descendant in ipairs(playerGui:GetDescendants()) do
