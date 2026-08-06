@@ -108,7 +108,7 @@ return function(context)
         local info = workspace:FindFirstChild("GameInfo")
         local modeValue = info and info:FindFirstChild("Mode")
         local mode = modeValue and tostring(modeValue.Value) or ""
-        if mode == "BNTY" or mode == "GUN" or mode == "FFA" then
+        if mode == "BNTY" or mode == "GUN" or mode == "FFA" or mode == "ALL" then
             return false
         end
         local localTeam = LocalPlayer:GetAttribute("Team")

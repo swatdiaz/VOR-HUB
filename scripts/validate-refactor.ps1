@@ -1044,7 +1044,7 @@ $gunfightNativeBehavior = (
     $gunfightText -match 'FindFirstChild\("Vortex"\)' -and
     $gunfightText -match 'require\(ReplicatedStorage:WaitForChild\("MovementData"\)\)' -and
     $gunfightText -match 'LocalPlayer:GetAttribute\("Team"\)' -and
-    $gunfightText -match 'mode == "BNTY" or mode == "GUN" or mode == "FFA"' -and
+    $gunfightText -match 'mode == "BNTY" or mode == "GUN" or mode == "FFA" or mode == "ALL"' -and
     $gunfightText -match 'steadiness\.Value = 0' -and
     $gunfightText -notmatch 'steadiness\.Value = 100' -and
     $gunfightText -match '__VORGunfightArenaCleanup' -and
