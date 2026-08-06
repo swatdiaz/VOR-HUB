@@ -448,6 +448,12 @@ return function(context)
         end
     end
 
+    local function enforceFullbright()
+        if state.Alive and state.Fullbright then
+            setFullbright(true)
+        end
+    end
+
     local statusLabels = {
         Player = PlayerStatusSection:AddLabel("Reading player data..."),
         Loadout = PlayerStatusSection:AddLabel("Loadout: loading..."),
@@ -690,6 +696,10 @@ return function(context)
         handleInput(input, false)
     end))
     track(Players.PlayerRemoving:Connect(destroyEsp))
+    track(Lighting:GetPropertyChangedSignal("Brightness"):Connect(enforceFullbright))
+    track(Lighting:GetPropertyChangedSignal("ClockTime"):Connect(enforceFullbright))
+    track(Lighting:GetPropertyChangedSignal("FogEnd"):Connect(enforceFullbright))
+    track(Lighting:GetPropertyChangedSignal("GlobalShadows"):Connect(enforceFullbright))
 
     local statusAccumulator = 0
     local espAccumulator = 0

@@ -1049,6 +1049,7 @@ $gunfightNativeBehavior = (
     $gunfightText -notmatch 'steadiness\.Value = 100' -and
     $gunfightText -match '__VORGunfightArenaCleanup' -and
     $gunfightText -match 'resetMovement\(\)' -and
+    $gunfightText -match 'GetPropertyChangedSignal\("Brightness"\)' -and
     $gunfightText -match 'workspace:Raycast' -and
     $gunfightText -match 'Enum\.KeyCode\.ButtonL2' -and
     $gunfightText -match 'Flag\s*=\s*"gfa_enemy_esp"'
