@@ -19,6 +19,7 @@ $required = @(
     "games/bid_for_anime.lua",
     "games/mine_a_mountain.lua",
     "games/bee_swarm_simulator.lua",
+    "games/gunfight_arena.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
     "games/blox_fruits_parity.lua",
@@ -1032,12 +1033,32 @@ if (-not ($reviveRemoved -and $mm2Routing -and $mm2NativeBehavior)) {
     throw "Murder Mystery 2 routing/native adapter contract failed"
 }
 
+$gunfightText = Get-Content -LiteralPath (Join-Path $repo "games/gunfight_arena.lua") -Raw
+$gunfightRouting = (
+    $settingsText -match 'Key\s*=\s*"GunfightArena"' -and
+    $settingsText -match 'UniverseId\s*=\s*5012222382' -and
+    $settingsText -match 'RootPlaceId\s*=\s*15514727567' -and
+    $settingsText -match 'Module\s*=\s*"games/gunfight_arena\.lua"'
+)
+$gunfightNativeBehavior = (
+    $gunfightText -match 'FindFirstChild\("Vortex"\)' -and
+    $gunfightText -match 'require\(ReplicatedStorage:WaitForChild\("MovementData"\)\)' -and
+    $gunfightText -match 'LocalPlayer:GetAttribute\("Team"\)' -and
+    $gunfightText -match 'workspace:Raycast' -and
+    $gunfightText -match 'Enum\.KeyCode\.ButtonL2' -and
+    $gunfightText -match 'Flag\s*=\s*"gfa_enemy_esp"'
+)
+if (-not ($gunfightRouting -and $gunfightNativeBehavior)) {
+    throw "Gunfight Arena routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (9/9)"
+Write-Host "Game builder contract: PASS (10/10)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
+Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"

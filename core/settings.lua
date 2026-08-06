@@ -83,6 +83,16 @@ return function(runtime)
             },
             Module = "games/bee_swarm_simulator.lua",
         },
+        GunfightArena = {
+            Key = "GunfightArena",
+            DisplayName = "Gunfight Arena",
+            UniverseId = 5012222382,
+            RootPlaceId = 15514727567,
+            PlaceIds = {
+                [15514727567] = true,
+            },
+            Module = "games/gunfight_arena.lua",
+        },
         BloxFruits = {
             Key = "BloxFruits",
             DisplayName = "Blox Fruits",
@@ -125,7 +135,7 @@ return function(runtime)
     local settings = {
         GuiName = "VORHub",
         Title = "VOR HUB",
-        Version = "3.12.0",
+        Version = "3.13.0",
         Creator = "Vor",
         Discord = "discord.gg/w7gXUUZEp",
         DiscordInviteURL = "https://discord.gg/w7gXUUZEp",
