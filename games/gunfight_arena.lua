@@ -52,6 +52,7 @@ return function(context)
         WallCheck = true,
         ShowFov = true,
         NoRecoil = false,
+        OriginalSteadiness = nil,
         NoWeaponSway = false,
         CameraFovOverride = false,
         CameraFov = 80,
@@ -98,6 +99,12 @@ return function(context)
     end
 
     local function sameTeam(player)
+        local info = workspace:FindFirstChild("GameInfo")
+        local modeValue = info and info:FindFirstChild("Mode")
+        local mode = modeValue and tostring(modeValue.Value) or ""
+        if mode == "BNTY" or mode == "GUN" or mode == "FFA" then
+            return false
+        end
         local localTeam = LocalPlayer:GetAttribute("Team")
         local otherTeam = player:GetAttribute("Team")
         if localTeam ~= nil and otherTeam ~= nil then
@@ -261,7 +268,7 @@ return function(context)
             end
             local steadiness = modifiers:FindFirstChild("Steadiness")
             if steadiness and steadiness:IsA("NumberValue") then
-                steadiness.Value = 100
+                steadiness.Value = 0
             end
         end
         if state.NoWeaponSway then
@@ -273,6 +280,19 @@ return function(context)
         local thirdPerson = modifiers:FindFirstChild("IsThirdPerson")
         if thirdPerson and thirdPerson:IsA("BoolValue") then
             thirdPerson.Value = state.ThirdPerson
+        end
+    end
+
+    local function setNoRecoil(enabled)
+        local modifiers = getVortexModifiers()
+        local steadiness = modifiers and modifiers:FindFirstChild("Steadiness")
+        if enabled and not state.NoRecoil and steadiness and steadiness:IsA("NumberValue") then
+            state.OriginalSteadiness = steadiness.Value
+        end
+        state.NoRecoil = enabled
+        if not enabled and steadiness and steadiness:IsA("NumberValue") then
+            steadiness.Value = tonumber(state.OriginalSteadiness) or 1
+            state.OriginalSteadiness = nil
         end
     end
 
@@ -529,7 +549,7 @@ return function(context)
     end
 
     local function buildWeaponControls()
-        RecoilSection:AddToggle({Name = "No Camera Recoil", Flag = "gfa_no_recoil", Default = false, Callback = function(value) state.NoRecoil = value end})
+        RecoilSection:AddToggle({Name = "No Camera Recoil", Flag = "gfa_no_recoil", Default = false, Callback = setNoRecoil})
         RecoilSection:AddToggle({Name = "No Weapon Sway", Flag = "gfa_no_weapon_sway", Default = false, Callback = function(value) state.NoWeaponSway = value end})
         RecoilSection:AddParagraph({
             Title = "Native integration",
