@@ -14,6 +14,12 @@ return function(context)
         return connection
     end
     local gui = context.Gui
+    local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
+    local previousCleanup = runtimeEnvironment.__VORGunfightArenaCleanup
+    runtimeEnvironment.__VORGunfightArenaCleanup = nil
+    if type(previousCleanup) == "function" then
+        pcall(previousCleanup)
+    end
 
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -287,7 +293,8 @@ return function(context)
         local modifiers = getVortexModifiers()
         local steadiness = modifiers and modifiers:FindFirstChild("Steadiness")
         if enabled and not state.NoRecoil and steadiness and steadiness:IsA("NumberValue") then
-            state.OriginalSteadiness = steadiness.Value
+            local baseline = tonumber(steadiness.Value) or 1
+            state.OriginalSteadiness = baseline > 5 and 1 or baseline
         end
         state.NoRecoil = enabled
         if not enabled and steadiness and steadiness:IsA("NumberValue") then
@@ -644,6 +651,35 @@ return function(context)
     buildVisualControls()
     buildPlayerControls()
     buildWorldControls()
+
+    runtimeEnvironment.__VORGunfightArenaCleanup = function()
+        if not state.Alive then
+            return
+        end
+        state.Alive = false
+        state.AimAssist = false
+        state.EnemyEsp = false
+        state.CameraFovOverride = false
+        state.ThirdPerson = false
+        setNoRecoil(false)
+        resetMovement()
+        setFullbright(false)
+        local camera = workspace.CurrentCamera
+        if camera then
+            camera.FieldOfView = defaults.CameraFov
+        end
+        local modifiers = getVortexModifiers()
+        local thirdPerson = modifiers and modifiers:FindFirstChild("IsThirdPerson")
+        if thirdPerson and thirdPerson:IsA("BoolValue") then
+            thirdPerson.Value = false
+        end
+        for player in pairs(espRecords) do
+            destroyEsp(player)
+        end
+        if overlayGui then
+            overlayGui:Destroy()
+        end
+    end
 
     track(UserInputService.InputBegan:Connect(function(input, processed)
         if not processed then
