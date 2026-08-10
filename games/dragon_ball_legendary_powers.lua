@@ -537,7 +537,7 @@ return function(context)
     end
 
     local function stepWeightTraining()
-        if not state.AutoWeightTraining and not state.AutoOPRoute then
+        if not state.AutoWeightTraining then
             return
         end
         if os.clock() - state.LastWeightActivation < state.WeightInterval then
@@ -562,7 +562,7 @@ return function(context)
     end
 
     local function stepGravityBoost()
-        if not state.PersistentGravity and not state.AutoOPRoute then
+        if not state.PersistentGravity then
             return
         end
         if gravityEnabled() or os.clock() - state.LastGravityAttempt < 2 then
@@ -583,7 +583,7 @@ return function(context)
     end
 
     local function stepMilestones()
-        if not state.AutoMilestones and not state.AutoOPRoute then
+        if not state.AutoMilestones then
             return
         end
         if os.clock() - state.LastMilestoneAttempt < 1.5 then
@@ -624,7 +624,7 @@ return function(context)
         if not statsModel then
             return
         end
-        if not findTrainingWeight() and statsModel.zeni.Value >= 100 then
+        if not state.AutoOPRoute and not findTrainingWeight() and statsModel.zeni.Value >= 100 then
             state.LastShopAttempt = os.clock()
             ShopRemote:FireServer("weight")
             state.RoutePhase = "Buying Training Weight"
@@ -708,7 +708,7 @@ return function(context)
     end
 
     local function stepAbilityBarrage()
-        if not state.AbilityBarrage and not state.AutoOPRoute then
+        if not state.AbilityBarrage then
             return
         end
         if state.AbilityBusy then
@@ -968,11 +968,7 @@ return function(context)
         if not state.AutoOPRoute then
             return
         end
-        stepGravityBoost()
-        stepWeightTraining()
-        stepMilestones()
         stepProgressionShop()
-        updateCharge()
         stepCapsuleRoute()
     end
 
@@ -984,7 +980,7 @@ return function(context)
     local routeHopLabel = PowerProgressSection:AddLabel("Server route: Ready")
     PowerProgressSection:AddParagraph({
         Title = "🧪 Live-tested route",
-        Content = "A fresh server pays 2,500 Zeni. Every 5,000-Zeni stat capsule gave about 100,350 base power in live testing. Spirit Bomb adds about 10,000 Ki EXP per accepted cast.",
+        Content = "A fresh server pays 2,500 Zeni. Every 5,000-Zeni stat capsule gave about 100,350 base power in live testing. This route does not target or attack NPCs.",
     })
 
     local autoOPToggle
@@ -1498,6 +1494,9 @@ return function(context)
             local ok, errorMessage = pcall(function()
                 stepOPRoute()
                 stepAutoShenron()
+                stepGravityBoost()
+                stepWeightTraining()
+                stepMilestones()
                 stepFarm()
                 stepAbilityBarrage()
                 stepTransform()
