@@ -1075,6 +1075,10 @@ $dragonBallNativeBehavior = (
     $dragonBallText -match 'Flag\s*=\s*"dblp_auto_op_route"' -and
     $dragonBallText -match 'Persistent Gravity' -and
     $dragonBallText -match 'Training Weight' -and
+    $dragonBallText -match 'Ability Barrage' -and
+    $dragonBallText -match 'Spirit' -and
+    $dragonBallText -match 'SpecialBeam' -and
+    $dragonBallText -match 'Multi-Hit Burst' -and
     $dragonBallText -match 'summoner'
 )
 if (-not ($dragonBallRouting -and $dragonBallNativeBehavior)) {

@@ -459,9 +459,14 @@ return function(context)
             return false
         end
         if type(firetouchinterest) == "function" then
+            local wasAnchored = root.Anchored
+            root.Anchored = false
+            task.wait(0.04)
             firetouchinterest(root, part, 0)
-            task.wait(0.08)
+            task.wait(0.12)
             firetouchinterest(root, part, 1)
+            task.wait(0.08)
+            root.Anchored = wasAnchored
             return true
         end
         local previous = root.CFrame
@@ -534,7 +539,7 @@ return function(context)
             humanoid:EquipTool(tool)
         end
         tool:Activate()
-        state.RoutePhase = gravityEnabled() and "6-8x remote gravity weight training" or "Building Physical 15"
+        state.RoutePhase = gravityEnabled() and "6-8x remote gravity weight training" or "Normal weight training"
     end
 
     local function stepGravityBoost()
