@@ -17,8 +17,16 @@ return function(context)
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
+    local HttpService = game:GetService("HttpService")
+    local TeleportService = game:GetService("TeleportService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
+    local environment = type(getgenv) == "function" and getgenv() or _G
+    local resumeFastRoute = environment.VORDBLPResumeFastRoute == true
+    local resumeGuardUntil = resumeFastRoute and (os.clock() + 15) or 0
+    local visitedServers = type(environment.VORDBLPVisitedServers) == "table"
+        and environment.VORDBLPVisitedServers or {}
+    environment.VORDBLPVisitedServers = visitedServers
 
     local Training = ReplicatedStorage:WaitForChild("Training")
     local Combat = ReplicatedStorage:WaitForChild("Combat")
@@ -32,16 +40,16 @@ return function(context)
     local WishRemote = ReplicatedStorage:WaitForChild("ShenronWish")
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-    local PowerPage = addHomeCategory("⚡ 30-Min OP", 1, CATEGORY_DECALS.Progress)
+    local PowerPage = addHomeCategory("⚡ Fastest OP", 1, CATEGORY_DECALS.Progress)
     local FarmPage = addHomeCategory("🥊 Autofarm", 2, CATEGORY_DECALS.Overnight)
     local TrainingPage = addHomeCategory("🏋️ Training", 3, CATEGORY_DECALS.Progress)
     local FormsPage = addHomeCategory("🔥 Forms & Skills", 4, CATEGORY_DECALS.Combat)
     local TravelPage = addHomeCategory("🚀 Travel", 5, CATEGORY_DECALS.Player)
     local StatusPage = addHomeCategory("📊 Status", 6, CATEGORY_DECALS.Visuals)
-    selectHomeCategory("⚡ 30-Min OP")
+    selectHomeCategory("⚡ Fastest OP")
 
-    local PowerRouteSection = PowerPage:AddSection("⚡ Automatic OP Route", "Left")
-    local PowerBoostSection = PowerPage:AddSection("🛰️ Remote Multipliers", "Right")
+    local PowerRouteSection = PowerPage:AddSection("⚡ Shenron Capsule Route", "Left")
+    local PowerBoostSection = PowerPage:AddSection("🛰️ Best Passive Gains", "Right")
     local PowerProgressSection = PowerPage:AddSection("📈 Route Progress", "Right")
     local FarmSection = FarmPage:AddSection("🥊 Native NPC Farm", "Left")
     local FarmSafetySection = FarmPage:AddSection("🛡️ Farm Safety", "Right")
@@ -59,7 +67,7 @@ return function(context)
 
     local state = {
         Alive = true,
-        AutoOPRoute = false,
+        AutoOPRoute = resumeFastRoute,
         AutoWeightTraining = false,
         PersistentGravity = false,
         AutoMilestones = false,
@@ -75,8 +83,20 @@ return function(context)
         LastMilestoneAttempt = 0,
         LastShopAttempt = 0,
         LastWishAttempt = 0,
-        WeightInterval = 0.08,
-        BoughtStatCapsule = false,
+        WeightInterval = 0.25,
+        ShopBusy = false,
+        CapsulesBought = tonumber(environment.VORDBLPCapsulesBought) or 0,
+        ZeniClaims = tonumber(environment.VORDBLPZeniClaims) or 0,
+        TargetBasePower = tonumber(environment.VORDBLPTargetBasePower) or 10000000,
+        ServerClaimBusy = false,
+        ServerClaimResolved = false,
+        ServerClaimAttempts = 0,
+        ServerClaimDelta = 0,
+        HopBusy = false,
+        LastHopAttempt = 0,
+        TeleportResumeQueued = false,
+        TeleportQueueMethod = "Unavailable",
+        HopStatus = "Ready",
         BoughtPotara = false,
         AbilityBarrage = false,
         AbilityBusy = false,
@@ -87,11 +107,11 @@ return function(context)
         AttackMode = "Punch",
         TargetMode = "Power Ladder",
         SelectedNpc = "Saibaman",
-        FarmHeight = 18,
-        FarmDistance = 0,
-        FarmInterval = 0.08,
-        MultiHitCount = 3,
-        HoldFarmPosition = true,
+        FarmHeight = 5,
+        FarmDistance = 2,
+        FarmInterval = 0.48,
+        MultiHitCount = 1,
+        HoldFarmPosition = false,
         HeldRoot = nil,
         AutoCharge = true,
         ChargeBelow = 25,
@@ -119,11 +139,11 @@ return function(context)
 
     local punchKeys = {"q", "e", "r", "t"}
     local damageAbilities = {
-        {Name = "Spirit", Display = "Spirit Bomb", Energy = 50, FallbackCooldown = 25},
-        {Name = "SpecialBeam", Display = "Special Beam Cannon", Energy = 50, FallbackCooldown = 18},
-        {Name = "Kamehameha", Display = "Kamehameha", Energy = 20, FallbackCooldown = 8},
-        {Name = "Masenko", Display = "Masenko", Energy = 15, FallbackCooldown = 6},
-        {Name = "EnergyWave", Display = "Energy Wave", Energy = 10, FallbackCooldown = 3},
+        {Name = "Spirit", Display = "Spirit Bomb", Energy = 50, FallbackCooldown = 25, GainScore = 400},
+        {Name = "Kamehameha", Display = "Kamehameha", Energy = 20, FallbackCooldown = 3, GainScore = 50},
+        {Name = "SpecialBeam", Display = "Special Beam Cannon", Energy = 40, FallbackCooldown = 10, GainScore = 25},
+        {Name = "EnergyWave", Display = "Energy Wave", Energy = 10, FallbackCooldown = 1, GainScore = 25},
+        {Name = "Masenko", Display = "Masenko", Energy = 15, FallbackCooldown = 25, GainScore = 1},
     }
     local teleportTargets = {
         ["City"] = "cityIT",
@@ -371,10 +391,12 @@ return function(context)
     end
 
     local function stepFarm()
-        if not state.AutoFarm and not state.AutoOPRoute then
+        if not state.AutoFarm then
             state.Target = nil
             state.Phase = "Idle"
-            stopCharging()
+            if not state.AutoOPRoute then
+                stopCharging()
+            end
             releaseFarmPosition()
             return
         end
@@ -421,7 +443,7 @@ return function(context)
     end
 
     local function stepTransform()
-        if not state.AutoTransform and not state.AutoOPRoute then
+        if not state.AutoTransform then
             return
         end
         if os.clock() - state.LastTransform < 1.1 then
@@ -429,14 +451,11 @@ return function(context)
         end
         state.LastTransform = os.clock()
         local statsModel = getStatsModel()
-        local basePower = getBasePower(statsModel)
-        local kingKai = statsModel and statsModel:FindFirstChild("kai")
-        if state.AutoOPRoute and basePower >= 10000 and basePower < 2500000
-            and kingKai and kingKai.Value then
-            TransformRemote:FireServer("Kaioken")
-        else
-            TransformRemote:FireServer(state.TransformMode)
+        local multiplier = statsModel and statsModel:FindFirstChild("mult")
+        if multiplier and multiplier.Value > 1 then
+            return
         end
+        TransformRemote:FireServer(state.TransformMode)
     end
 
     local function teleportTo(locationName)
@@ -594,26 +613,42 @@ return function(context)
         end
     end
 
-    local function stepProgressionShop()
-        if not state.AutoProgressionShop and not state.AutoOPRoute then
+    local function stepProgressionShop(force)
+        if not force and not state.AutoProgressionShop and not state.AutoOPRoute then
             return
         end
-        if os.clock() - state.LastShopAttempt < 2 then
+        if state.ShopBusy or os.clock() - state.LastShopAttempt < 0.75 then
             return
         end
         local statsModel = getStatsModel()
         if not statsModel then
             return
         end
-        state.LastShopAttempt = os.clock()
         if not findTrainingWeight() and statsModel.zeni.Value >= 100 then
+            state.LastShopAttempt = os.clock()
             ShopRemote:FireServer("weight")
             state.RoutePhase = "Buying Training Weight"
-        elseif not state.BoughtStatCapsule and getBasePower(statsModel) >= 100000 and statsModel.zeni.Value >= 5000 then
-            ShopRemote:FireServer("stats")
-            state.BoughtStatCapsule = true
-            state.RoutePhase = "Buying Stat Capsule"
+        elseif statsModel.zeni.Value >= 5000 then
+            state.ShopBusy = true
+            state.LastShopAttempt = os.clock()
+            task.spawn(function()
+                local beforeZeni = statsModel.zeni.Value
+                local beforePower = getBasePower(statsModel)
+                ShopRemote:FireServer("stats")
+                task.wait(0.8)
+                local spent = beforeZeni - statsModel.zeni.Value
+                local gained = getBasePower(statsModel) - beforePower
+                if spent >= 5000 and gained > 0 then
+                    state.CapsulesBought += 1
+                    environment.VORDBLPCapsulesBought = state.CapsulesBought
+                    state.RoutePhase = string.format("Capsule #%d: +%d base power", state.CapsulesBought, math.floor(gained))
+                else
+                    state.LastError = "Stat capsule purchase was not credited"
+                end
+                state.ShopBusy = false
+            end)
         elseif not state.BoughtPotara and statsModel.PL.Value >= 15000000 and statsModel.zeni.Value >= 50000 then
+            state.LastShopAttempt = os.clock()
             ShopRemote:FireServer("potara")
             state.BoughtPotara = true
             state.RoutePhase = "Buying Potara Earrings"
@@ -650,7 +685,7 @@ return function(context)
     end
 
     local function stepAutoShenron()
-        if not state.AutoShenron and not state.AutoOPRoute then
+        if not state.AutoShenron then
             return
         end
         if os.clock() - state.LastWishAttempt < 30 then
@@ -686,6 +721,9 @@ return function(context)
         end
         local target = state.Target
         if not aliveNpc(target) then
+            target = selectNpc()
+        end
+        if not aliveNpc(target) then
             return
         end
         local targetRoot = target:FindFirstChild("Torso") or target:FindFirstChild("HumanoidRootPart")
@@ -695,13 +733,11 @@ return function(context)
         end
         local now = os.clock()
         local selected
-        for offset = 1, #damageAbilities do
-            local index = (state.AbilityIndex + offset - 1) % #damageAbilities + 1
-            local ability = damageAbilities[index]
-            if energy >= ability.Energy and now >= (state.AbilityNext[ability.Name] or 0) then
+        for index, ability in ipairs(damageAbilities) do
+            if energy >= ability.Energy and now >= (state.AbilityNext[ability.Name] or 0)
+                and (not selected or ability.GainScore > selected.GainScore) then
                 selected = ability
                 state.AbilityIndex = index
-                break
             end
         end
         if not selected then
@@ -723,30 +759,252 @@ return function(context)
         end)
     end
 
+    local function queueFunction()
+        if type(queue_on_teleport) == "function" then
+            return queue_on_teleport, "queue_on_teleport"
+        end
+        if type(queueonteleport) == "function" then
+            return queueonteleport, "queueonteleport"
+        end
+        if type(syn) == "table" and type(syn.queue_on_teleport) == "function" then
+            return syn.queue_on_teleport, "syn.queue_on_teleport"
+        end
+        if type(fluxus) == "table" and type(fluxus.queue_on_teleport) == "function" then
+            return fluxus.queue_on_teleport, "fluxus.queue_on_teleport"
+        end
+        return nil, "Unavailable"
+    end
+
+    local function queueFastRouteResume()
+        if state.TeleportResumeQueued then
+            return true
+        end
+        local queue, method = queueFunction()
+        state.TeleportQueueMethod = method
+        if type(queue) ~= "function" then
+            return false, "This executor does not expose a teleport queue"
+        end
+
+        local visitedEntries = {}
+        for jobId, seen in pairs(visitedServers) do
+            if seen and type(jobId) == "string" and #visitedEntries < 75 then
+                visitedEntries[#visitedEntries + 1] = string.format("[%q]=true", jobId)
+            end
+        end
+        table.sort(visitedEntries)
+        local loaderUrl = "https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/loader.lua?dblphop="
+            .. tostring(os.time())
+        local payload = table.concat({
+            "repeat task.wait() until game:IsLoaded()",
+            "local p=game:GetService(\"Players\").LocalPlayer",
+            "repeat task.wait(0.1) until p:FindFirstChild(\"statsModel\") and p.statsModel:FindFirstChild(\"loaded\") and p.statsModel.loaded.Value",
+            "local e=type(getgenv)==\"function\" and getgenv() or _G",
+            "e.VORDBLPResumeFastRoute=true",
+            "e.VORDBLPTargetBasePower=" .. tostring(state.TargetBasePower),
+            "e.VORDBLPCapsulesBought=" .. tostring(state.CapsulesBought),
+            "e.VORDBLPZeniClaims=" .. tostring(state.ZeniClaims),
+            "e.VORDBLPVisitedServers={" .. table.concat(visitedEntries, ",") .. "}",
+            "loadstring(game:HttpGet(" .. string.format("%q", loaderUrl) .. "))()",
+        }, "\n")
+        local ok, message = pcall(queue, payload)
+        if not ok then
+            return false, tostring(message)
+        end
+        state.TeleportResumeQueued = true
+        state.TeleportQueueMethod = method
+        return true
+    end
+
+    local function openFreshServers()
+        local servers = {}
+        local cursor
+        for _ = 1, 3 do
+            local url = "https://games.roblox.com/v1/games/"
+                .. tostring(game.PlaceId)
+                .. "/servers/Public?sortOrder=Asc&limit=100"
+            if cursor and cursor ~= "" then
+                url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
+            local data = HttpService:JSONDecode(game:HttpGet(url))
+            for _, server in ipairs(data.data or {}) do
+                if server.id ~= game.JobId
+                    and server.playing < server.maxPlayers
+                    and not visitedServers[server.id] then
+                    servers[#servers + 1] = server
+                end
+            end
+            cursor = data.nextPageCursor
+            if #servers > 0 or not cursor then
+                break
+            end
+        end
+        return servers
+    end
+
+    local function hopFreshServer(reason)
+        if state.HopBusy or os.clock() - state.LastHopAttempt < 15 then
+            return false
+        end
+        state.HopBusy = true
+        state.LastHopAttempt = os.clock()
+        local ok, servers = pcall(openFreshServers)
+        if not ok or #servers == 0 then
+            state.HopBusy = false
+            state.HopStatus = "No unused public server; checking again"
+            state.LastError = ok and "None" or tostring(servers)
+            return false
+        end
+        table.sort(servers, function(a, b)
+            local aPlayers = tonumber(a.playing) or math.huge
+            local bPlayers = tonumber(b.playing) or math.huge
+            if aPlayers == bPlayers then
+                return tostring(a.id) < tostring(b.id)
+            end
+            return aPlayers < bPlayers
+        end)
+        local selected = servers[1]
+        visitedServers[game.JobId] = true
+        visitedServers[selected.id] = true
+        environment.VORDBLPVisitedServers = visitedServers
+        local queued, queueError = queueFastRouteResume()
+        if not queued then
+            visitedServers[selected.id] = nil
+            state.HopBusy = false
+            state.HopStatus = "Auto-resume unavailable"
+            state.LastError = "Server hop: " .. tostring(queueError)
+            return false
+        end
+        state.HopStatus = "Hopping: " .. tostring(reason or "fresh Shenron session")
+        state.RoutePhase = state.HopStatus
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, selected.id, LocalPlayer)
+        return true
+    end
+
+    local function claimServerZeni()
+        if state.ServerClaimBusy or state.ServerClaimResolved then
+            return
+        end
+        state.ServerClaimBusy = true
+        task.spawn(function()
+            local statsModel = getStatsModel()
+            local loaded = statsModel and statsModel:FindFirstChild("loaded")
+            local deadline = os.clock() + 15
+            while state.Alive and (not statsModel or not loaded or not loaded.Value) and os.clock() < deadline do
+                task.wait(0.1)
+                statsModel = getStatsModel()
+                loaded = statsModel and statsModel:FindFirstChild("loaded")
+            end
+            if not statsModel or not loaded or not loaded.Value then
+                state.ServerClaimBusy = false
+                state.LastError = "Timed out waiting for saved stats"
+                return
+            end
+
+            local beforeZeni = statsModel.zeni.Value
+            state.ServerClaimAttempts += 1
+            local island = workspace:FindFirstChild("KI")
+            local summoner = island and island:FindFirstChild("summoner")
+            if not summoner or not touchServerPart(summoner) then
+                state.ServerClaimBusy = false
+                state.LastError = "Shenron summoner is unavailable"
+                return
+            end
+            task.wait(0.25)
+            for _ = 1, 5 do
+                WishRemote:FireServer("Zeni")
+            end
+            task.wait(1.25)
+            local gained = math.max(0, statsModel.zeni.Value - beforeZeni)
+            state.ServerClaimDelta = gained
+            state.ServerClaimBusy = false
+            if gained >= 2500 then
+                state.ServerClaimResolved = true
+                state.ZeniClaims += 1
+                environment.VORDBLPZeniClaims = state.ZeniClaims
+                visitedServers[game.JobId] = true
+                environment.VORDBLPVisitedServers = visitedServers
+                state.RoutePhase = string.format("Fresh-server Zeni claim #%d: +%d", state.ZeniClaims, gained)
+            elseif state.ServerClaimAttempts >= 2 then
+                state.ServerClaimResolved = true
+                visitedServers[game.JobId] = true
+                environment.VORDBLPVisitedServers = visitedServers
+                state.RoutePhase = "Shenron already consumed here"
+            else
+                state.RoutePhase = "Retrying Shenron claim once"
+            end
+        end)
+    end
+
+    local function stepCapsuleRoute()
+        if not state.AutoOPRoute then
+            return
+        end
+        local statsModel = getStatsModel()
+        local loaded = statsModel and statsModel:FindFirstChild("loaded")
+        if not statsModel or not loaded or not loaded.Value then
+            state.RoutePhase = "Waiting for saved stats"
+            return
+        end
+        local basePower = getBasePower(statsModel)
+        if state.TargetBasePower > 0 and basePower >= state.TargetBasePower then
+            state.AutoOPRoute = false
+            environment.VORDBLPResumeFastRoute = false
+            state.RoutePhase = "Target reached"
+            stopCharging()
+            notify("Fastest OP Route", "Target base power reached", 5)
+            return
+        end
+        if state.ShopBusy or statsModel.zeni.Value >= 5000 then
+            return
+        end
+        if not state.ServerClaimResolved then
+            claimServerZeni()
+            return
+        end
+        hopFreshServer(state.ServerClaimDelta >= 2500 and "claim banked" or "claim already used")
+    end
+
     local function stepOPRoute()
+        if not state.AutoOPRoute then
+            return
+        end
         stepGravityBoost()
         stepWeightTraining()
         stepMilestones()
         stepProgressionShop()
-        stepAutoShenron()
+        updateCharge()
+        stepCapsuleRoute()
     end
 
     local routePhaseLabel = PowerProgressSection:AddLabel("Route: Ready")
     local routeBoostLabel = PowerProgressSection:AddLabel("Gravity boost: --")
     local routeGainLabel = PowerProgressSection:AddLabel("Power gained: 0")
     local routeTimeLabel = PowerProgressSection:AddLabel("Elapsed: 00:00")
+    local routeClaimLabel = PowerProgressSection:AddLabel("Zeni claims: 0 | Capsules: 0")
+    local routeHopLabel = PowerProgressSection:AddLabel("Server route: Ready")
     PowerProgressSection:AddParagraph({
         Title = "🧪 Live-tested route",
-        Content = "Persistent gravity gives roughly 6-8x Physical EXP and 3x Agility EXP per accepted Training Weight rep. Weight, combat, Ki, trainers, shop milestones, and forms run together.",
+        Content = "A fresh server pays 2,500 Zeni. Every 5,000-Zeni stat capsule gave about 100,350 base power in live testing. Spirit Bomb adds about 10,000 Ki EXP per accepted cast.",
     })
 
-    PowerRouteSection:AddToggle({
-        Name = "⚡ 30-Minute OP Route",
-        Description = "Runs every verified progression method together and automatically upgrades the route",
+    local autoOPToggle
+    autoOPToggle = PowerRouteSection:AddToggle({
+        Name = "⚡ Fastest OP Route",
+        Description = "Claims fresh-server Zeni, buys every stat capsule, resumes after hops, and runs the best passive gains",
         Flag = "dblp_auto_op_route",
-        Default = false,
+        Default = state.AutoOPRoute,
         Callback = function(enabled)
+            if not enabled and resumeFastRoute and os.clock() < resumeGuardUntil then
+                task.defer(function()
+                    if autoOPToggle and type(autoOPToggle.Set) == "function" then
+                        autoOPToggle:Set(true, true)
+                    end
+                end)
+                return
+            end
+            resumeFastRoute = false
             state.AutoOPRoute = enabled
+            environment.VORDBLPResumeFastRoute = enabled
             state.LastAttack = 0
             state.LastWeightActivation = 0
             if enabled then
@@ -754,18 +1012,65 @@ return function(context)
                 state.RouteStartedAt = os.clock()
                 state.RouteStartPL = getBasePower(statsModel)
                 state.RouteStartPhysical = statsModel and statsModel.phys.Value or 0
-                state.RoutePhase = "Starting full progression route"
+                state.ServerClaimBusy = false
+                state.ServerClaimResolved = false
+                state.ServerClaimAttempts = 0
+                state.ServerClaimDelta = 0
+                state.HopBusy = false
+                state.LastHopAttempt = 0
+                state.RoutePhase = "Starting verified capsule route"
             else
                 state.RoutePhase = "Stopped"
+                state.HopBusy = false
                 state.Target = nil
                 stopCharging()
                 releaseFarmPosition()
             end
         end,
     })
+    PowerRouteSection:AddDropdown({
+        Name = "Target Base Power",
+        Options = {"10 Million", "100 Million", "1 Billion", "Endless"},
+        Default = state.TargetBasePower == 0 and "Endless"
+            or state.TargetBasePower >= 1000000000 and "1 Billion"
+            or state.TargetBasePower >= 100000000 and "100 Million"
+            or "10 Million",
+        Callback = function(value)
+            local targets = {
+                ["10 Million"] = 10000000,
+                ["100 Million"] = 100000000,
+                ["1 Billion"] = 1000000000,
+                ["Endless"] = 0,
+            }
+            state.TargetBasePower = targets[value] or 10000000
+            environment.VORDBLPTargetBasePower = state.TargetBasePower
+        end,
+    })
+    PowerRouteSection:AddButton({
+        Name = "Claim Zeni + Buy Capsule Now",
+        Callback = function()
+            state.ServerClaimBusy = false
+            state.ServerClaimResolved = false
+            state.ServerClaimAttempts = 0
+            state.ServerClaimDelta = 0
+            claimServerZeni()
+            task.delay(2, function()
+                stepProgressionShop(true)
+                task.wait(1)
+                stepProgressionShop(true)
+            end)
+        end,
+    })
+    PowerRouteSection:AddButton({
+        Name = "Hop To Fresh Public Server",
+        Callback = function()
+            state.LastHopAttempt = 0
+            hopFreshServer("manual fresh-session request")
+        end,
+    })
     PowerRouteSection:AddToggle({
-        Name = "🏋️ Rapid Training Weight",
-        Description = "Continuously performs server-credited reps at the fastest measured cadence",
+        Name = "🏋️ Efficient Gravity Weight Training",
+        Description = "Uses the fastest measured server-credited cadence without flooding rejected reps",
         Flag = "dblp_auto_weight_training",
         Default = false,
         Callback = function(enabled)
@@ -775,7 +1080,7 @@ return function(context)
     })
     PowerRouteSection:AddToggle({
         Name = "☄️ Ability Barrage",
-        Description = "Rotates Spirit Bomb, Special Beam Cannon, Kamehameha, Masenko, and Energy Wave at their real server cooldowns",
+        Description = "Prioritizes Spirit Bomb's measured 10,000 Ki EXP, then uses the best ready fallback",
         Flag = "dblp_ability_barrage",
         Default = false,
         Callback = function(enabled)
@@ -793,7 +1098,7 @@ return function(context)
     })
     PowerRouteSection:AddToggle({
         Name = "🛒 Auto Progression Purchases",
-        Description = "Buys the Training Weight and later stat/potara upgrades only when requirements are met",
+        Description = "Buys the Training Weight and every affordable 5,000-Zeni stat capsule",
         Default = false,
         Flag = "dblp_auto_progression_shop",
         Callback = function(enabled)
@@ -828,7 +1133,7 @@ return function(context)
     })
     PowerBoostSection:AddToggle({
         Name = "🐲 Auto Summon Shenron",
-        Description = "Touches the real summoner before sending a wish; direct wish calls are rejected",
+        Description = "Current-server wish only. The Fastest OP Route handles fresh-server Zeni automatically",
         Default = false,
         Flag = "dblp_auto_shenron",
         Callback = function(enabled)
@@ -866,7 +1171,7 @@ return function(context)
     })
     FarmSection:AddToggle({
         Name = "🥊 Auto Farm NPCs",
-        Description = "Power Ladder safely trains weak accounts on the strongest NPC they can damage",
+        Description = "Native punches require real contact. Ability Barrage is the reliable ranged training path",
         Flag = "dblp_auto_farm",
         Default = false,
         Callback = function(enabled)
@@ -934,7 +1239,7 @@ return function(context)
     FarmSafetySection:AddToggle({
         Name = "🛡️ Hold Safe Aerial Position",
         Description = "Prevents gravity from dropping you into the NPC between hits",
-        Default = true,
+        Default = state.HoldFarmPosition,
         Flag = "dblp_hold_farm_position",
         Callback = function(enabled)
             state.HoldFarmPosition = enabled
@@ -1156,8 +1461,16 @@ return function(context)
     local errorLabel = AdapterStatusSection:AddLabel("Last error: None")
     AdapterStatusSection:AddParagraph({
         Title = "✅ Runtime validation",
-        Content = "Uses the game's native remotes and tools. The gravity multiplier, Training Weight gains, combat reach, trainer requirements, and Shenron summon requirement were measured in the live experience.",
+        Content = "Uses the game's native remotes and tools. Gravity, Training Weight gains, ability rewards, trainer requirements, stat capsules, Shenron claims, and server-session limits were measured live.",
     })
+
+    if state.AutoOPRoute then
+        local statsModel = getStatsModel()
+        state.RouteStartedAt = os.clock()
+        state.RouteStartPL = getBasePower(statsModel)
+        state.RouteStartPhysical = statsModel and statsModel.phys.Value or 0
+        state.RoutePhase = "Resumed after server transfer"
+    end
 
     track(LocalPlayer.Idled:Connect(function()
         if state.AntiAfk then
@@ -1168,7 +1481,7 @@ return function(context)
 
     track(RunService.Stepped:Connect(function()
         local character, humanoid = getCharacter()
-        if character and (state.AutoFarm or state.AutoOPRoute) and state.NoClip then
+        if character and state.AutoFarm and state.NoClip then
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
@@ -1184,6 +1497,7 @@ return function(context)
         while state.Alive do
             local ok, errorMessage = pcall(function()
                 stepOPRoute()
+                stepAutoShenron()
                 stepFarm()
                 stepAbilityBarrage()
                 stepTransform()
@@ -1209,6 +1523,8 @@ return function(context)
             farmAbilityLabel.Text = "Ability: " .. state.LastAbility
             routePhaseLabel.Text = "Route: " .. state.RoutePhase
             routeBoostLabel.Text = "Gravity boost: " .. (gravityEnabled() and "ACTIVE" or "Inactive")
+            routeClaimLabel.Text = string.format("Zeni claims: %d | Capsules: %d", state.ZeniClaims, state.CapsulesBought)
+            routeHopLabel.Text = "Server route: " .. state.HopStatus .. " | Queue: " .. state.TeleportQueueMethod
             if state.RouteStartedAt > 0 then
                 local elapsed = math.max(0, os.clock() - state.RouteStartedAt)
                 local gained = statsModel and math.max(0, getBasePower(statsModel) - state.RouteStartPL) or 0
