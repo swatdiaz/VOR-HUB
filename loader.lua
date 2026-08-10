@@ -1,7 +1,7 @@
 -- VOR Hub immutable modular loader.
 -- Release tooling replaces the placeholder with the audited module commit.
 
-local COMMIT = "be7be6aaf6d02fb59ea0bcdf12c15b92b7ddc99a"
+local COMMIT = "ce609fea4db3481b5e29fcbf9ce530583fb9e8e5"
 local REPOSITORY = "swatdiaz/VOR-HUB"
 
 local function detectExecutor()
@@ -258,7 +258,11 @@ local accessReady = installCore("core/access.lua")
 local gameInfo = runtime.SETTINGS.ActiveGame
 
 if gameInfo then
-    context.Window:SetModuleIdentity(gameInfo.DisplayName, runtime.SETTINGS.Version, true)
+    context.Window:SetModuleIdentity(
+        gameInfo.DisplayName,
+        runtime.SETTINGS.Version .. " build " .. string.sub(COMMIT, 1, 7),
+        true
+    )
     bootStatus("Detected " .. gameInfo.DisplayName, context.COLORS.success)
     bootStatus("Downloading only " .. gameInfo.Module .. "...", context.COLORS.accentBright)
     local loaded, gameBuilder = loadModule(gameInfo.Module)
