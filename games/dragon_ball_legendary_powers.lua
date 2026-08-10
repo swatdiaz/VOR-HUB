@@ -989,8 +989,8 @@ return function(context)
 
     local autoOPToggle
     autoOPToggle = PowerRouteSection:AddToggle({
-        Name = "⚡ Fastest OP Route",
-        Description = "Claims fresh-server Zeni, buys every stat capsule, resumes after hops, and runs the best passive gains",
+        Name = "🐉 Auto Zeni Server Hop + Capsules",
+        Description = "Claims 2,500 Zeni per unused server, transfers VOR Hub, and buys every 5,000-Zeni stat capsule",
         Flag = "dblp_auto_op_route",
         Default = state.AutoOPRoute,
         Callback = function(enabled)
