@@ -33,8 +33,7 @@ $required = @(
 $compileFiles = $required + @(
     "VOR_HUB.lua",
     "anime_expeditions.lua",
-    "blox_fruits_dungeons.lua",
-    "server/dragon_ball_legendary_powers_admin.server.lua"
+    "blox_fruits_dungeons.lua"
 )
 
 if (-not (Test-Path -LiteralPath $Compiler)) {
@@ -1061,7 +1060,6 @@ if (-not ($gunfightRouting -and $gunfightNativeBehavior)) {
 }
 
 $dragonBallText = Get-Content -LiteralPath (Join-Path $repo "games/dragon_ball_legendary_powers.lua") -Raw
-$dragonBallServerText = Get-Content -LiteralPath (Join-Path $repo "server/dragon_ball_legendary_powers_admin.server.lua") -Raw
 $dragonBallRouting = (
     $settingsText -match 'Key\s*=\s*"DragonBallLegendaryPowers"' -and
     $settingsText -match 'UniverseId\s*=\s*4501539222' -and
@@ -1074,18 +1072,13 @@ $dragonBallNativeBehavior = (
     $dragonBallText -match 'DamageRemote:FireServer\("Punch", target\)' -and
     $dragonBallText -match 'Options\s*=\s*\{"Power Ladder"' -and
     $dragonBallText -match 'Flag\s*=\s*"dblp_auto_farm"' -and
-    $dragonBallText -match 'FindFirstChild\("VOROwnerAdmin"\)'
+    $dragonBallText -match 'Flag\s*=\s*"dblp_auto_op_route"' -and
+    $dragonBallText -match 'Persistent Gravity' -and
+    $dragonBallText -match 'Training Weight' -and
+    $dragonBallText -match 'summoner'
 )
-$dragonBallAdminSecurity = (
-    $dragonBallServerText -match '\[433080653\]\s*=\s*true' -and
-    $dragonBallServerText -match '\[33876608\]\s*=\s*true' -and
-    $dragonBallServerText -match 'if not authorized\(actor\)' -and
-    $dragonBallServerText -match 'local VALID_STATS' -and
-    $dragonBallServerText -match 'local VALID_UNLOCKS' -and
-    $dragonBallServerText -match 'return state\.Count <= 20'
-)
-if (-not ($dragonBallRouting -and $dragonBallNativeBehavior -and $dragonBallAdminSecurity)) {
-    throw "Dragon Ball Legendary Powers routing/native/admin contract failed"
+if (-not ($dragonBallRouting -and $dragonBallNativeBehavior)) {
+    throw "Dragon Ball Legendary Powers routing/native/progression contract failed"
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
@@ -1095,7 +1088,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, native combat, training, forms, secure owner bridge)"
+Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"
