@@ -698,6 +698,44 @@ return function(context)
         Status = utf8.char(0x1F4CA),
     }
 
+    -- Build every navigation glyph from Unicode codepoints. Literal emoji text
+    -- can be mangled by an editor/transport, and byte-based string.sub turns a
+    -- multi-byte glyph into the replacement-question-mark character.
+    iconMap.Home = utf8.char(0x1F3E0)
+    iconMap.Combat = utf8.char(0x2694, 0xFE0F)
+    iconMap.Mastery = utf8.char(0x2B50)
+    iconMap.Shop = utf8.char(0x1F6D2)
+    iconMap["Sea & Raids"] = utf8.char(0x1F30A)
+    iconMap.Player = utf8.char(0x1F464)
+    iconMap.PVP = utf8.char(0x1F480)
+    iconMap.Settings = utf8.char(0x2699, 0xFE0F)
+    iconMap.Tools = utf8.char(0x1F6E0, 0xFE0F)
+    iconMap.Overnight = utf8.char(0x1F319)
+    iconMap.Weapons = utf8.char(0x1F5E1, 0xFE0F)
+    iconMap.Progress = utf8.char(0x1F4C8)
+    iconMap.Visuals = utf8.char(0x1F441, 0xFE0F)
+    iconMap.Shooting = utf8.char(0x1F3AF)
+    iconMap.Dribble = utf8.char(0x1F3C0)
+    iconMap.Exploits = utf8.char(0x26A0, 0xFE0F)
+    iconMap.Dungeons = utf8.char(0x1F3F0)
+    iconMap.AFK = utf8.char(0x1F4A4)
+    iconMap.Missions = utf8.char(0x1F4DC)
+    iconMap.Summon = utf8.char(0x2728)
+    iconMap.Units = utf8.char(0x1F465)
+    iconMap["Auto Farm"] = utf8.char(0x1F525)
+    iconMap.Economy = utf8.char(0x1F4B0)
+    iconMap.Upgrades = utf8.char(0x2B06, 0xFE0F)
+    iconMap.Rewards = utf8.char(0x1F381)
+
+    local function firstUtf8Glyph(value)
+        local text = tostring(value or "")
+        local ok, codepoint = pcall(utf8.codepoint, text, 1)
+        if ok and codepoint then
+            return utf8.char(codepoint)
+        end
+        return string.sub(text, 1, 1)
+    end
+
     local function setProfileState(text, color)
         profileState.Text = string.upper(tostring(text or "SAVED"))
         profileState.TextColor3 = color or COLORS.accentBright
@@ -2107,7 +2145,7 @@ return function(context)
         }, navButton)
         corner(iconBadge, 8)
         local iconStroke = stroke(iconBadge, COLORS.border, 1, 0.35)
-        local iconText = iconMap[name] or tostring(options.Icon or string.sub(name, 1, 1)):upper()
+        local iconText = iconMap[name] or tostring(options.Icon or firstUtf8Glyph(name)):upper()
         local icon = label(iconBadge, iconText, UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.dim, 15, Enum.Font.Gotham)
         icon.TextXAlignment = Enum.TextXAlignment.Center
         local navLabel = label(navButton, name, UDim2.fromOffset(124, 45), UDim2.fromOffset(62, 0), COLORS.muted, 13, Enum.Font.GothamSemibold)
