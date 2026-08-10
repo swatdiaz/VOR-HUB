@@ -93,6 +93,16 @@ return function(runtime)
             },
             Module = "games/gunfight_arena.lua",
         },
+        DragonBallLegendaryPowers = {
+            Key = "DragonBallLegendaryPowers",
+            DisplayName = "Dragon Ball Legendary Powers",
+            UniverseId = 4501539222,
+            RootPlaceId = 12860709641,
+            PlaceIds = {
+                [12860709641] = true,
+            },
+            Module = "games/dragon_ball_legendary_powers.lua",
+        },
         BloxFruits = {
             Key = "BloxFruits",
             DisplayName = "Blox Fruits",

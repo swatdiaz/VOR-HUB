@@ -36,6 +36,7 @@ if ($LASTEXITCODE -ne 0) {
 $modulePaths = @(
     "core",
     "games",
+    "server",
     "scripts",
     "MODULAR_REFACTOR_REPORT.md",
     "update-github.ps1"

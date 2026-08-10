@@ -20,6 +20,7 @@ $required = @(
     "games/mine_a_mountain.lua",
     "games/bee_swarm_simulator.lua",
     "games/gunfight_arena.lua",
+    "games/dragon_ball_legendary_powers.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
     "games/blox_fruits_parity.lua",
@@ -32,7 +33,8 @@ $required = @(
 $compileFiles = $required + @(
     "VOR_HUB.lua",
     "anime_expeditions.lua",
-    "blox_fruits_dungeons.lua"
+    "blox_fruits_dungeons.lua",
+    "server/dragon_ball_legendary_powers_admin.server.lua"
 )
 
 if (-not (Test-Path -LiteralPath $Compiler)) {
@@ -1058,13 +1060,42 @@ if (-not ($gunfightRouting -and $gunfightNativeBehavior)) {
     throw "Gunfight Arena routing/native adapter contract failed"
 }
 
+$dragonBallText = Get-Content -LiteralPath (Join-Path $repo "games/dragon_ball_legendary_powers.lua") -Raw
+$dragonBallServerText = Get-Content -LiteralPath (Join-Path $repo "server/dragon_ball_legendary_powers_admin.server.lua") -Raw
+$dragonBallRouting = (
+    $settingsText -match 'Key\s*=\s*"DragonBallLegendaryPowers"' -and
+    $settingsText -match 'UniverseId\s*=\s*4501539222' -and
+    $settingsText -match 'RootPlaceId\s*=\s*12860709641' -and
+    $settingsText -match 'Module\s*=\s*"games/dragon_ball_legendary_powers\.lua"'
+)
+$dragonBallNativeBehavior = (
+    $dragonBallText -match 'Combat:WaitForChild\("Punch"\)' -and
+    $dragonBallText -match 'Combat:WaitForChild\("Damage"\)' -and
+    $dragonBallText -match 'DamageRemote:FireServer\("Punch", target\)' -and
+    $dragonBallText -match 'Options\s*=\s*\{"Power Ladder"' -and
+    $dragonBallText -match 'Flag\s*=\s*"dblp_auto_farm"' -and
+    $dragonBallText -match 'FindFirstChild\("VOROwnerAdmin"\)'
+)
+$dragonBallAdminSecurity = (
+    $dragonBallServerText -match '\[433080653\]\s*=\s*true' -and
+    $dragonBallServerText -match '\[33876608\]\s*=\s*true' -and
+    $dragonBallServerText -match 'if not authorized\(actor\)' -and
+    $dragonBallServerText -match 'local VALID_STATS' -and
+    $dragonBallServerText -match 'local VALID_UNLOCKS' -and
+    $dragonBallServerText -match 'return state\.Count <= 20'
+)
+if (-not ($dragonBallRouting -and $dragonBallNativeBehavior -and $dragonBallAdminSecurity)) {
+    throw "Dragon Ball Legendary Powers routing/native/admin contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (10/10)"
+Write-Host "Game builder contract: PASS (11/11)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
+Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, native combat, training, forms, secure owner bridge)"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"
