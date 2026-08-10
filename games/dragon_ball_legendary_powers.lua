@@ -24,8 +24,24 @@ return function(context)
     local environment = type(getgenv) == "function" and getgenv() or _G
     local resumeFastRoute = environment.VORDBLPResumeFastRoute == true
     local resumeGuardUntil = resumeFastRoute and (os.clock() + 15) or 0
+    local routeLedgerPath = "VORHub/dblp_server_route.json"
+    local routeLedger = {}
+    if type(isfile) == "function" and type(readfile) == "function" and isfile(routeLedgerPath) then
+        pcall(function()
+            local decoded = HttpService:JSONDecode(readfile(routeLedgerPath))
+            if type(decoded) == "table" then
+                routeLedger = decoded
+            end
+        end)
+    end
     local visitedServers = type(environment.VORDBLPVisitedServers) == "table"
         and environment.VORDBLPVisitedServers or {}
+    for jobId, seen in pairs(type(routeLedger.VisitedServers) == "table" and routeLedger.VisitedServers or {}) do
+        if seen and type(jobId) == "string" then
+            visitedServers[jobId] = true
+        end
+    end
+    local claimedServers = type(routeLedger.ClaimedServers) == "table" and routeLedger.ClaimedServers or {}
     environment.VORDBLPVisitedServers = visitedServers
 
     local Training = ReplicatedStorage:WaitForChild("Training")
@@ -85,11 +101,11 @@ return function(context)
         LastWishAttempt = 0,
         WeightInterval = 0.25,
         ShopBusy = false,
-        CapsulesBought = tonumber(environment.VORDBLPCapsulesBought) or 0,
-        ZeniClaims = tonumber(environment.VORDBLPZeniClaims) or 0,
-        TargetBasePower = tonumber(environment.VORDBLPTargetBasePower) or 10000000,
+        CapsulesBought = tonumber(environment.VORDBLPCapsulesBought) or tonumber(routeLedger.CapsulesBought) or 0,
+        ZeniClaims = tonumber(environment.VORDBLPZeniClaims) or tonumber(routeLedger.ZeniClaims) or 0,
+        TargetBasePower = tonumber(environment.VORDBLPTargetBasePower) or tonumber(routeLedger.TargetBasePower) or 10000000,
         ServerClaimBusy = false,
-        ServerClaimResolved = false,
+        ServerClaimResolved = claimedServers[game.JobId] == true,
         ServerClaimAttempts = 0,
         ServerClaimDelta = 0,
         HopBusy = false,
@@ -136,6 +152,45 @@ return function(context)
         LastError = "None",
         LastTargetHealth = 0,
     }
+
+    local function trackedJobCount()
+        local count = 0
+        for _, seen in pairs(visitedServers) do
+            if seen then
+                count += 1
+            end
+        end
+        return count
+    end
+
+    local function saveRouteLedger()
+        environment.VORDBLPVisitedServers = visitedServers
+        environment.VORDBLPZeniClaims = state.ZeniClaims
+        environment.VORDBLPCapsulesBought = state.CapsulesBought
+        environment.VORDBLPTargetBasePower = state.TargetBasePower
+        if type(writefile) ~= "function" then
+            return false
+        end
+        pcall(function()
+            if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("VORHub") then
+                makefolder("VORHub")
+            end
+            writefile(routeLedgerPath, HttpService:JSONEncode({
+                Version = 1,
+                LastJobId = game.JobId,
+                LastSeenAt = os.time(),
+                VisitedServers = visitedServers,
+                ClaimedServers = claimedServers,
+                ZeniClaims = state.ZeniClaims,
+                CapsulesBought = state.CapsulesBought,
+                TargetBasePower = state.TargetBasePower,
+            }))
+        end)
+        return true
+    end
+
+    visitedServers[game.JobId] = true
+    saveRouteLedger()
 
     local punchKeys = {"q", "e", "r", "t"}
     local damageAbilities = {
@@ -641,6 +696,7 @@ return function(context)
                 if spent >= 5000 and gained > 0 then
                     state.CapsulesBought += 1
                     environment.VORDBLPCapsulesBought = state.CapsulesBought
+                    saveRouteLedger()
                     state.RoutePhase = string.format("Capsule #%d: +%d base power", state.CapsulesBought, math.floor(gained))
                 else
                     state.LastError = "Stat capsule purchase was not credited"
@@ -866,6 +922,7 @@ return function(context)
         visitedServers[game.JobId] = true
         visitedServers[selected.id] = true
         environment.VORDBLPVisitedServers = visitedServers
+        saveRouteLedger()
         local queued, queueError = queueFastRouteResume()
         if not queued then
             visitedServers[selected.id] = nil
@@ -922,12 +979,16 @@ return function(context)
                 state.ZeniClaims += 1
                 environment.VORDBLPZeniClaims = state.ZeniClaims
                 visitedServers[game.JobId] = true
+                claimedServers[game.JobId] = true
                 environment.VORDBLPVisitedServers = visitedServers
+                saveRouteLedger()
                 state.RoutePhase = string.format("Fresh-server Zeni claim #%d: +%d", state.ZeniClaims, gained)
             elseif state.ServerClaimAttempts >= 2 then
                 state.ServerClaimResolved = true
                 visitedServers[game.JobId] = true
+                claimedServers[game.JobId] = true
                 environment.VORDBLPVisitedServers = visitedServers
+                saveRouteLedger()
                 state.RoutePhase = "Shenron already consumed here"
             else
                 state.RoutePhase = "Retrying Shenron claim once"
@@ -978,6 +1039,7 @@ return function(context)
     local routeTimeLabel = PowerProgressSection:AddLabel("Elapsed: 00:00")
     local routeClaimLabel = PowerProgressSection:AddLabel("Zeni claims: 0 | Capsules: 0")
     local routeHopLabel = PowerProgressSection:AddLabel("Server route: Ready")
+    local routeJobLabel = PowerProgressSection:AddLabel("Job: -- | Tracked: 0")
     PowerProgressSection:AddParagraph({
         Title = "🧪 Live-tested route",
         Content = "A fresh server pays 2,500 Zeni. Every 5,000-Zeni stat capsule gave about 100,350 base power in live testing. This route does not target or attack NPCs.",
@@ -1040,6 +1102,7 @@ return function(context)
             }
             state.TargetBasePower = targets[value] or 10000000
             environment.VORDBLPTargetBasePower = state.TargetBasePower
+            saveRouteLedger()
         end,
     })
     PowerRouteSection:AddButton({
@@ -1524,6 +1587,7 @@ return function(context)
             routeBoostLabel.Text = "Gravity boost: " .. (gravityEnabled() and "ACTIVE" or "Inactive")
             routeClaimLabel.Text = string.format("Zeni claims: %d | Capsules: %d", state.ZeniClaims, state.CapsulesBought)
             routeHopLabel.Text = "Server route: " .. state.HopStatus .. " | Queue: " .. state.TeleportQueueMethod
+            routeJobLabel.Text = "Job: " .. string.sub(game.JobId, 1, 8) .. " | Tracked: " .. tostring(trackedJobCount())
             if state.RouteStartedAt > 0 then
                 local elapsed = math.max(0, os.clock() - state.RouteStartedAt)
                 local gained = statsModel and math.max(0, getBasePower(statsModel) - state.RouteStartPL) or 0
