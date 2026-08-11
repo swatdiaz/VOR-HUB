@@ -22,6 +22,7 @@ $required = @(
     "games/mine_a_mountain.lua",
     "games/bee_swarm_simulator.lua",
     "games/gunfight_arena.lua",
+    "games/iron_man_reimagined.lua",
     "games/dragon_ball_legendary_powers.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
@@ -1146,13 +1147,37 @@ if (-not ($gag2Routing -and $gag2NativeBehavior)) {
     throw "Grow a Garden 2 routing/native adapter contract failed"
 }
 
+$ironManText = Get-Content -LiteralPath (Join-Path $repo "games/iron_man_reimagined.lua") -Raw
+$ironManRouting = (
+    $settingsText -match 'Key\s*=\s*"IronManReimagined"' -and
+    $settingsText -match 'UniverseId\s*=\s*5813007850' -and
+    $settingsText -match 'RootPlaceId\s*=\s*16929212566' -and
+    $settingsText -match 'Module\s*=\s*"games/iron_man_reimagined\.lua"'
+)
+$ironManNativeBehavior = (
+    $ironManText -match '__VORIronManReimaginedCleanup' -and
+    $ironManText -match 'FindFirstChild\("IronMan"\)' -and
+    $ironManText -match 'fireRemote\("Piece",\s*"RepairAll"\)' -and
+    $ironManText -match 'fireRemote\("Flight",\s*"Flares"\)' -and
+    $ironManText -match 'GetAttribute\("TargetName"\)' -and
+    $ironManText -match 'VirtualInputManager:SendKeyEvent' -and
+    $ironManText -match 'Flag\s*=\s*"imr_auto_repair"' -and
+    $ironManText -match 'Flag\s*=\s*"imr_auto_flares"' -and
+    $ironManText -match 'Flag\s*=\s*"imr_aim_assist"' -and
+    $ironManText -match 'Flag\s*=\s*"imr_player_esp"'
+)
+if (-not ($ironManRouting -and $ironManNativeBehavior)) {
+    throw "Iron Man: Reimagined routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (13/13)"
+Write-Host "Game builder contract: PASS (14/14)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
+Write-Host "Iron Man: Reimagined support: PASS (native suit actions, flight, repair/flares, aim assist, ESP)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"

@@ -113,6 +113,16 @@ return function(runtime)
             },
             Module = "games/gunfight_arena.lua",
         },
+        IronManReimagined = {
+            Key = "IronManReimagined",
+            DisplayName = "Iron Man: Reimagined",
+            UniverseId = 5813007850,
+            RootPlaceId = 16929212566,
+            PlaceIds = {
+                [16929212566] = true,
+            },
+            Module = "games/iron_man_reimagined.lua",
+        },
         DragonBallLegendaryPowers = {
             Key = "DragonBallLegendaryPowers",
             DisplayName = "Dragon Ball Legendary Powers",
