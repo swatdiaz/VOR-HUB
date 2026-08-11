@@ -1202,8 +1202,21 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'hasTrainingPosture' -and
     $dogRaceText -match 'GetRebirthCost' -and
     $dogRaceText -match 'ClaimOfflineWinsEvent' -and
+    $dogRaceText -match 'EggHatchService.*Hatch' -and
+    $dogRaceText -match 'FruitShopService.*BuyFruitEvent' -and
+    $dogRaceText -match 'TrailService.*BuyTrailEvent' -and
+    $dogRaceText -match 'UpgradeService.*Upgrade' -and
+    $dogRaceText -match 'HorseService.*UnlockHorseEvent' -and
+    $dogRaceText -match 'PrincessService.*UnlockPrincess' -and
+    $dogRaceText -match 'PromptProductPurchase' -and
+    $dogRaceText -match 'PromptGamePassPurchase' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_train"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_race"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_hatch"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_selected_fruit"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_selected_trail"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_selected_dog"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_selected_partner"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_speed_multiplier"' -and
     $dogRaceText -match 'clearSpeedOverride\(\)'
 )
@@ -1219,7 +1232,7 @@ Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/kn
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
-Write-Host "Dog Race support: PASS (native train/race/dash, contest give-up, respawn posture, speed, rebirth, pets, rewards, cleanup)"
+Write-Host "Dog Race support: PASS (native race/train, eggs, fruit/trail/upgrade shops, dog/partner unlocks, movement, rewards, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"

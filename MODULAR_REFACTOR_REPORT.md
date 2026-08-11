@@ -9,7 +9,7 @@ Baseline audited: `59547d8286ec2e130e9733cfddac3725b5875dbb` (`VOR_HUB.lua`, 18,
 | `VOR_HUB.lua:1-5254` | `core/settings.lua`, `core/utilities.lua`, `core/ui.lua`, `core/profiles.lua`, `core/access.lua` | Shared registry, services, cleanup, luxury UI, profiles, access gate, intro, notifications, and appearance state were rebuilt behind context contracts. |
 | MM2 adapter | `games/murder_mystery_2.lua` | Native role, combat, farm, movement, ESP, world, and server utilities. |
 | Iron Man: Reimagined adapter | `games/iron_man_reimagined.lua` | Native suit selection/actions, flight and weapon input, conditional repair/flares, aim assist, ESP, and live suit telemetry. |
-| Dog Race adapter | `games/dog_race.lua` | Native Knit training with respawn posture recovery, racing and contest give-up, dash, movement multiplier, eligible rebirth, pet loadout, rewards, cleanup, and live progression telemetry. |
+| Dog Race adapter | `games/dog_race.lua` | Native Knit training/racing, single/triple/auto egg hatching, fruit feeding, trail and bone-upgrade shops, dog/partner unlock and equip flows, dash, movement multiplier, eligible rebirth, pet loadout, rewards, cleanup, and live gate telemetry. |
 | `VOR_HUB.lua:8903-10566` | `games/mypark.lua` | Complete MyPark / Basketball builder. |
 | `VOR_HUB.lua:10568-10596` plus legacy adapter | `games/anime_expeditions.lua` | Monolith wrapper removed; the complete isolated adapter is now selected directly. |
 | `VOR_HUB.lua:10598-10625` plus legacy adapter | `games/blox_fruits_dungeons.lua` | Monolith wrapper removed; the complete isolated dungeon adapter is now selected directly. |
