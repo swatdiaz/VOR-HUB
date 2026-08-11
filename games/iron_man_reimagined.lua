@@ -215,10 +215,31 @@ return function(context)
         return nil
     end
 
+    local function isFiniteNumber(value)
+        return type(value) == "number"
+            and value == value
+            and value > -math.huge
+            and value < math.huge
+    end
+
+    local function parseFlightSpeedMultiplier(value)
+        local multiplier = tonumber(value)
+        if not isFiniteNumber(multiplier) then
+            return nil
+        end
+        return math.max(1, multiplier)
+    end
+
+    local function isFiniteVelocity(velocity)
+        return isFiniteNumber(velocity.X)
+            and isFiniteNumber(velocity.Y)
+            and isFiniteNumber(velocity.Z)
+    end
+
     local function updateFlightSpeedOverride()
         local character = LocalPlayer.Character
         local suit = getSuit(character)
-        local multiplier = math.clamp(tonumber(state.FlightSpeedMultiplier) or 1, 1, 3)
+        local multiplier = parseFlightSpeedMultiplier(state.FlightSpeedMultiplier) or 1
         if multiplier <= 1 or not suit or suit:GetAttribute("Flight") ~= true then
             clearFlightSpeedOverride()
             return
@@ -239,8 +260,15 @@ return function(context)
         if lastApplied and (currentVelocity - lastApplied).Magnitude <= 0.05 then
             nativeVelocity = state.FlightNativeVelocity or currentVelocity
         end
+        local appliedVelocity = nativeVelocity * multiplier
+        if not isFiniteVelocity(appliedVelocity) then
+            state.FlightSpeedMultiplier = 1
+            state.LastAction = "Flight multiplier overflow; reset to 1x"
+            clearFlightSpeedOverride()
+            return
+        end
         state.FlightNativeVelocity = nativeVelocity
-        state.FlightAppliedVelocity = nativeVelocity * multiplier
+        state.FlightAppliedVelocity = appliedVelocity
         velocity.VectorVelocity = state.FlightAppliedVelocity
     end
 
@@ -596,17 +624,21 @@ return function(context)
     FlightActionsSection:AddButton({Name = "Supersonic Boost", Callback = function() tapKey(Enum.KeyCode.B) end})
     FlightActionsSection:AddButton({Name = "Deploy Flares", Callback = function() tapKey(Enum.KeyCode.C) end})
     FlightActionsSection:AddButton({Name = "Dash", Callback = function() tapKey(Enum.KeyCode.LeftControl) end})
-    FlightAutomationSection:AddSlider({
+    FlightAutomationSection:AddInput({
         Name = "Flight Speed Multiplier",
-        Description = "Multiplies native suit velocity while preserving steering and supersonic boost.",
+        Description = "Type any finite multiplier. Huge values can make Roblox physics violently stupid.",
         Flag = "imr_flight_speed_multiplier",
-        Min = 1,
-        Max = 3,
-        Step = 0.1,
-        Default = 1,
-        Suffix = "x",
+        Default = "1",
+        Placeholder = "Example: 10, 100, 1000",
         Callback = function(value)
-            state.FlightSpeedMultiplier = math.clamp(tonumber(value) or 1, 1, 3)
+            local multiplier = parseFlightSpeedMultiplier(value)
+            if not multiplier then
+                state.FlightSpeedMultiplier = 1
+                clearFlightSpeedOverride()
+                notify("Flight multiplier must be a finite number; reset to 1x", COLORS.warning)
+                return
+            end
+            state.FlightSpeedMultiplier = multiplier
             if state.FlightSpeedMultiplier <= 1 then
                 clearFlightSpeedOverride()
             end
@@ -732,7 +764,7 @@ return function(context)
         targetLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.DisplayName or "None")
         local _, _, root = getCharacter()
         flightSpeedLabel.Text = string.format(
-            "Flight speed: %.0f studs/s | %.1fx",
+            "Flight speed: %.0f studs/s | %.3gx",
             root and root.AssemblyLinearVelocity.Magnitude or 0,
             state.FlightSpeedMultiplier
         )

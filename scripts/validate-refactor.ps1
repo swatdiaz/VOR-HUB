@@ -1168,7 +1168,9 @@ $ironManNativeBehavior = (
     $ironManText -match 'UserOwnsGamePassAsync' -and
     $ironManText -match 'PromptGamePassPurchase' -and
     $ironManText -match 'Flag\s*=\s*"imr_flight_speed_multiplier"' -and
-    $ironManText -match 'Max\s*=\s*3' -and
+    $ironManText -match 'FlightAutomationSection:AddInput\(\{\s*Name\s*=\s*"Flight Speed Multiplier"' -and
+    $ironManText -match 'parseFlightSpeedMultiplier' -and
+    $ironManText -match 'isFiniteVelocity' -and
     $ironManText -match 'findNativeFlightVelocity' -and
     $ironManText -match 'velocity\.VectorVelocity\s*=\s*state\.FlightAppliedVelocity' -and
     $ironManText -match 'Flag\s*=\s*"imr_auto_repair"' -and
@@ -1187,7 +1189,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, 1x-3x flight speed, repair/flares, aim assist, ESP)"
+Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"
