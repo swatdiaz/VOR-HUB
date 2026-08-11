@@ -1106,6 +1106,9 @@ $capybarasNativeBehavior = (
     $capybarasText -match 'Multi\s*=\s*true' -and
     $capybarasText -match 'Remotes\.CollectionMachine:FireServer\(\)' -and
     $capybarasText -match 'Remotes\.ClaimQuest:InvokeServer' -and
+    $capybarasText -match 'only have 5 capybaras in one lane' -and
+    $capybarasText -match 'laneLimitPopupVisible\(\)' -and
+    $capybarasText -match 'autoPlaceCapybarasToggle:Set\(false, true\)' -and
     $capybarasText -match '__VORCapybarasVsPlantsCleanup'
 )
 if (-not ($capybarasRouting -and $capybarasNativeBehavior)) {

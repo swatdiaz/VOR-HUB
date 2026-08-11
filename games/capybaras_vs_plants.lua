@@ -71,6 +71,7 @@ return function(context)
         PlantEquipDelay = 1.5,
         AutoPlaceEggs = false,
         AutoPlaceCapybaras = false,
+        CapybaraPlacementStopReason = nil,
         AutoClaimPlaytime = false,
         AutoClaimDaily = false,
         AutoClaimQuests = false,
@@ -1056,7 +1057,11 @@ return function(context)
     AutomationSection:AddToggle({Name = "Auto Place Best Plants", Flag = "cvp_auto_place_plants", Default = false, Callback = function(value) state.AutoPlacePlants = value end})
     AutomationSection:AddSlider({Name = "Equip Best Plants Delay", Description = "Delay between native Equip Best Plants button presses", Flag = "cvp_place_best_plants_delay", Min = 0.25, Max = 30, Step = 0.25, Default = 1.5, Suffix = "s", Callback = function(value) state.PlantEquipDelay = math.max(0.25, tonumber(value) or 1.5) end})
     AutomationSection:AddToggle({Name = "Auto Place Eggs", Description = "Scans purchased rows and fills the next free slot", Flag = "cvp_auto_place_eggs", Default = false, Callback = function(value) state.AutoPlaceEggs = value end})
-    AutomationSection:AddToggle({Name = "Auto Place Best Capybaras", Flag = "cvp_auto_place_capybaras", Default = false, Callback = function(value) state.AutoPlaceCapybaras = value end})
+    local autoPlaceCapybarasToggle
+    autoPlaceCapybarasToggle = AutomationSection:AddToggle({Name = "Auto Place Best Capybaras", Description = "Keeps placing until the game reports that a lane reached its 5-capybara limit", Flag = "cvp_auto_place_capybaras", Default = false, Callback = function(value)
+        state.AutoPlaceCapybaras = value
+        if value then state.CapybaraPlacementStopReason = nil end
+    end})
     AutomationSection:AddButton({Name = "Equip Best Plants", Callback = function() Automation.PlaceBestPlant() end})
     AutomationSection:AddButton({Name = "Place One Egg", Callback = function()
         task.spawn(function()
@@ -1091,6 +1096,26 @@ return function(context)
     RuntimeSection:AddLabel("UniverseId: " .. tostring(game.GameId))
     RuntimeSection:AddLabel("Game build: " .. tostring(game.PlaceVersion))
     RuntimeSection:AddLabel("Shop, boss, and shovel routes were live-audited.")
+
+    local laneLimitNeedle = "only have 5 capybaras in one lane"
+    local function guiObjectIsShown(object)
+        local current = object
+        while current and current ~= LocalPlayer.PlayerGui do
+            if current:IsA("GuiObject") and not current.Visible then return false end
+            if current:IsA("LayerCollector") and not current.Enabled then return false end
+            current = current.Parent
+        end
+        return current == LocalPlayer.PlayerGui
+    end
+    local function laneLimitPopupVisible()
+        for _, object in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+            if (object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox")) and guiObjectIsShown(object) then
+                local text = string.lower(tostring(object.Text or ""):gsub("<.->", ""))
+                if string.find(text, laneLimitNeedle, 1, true) then return true end
+            end
+        end
+        return false
+    end
 
     track(LocalPlayer.Idled:Connect(function()
         if state.Alive and state.AntiAfk then
@@ -1147,6 +1172,13 @@ return function(context)
     task.spawn(function()
         while state.Alive do
             local activity = {}
+            if state.AutoPlaceCapybaras and laneLimitPopupVisible() then
+                state.AutoPlaceCapybaras = false
+                state.CapybaraPlacementStopReason = "lane limit reached"
+                if autoPlaceCapybarasToggle then autoPlaceCapybarasToggle:Set(false, true) end
+                activity[#activity + 1] = "capybara placement stopped - lane limit reached"
+                notify("Auto Place Best Capybaras stopped: lane limit reached", COLORS.warning)
+            end
             if state.AutoHatch and not state.HatchBusy and os.clock() - state.LastHatch >= 1 then
                 state.LastHatch = os.clock()
                 task.spawn(processReadyEggs, true)
@@ -1205,7 +1237,8 @@ return function(context)
                     setLabel(bountyStatus, "Easy: " .. tostring(easy) .. " | Hard: " .. tostring(hard))
                 end
             end
-            setLabel(automationStatus, #activity > 0 and ("Automation: " .. table.concat(activity, ", ")) or "Automation: Monitoring")
+            local idleStatus = state.CapybaraPlacementStopReason and ("Automation: Capybara placement stopped - " .. state.CapybaraPlacementStopReason) or "Automation: Monitoring"
+            setLabel(automationStatus, #activity > 0 and ("Automation: " .. table.concat(activity, ", ")) or idleStatus)
             task.wait(0.25)
         end
     end)
