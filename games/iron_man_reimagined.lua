@@ -36,6 +36,16 @@ local SUIT_OPTIONS = {
     "War Machine",
 }
 
+-- Confirmed from the live Info("SuitsData") response. These are enforced by
+-- the server; the adapter reports ownership instead of pretending a remote call
+-- can bypass the purchase.
+local SUIT_GAME_PASSES = {
+    ["War Machine"] = 773087650,
+    Scavver = 773087650,
+    ["Mark 85"] = 791792311,
+    Endosym = 791792311,
+}
+
 return function(context)
     local Window = assert(context.Window, "Iron Man: Reimagined: Window is required")
     local createCategoryHomePage = assert(
@@ -61,6 +71,7 @@ return function(context)
     local RunService = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
     local VirtualInputManager = game:GetService("VirtualInputManager")
+    local MarketplaceService = game:GetService("MarketplaceService")
     local LocalPlayer = Players.LocalPlayer
 
     local Assets = ReplicatedStorage:FindFirstChild("Assets")
@@ -136,6 +147,7 @@ return function(context)
         LastAutoFlight = 0,
         CurrentTarget = nil,
         LastAction = "Ready",
+        PassOwnership = {},
     }
 
     local originalCameraShake = nativeFunctions and nativeFunctions.canCameraShake
@@ -174,6 +186,25 @@ return function(context)
         local ok, result = pcall(remote.FireServer, remote, ...)
         state.LastAction = ok and name or (name .. " failed: " .. tostring(result))
         return ok
+    end
+
+    local function ownsGamePass(passId, refresh)
+        if not passId then
+            return true, true
+        end
+        if not refresh and state.PassOwnership[passId] ~= nil then
+            return state.PassOwnership[passId], true
+        end
+        local ok, owned = pcall(
+            MarketplaceService.UserOwnsGamePassAsync,
+            MarketplaceService,
+            LocalPlayer.UserId,
+            passId
+        )
+        if ok then
+            state.PassOwnership[passId] = owned == true
+        end
+        return ok and owned == true, ok
     end
 
     local function tapKey(keyCode)
@@ -397,6 +428,25 @@ return function(context)
     AdapterStatusSection:AddLabel("PlaceId: " .. tostring(game.PlaceId))
     AdapterStatusSection:AddLabel("UniverseId: " .. tostring(game.GameId))
 
+    local suitAccessLabel = SuitSelectionSection:AddLabel("Access: checking...")
+
+    local function updateSelectedSuitAccess(refresh)
+        local passId = SUIT_GAME_PASSES[state.SelectedSuit]
+        if not passId then
+            suitAccessLabel.Text = "Access: included suit"
+            return true, nil
+        end
+        local owned, checked = ownsGamePass(passId, refresh)
+        if not checked then
+            suitAccessLabel.Text = "Access: ownership check failed | Pass " .. tostring(passId)
+            return false, passId
+        end
+        suitAccessLabel.Text = owned
+            and ("Access: owned | Pass " .. tostring(passId))
+            or ("Access: LOCKED (Robux) | Pass " .. tostring(passId))
+        return owned, passId
+    end
+
     SuitSelectionSection:AddDropdown({
         Name = "Suit Model",
         Flag = "imr_selected_suit",
@@ -404,15 +454,50 @@ return function(context)
         Default = "Mark 42",
         Callback = function(value)
             state.SelectedSuit = value or "Mark 42"
+            updateSelectedSuitAccess(false)
         end,
     })
     SuitSelectionSection:AddButton({
         Name = "Call Selected Suit",
         Callback = function()
+            local owned, passId = updateSelectedSuitAccess(true)
+            if passId and not owned then
+                state.LastAction = string.format("%s locked by pass %d", state.SelectedSuit, passId)
+                notify(
+                    string.format("%s requires Robux game pass %d", state.SelectedSuit, passId),
+                    COLORS.warning
+                )
+                return
+            end
             if fireRemote("Call", state.SelectedSuit) then
                 notify("Calling " .. state.SelectedSuit, COLORS.success)
             else
                 notify("Suit call remote is unavailable", COLORS.warning)
+            end
+        end,
+    })
+    SuitSelectionSection:AddButton({
+        Name = "Buy Selected Suit Pass",
+        Callback = function()
+            local owned, passId = updateSelectedSuitAccess(true)
+            if not passId then
+                notify(state.SelectedSuit .. " does not require a suit game pass", COLORS.success)
+                return
+            end
+            if owned then
+                notify(state.SelectedSuit .. " pass is already owned", COLORS.success)
+                return
+            end
+            local ok, result = pcall(
+                MarketplaceService.PromptGamePassPurchase,
+                MarketplaceService,
+                LocalPlayer,
+                passId
+            )
+            state.LastAction = ok and ("Opened pass " .. tostring(passId))
+                or ("Purchase prompt failed: " .. tostring(result))
+            if not ok then
+                notify(state.LastAction, COLORS.warning)
             end
         end,
     })
@@ -600,6 +685,15 @@ return function(context)
     end
 
     track(Players.PlayerRemoving:Connect(destroyEsp))
+    track(MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, purchased)
+        if player == LocalPlayer and SUIT_GAME_PASSES[state.SelectedSuit] == passId then
+            if purchased then
+                state.PassOwnership[passId] = true
+                state.LastAction = "Purchased pass " .. tostring(passId)
+            end
+            updateSelectedSuitAccess(true)
+        end
+    end))
     if gui then
         track(gui.Destroying:Connect(function()
             local cleanup = runtimeEnvironment.__VORIronManReimaginedCleanup
@@ -667,6 +761,7 @@ return function(context)
         end
     end))
 
+    updateSelectedSuitAccess(false)
     updateStatus()
     updateEsp()
     selectHomeCategory("Suit")

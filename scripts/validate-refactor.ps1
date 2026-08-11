@@ -1161,6 +1161,12 @@ $ironManNativeBehavior = (
     $ironManText -match 'fireRemote\("Flight",\s*"Flares"\)' -and
     $ironManText -match 'GetAttribute\("TargetName"\)' -and
     $ironManText -match 'VirtualInputManager:SendKeyEvent' -and
+    $ironManText -match '\["War Machine"\]\s*=\s*773087650' -and
+    $ironManText -match 'Scavver\s*=\s*773087650' -and
+    $ironManText -match '\["Mark 85"\]\s*=\s*791792311' -and
+    $ironManText -match 'Endosym\s*=\s*791792311' -and
+    $ironManText -match 'UserOwnsGamePassAsync' -and
+    $ironManText -match 'PromptGamePassPurchase' -and
     $ironManText -match 'Flag\s*=\s*"imr_auto_repair"' -and
     $ironManText -match 'Flag\s*=\s*"imr_auto_flares"' -and
     $ironManText -match 'Flag\s*=\s*"imr_aim_assist"' -and
@@ -1177,7 +1183,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Iron Man: Reimagined support: PASS (native suit actions, flight, repair/flares, aim assist, ESP)"
+Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, flight, repair/flares, aim assist, ESP)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"
