@@ -2,14 +2,25 @@
 
 GitHub-backed source for VOR Hub.
 
-## Audited immutable loader (recommended)
+## Stable loader (recommended)
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/b359ce0389d1f7ed6502fc4e0f4e9c91ff326e18/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/main/VOR_HUB.lua"))()
 ```
 
-This entrypoint and the hub release it loads are both commit-pinned. Future
-changes to `main` cannot alter what this exact command executes.
+This command stays the same across releases. `VOR_HUB.lua` follows the latest
+reviewed loader commit published by the release script, so newly supported
+games do not require users to replace their loadstring.
+
+## Current immutable loader
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/8e974cff3989091184dc430104a567e6e61cc42a/loader.lua"))()
+```
+
+Use this only when you intentionally want the current release frozen forever.
+Commit-pinned URLs are immutable and will never gain support for games added in
+later commits.
 
 The visible commit SHA is a public identifier, not a GitHub credential. It
 cannot grant push access. Only repository accounts explicitly given write or
