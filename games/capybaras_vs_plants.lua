@@ -646,44 +646,90 @@ return function(context)
             return fired, fired and "native remote fallback" or "equip best unavailable"
         end
 
-        local function freeTowerCFrame()
+        local function freeTowerCFrame(placementType)
             local plot = ownPlot()
             if not plot then return nil end
             local placed = placedItemsFolder()
-            local slots = {}
+            local lanes = {}
             local towerArea = plot:FindFirstChild("TowerArea")
             for _, lane in ipairs(towerArea and towerArea:GetChildren() or {}) do
                 local laneNumber = tonumber(lane.Name:match("Purchased(%d+)$"))
                 if laneNumber then
+                    local laneData = {Lane = laneNumber, Slots = {}, Occupied = {}, TowerCount = 0, TotalCount = 0}
                     for _, part in ipairs(lane:GetChildren()) do
                         if part:IsA("BasePart") and part.Name == "TowerAreaPart" then
-                            slots[#slots + 1] = {Lane = laneNumber, Part = part}
+                            laneData.Slots[#laneData.Slots + 1] = part
+                        end
+                    end
+                    table.sort(laneData.Slots, function(a, b) return a.Position.Z < b.Position.Z end)
+                    lanes[laneNumber] = laneData
+                end
+            end
+
+            local ownedPlaced = {}
+            for _, model in ipairs(placed and placed:GetChildren() or {}) do
+                if model:GetAttribute("Owner") == LocalPlayer.UserId and model.PrimaryPart then
+                    ownedPlaced[#ownedPlaced + 1] = model
+                    local configuration = model:FindFirstChild("ServerConfiguration")
+                    local laneNumber = tonumber(valueOf(configuration, "Lane", 0))
+                    local laneData = lanes[laneNumber]
+                    if laneData then
+                        laneData.TotalCount += 1
+                        laneData.Occupied[#laneData.Occupied + 1] = model.PrimaryPart.Position
+                        if valueOf(configuration, "Type", "") == "Tower" then
+                            laneData.TowerCount += 1
                         end
                     end
                 end
             end
-            table.sort(slots, function(a, b)
-                if a.Lane == b.Lane then return a.Part.Position.Z < b.Part.Position.Z end
-                return a.Lane < b.Lane
+
+            local orderedLanes = {}
+            for _, laneData in pairs(lanes) do
+                if #laneData.Slots > 0 and (placementType ~= "Tower" or laneData.TowerCount < 5) then
+                    orderedLanes[#orderedLanes + 1] = laneData
+                end
+            end
+            table.sort(orderedLanes, function(a, b)
+                local aCount = placementType == "Tower" and a.TowerCount or a.TotalCount
+                local bCount = placementType == "Tower" and b.TowerCount or b.TotalCount
+                if aCount == bCount then return a.Lane < b.Lane end
+                return aCount < bCount
             end)
-            for _, slot in ipairs(slots) do
-                local point = slot.Part.Position
-                local free = true
-                for _, model in ipairs(placed and placed:GetChildren() or {}) do
-                    if model:GetAttribute("Owner") == LocalPlayer.UserId and model.PrimaryPart then
-                        local delta = model.PrimaryPart.Position - point
+
+            for _, laneData in ipairs(orderedLanes) do
+                local centerZ = 0
+                for _, part in ipairs(laneData.Slots) do centerZ += part.Position.Z end
+                centerZ /= math.max(1, #laneData.Slots)
+                local bestPart, bestScore
+                for _, part in ipairs(laneData.Slots) do
+                    local free = true
+                    for _, model in ipairs(ownedPlaced) do
+                        local delta = model.PrimaryPart.Position - part.Position
                         if Vector3.new(delta.X, 0, delta.Z).Magnitude < 4.5 then
                             free = false
                             break
                         end
                     end
+                    if free then
+                        local score = -math.abs(part.Position.Z - centerZ)
+                        if #laneData.Occupied > 0 then
+                            score = math.huge
+                            for _, occupiedPosition in ipairs(laneData.Occupied) do
+                                local delta = occupiedPosition - part.Position
+                                score = math.min(score, Vector3.new(delta.X, 0, delta.Z).Magnitude)
+                            end
+                        end
+                        if not bestScore or score > bestScore then
+                            bestPart, bestScore = part, score
+                        end
+                    end
                 end
-                if free then return slot.Part.CFrame, slot.Lane end
+                if bestPart then return bestPart.CFrame, laneData.Lane end
             end
         end
 
-        local function placeToolInFreeRow(tool)
-            local placement, lane = freeTowerCFrame()
+        local function placeToolInFreeRow(tool, placementType)
+            local placement, lane = freeTowerCFrame(placementType)
             if not tool then return false, "placement tool missing" end
             if not placement then return false, "no free placement" end
             if not equip(tool) then return false, "equip failed" end
@@ -718,7 +764,7 @@ return function(context)
         end
 
         local function placeBestCapybara()
-            return placeToolInFreeRow(bestTool("isTower"))
+            return placeToolInFreeRow(bestTool("isTower"), "Tower")
         end
 
         local function findEggTool()
@@ -737,7 +783,7 @@ return function(context)
         local function placeEgg()
             local tool = findEggTool()
             if not tool then return false, "no egg tool" end
-            return placeToolInFreeRow(tool)
+            return placeToolInFreeRow(tool, "Egg")
         end
 
         local function pickupAllCapybaras()
