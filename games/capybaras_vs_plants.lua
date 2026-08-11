@@ -67,6 +67,7 @@ return function(context)
         AutoHatch = false,
         AutoCollectMoney = false,
         AutoPlacePlants = false,
+        PlantEquipDelay = 1.5,
         AutoPlaceCapybaras = false,
         AutoClaimPlaytime = false,
         AutoClaimDaily = false,
@@ -620,35 +621,19 @@ return function(context)
             return tool and tool.Parent == LocalPlayer.Character
         end
 
-        local function occupiedPots()
-            local occupied = {}
-            local world = workspace:FindFirstChild("World")
-            local map = world and world:FindFirstChild("Map")
-            local potted = map and map:FindFirstChild("PottedPlants")
-            local server = potted and potted:FindFirstChild("Server")
-            for _, model in ipairs(server and server:GetChildren() or {}) do
-                local config = model:FindFirstChild("ServerConfiguration")
-                local pot = config and config:FindFirstChild("PotNumber")
-                if model:GetAttribute("Owner") == LocalPlayer.UserId and pot and tonumber(pot.Value) > 0 then
-                    occupied[tonumber(pot.Value)] = true
-                end
-            end
-            return occupied
-        end
-
         local function placeBestPlant()
-            local occupied = occupiedPots()
-            local empty
-            for pot = 1, 3 do
-                if not occupied[pot] then empty = pot break end
+            local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            local backpackGui = playerGui and playerGui:FindFirstChild("BackpackGui")
+            local backpackFrame = backpackGui and backpackGui:FindFirstChild("Backpack")
+            local inventory = backpackFrame and backpackFrame:FindFirstChild("Inventory")
+            local equipBest = inventory and inventory:FindFirstChild("EquipBestButton")
+            local button = equipBest and equipBest:FindFirstChild("Button")
+            if button and button:IsA("GuiButton") and type(firesignal) == "function" then
+                local clicked = pcall(function() firesignal(button.Activated) end)
+                if clicked then return true, "native button" end
             end
-            if not empty then return false, "all pots filled" end
-            pcall(function() Remotes.EquipBestPlants:FireServer() end)
-            task.wait(0.15)
-            local tool = bestTool("isPlant")
-            if not tool or not equip(tool) then return false, "no plant tool" end
-            Remotes.PotInteract:FireServer(empty)
-            return true, "pot " .. empty
+            local fired = pcall(function() Remotes.EquipBestPlants:FireServer() end)
+            return fired, fired and "native remote fallback" or "equip best unavailable"
         end
 
         local function freeTowerCFrame()
@@ -959,8 +944,9 @@ return function(context)
     AutomationSection:AddToggle({Name = "Auto Hatch Ready Eggs", Flag = "cvp_auto_hatch", Default = false, Callback = function(value) state.AutoHatch = value end})
     AutomationSection:AddToggle({Name = "Auto Claim Plant Money", Flag = "cvp_auto_collect_money", Default = false, Callback = function(value) state.AutoCollectMoney = value end})
     AutomationSection:AddToggle({Name = "Auto Place Best Plants", Flag = "cvp_auto_place_plants", Default = false, Callback = function(value) state.AutoPlacePlants = value end})
+    AutomationSection:AddSlider({Name = "Equip Best Plants Delay", Description = "Delay between native Equip Best Plants button presses", Flag = "cvp_place_best_plants_delay", Min = 0.25, Max = 30, Step = 0.25, Default = 1.5, Suffix = "s", Callback = function(value) state.PlantEquipDelay = math.max(0.25, tonumber(value) or 1.5) end})
     AutomationSection:AddToggle({Name = "Auto Place Best Capybaras", Flag = "cvp_auto_place_capybaras", Default = false, Callback = function(value) state.AutoPlaceCapybaras = value end})
-    AutomationSection:AddButton({Name = "Equip Best Plants", Callback = function() Remotes.EquipBestPlants:FireServer() end})
+    AutomationSection:AddButton({Name = "Equip Best Plants", Callback = function() Automation.PlaceBestPlant() end})
     AutomationSection:AddButton({Name = "Hatch Ready Eggs Now", Callback = function()
         task.spawn(function()
             local count = processReadyEggs(false)
@@ -1048,10 +1034,10 @@ return function(context)
                 Remotes.CollectionMachine:FireServer()
                 activity[#activity + 1] = "claimed money"
             end
-            if state.AutoPlacePlants and os.clock() - state.LastPlacePlant >= 1.5 then
+            if state.AutoPlacePlants and os.clock() - state.LastPlacePlant >= state.PlantEquipDelay then
                 state.LastPlacePlant = os.clock()
                 local ok = Automation.PlaceBestPlant()
-                if ok then activity[#activity + 1] = "placed plant" end
+                if ok then activity[#activity + 1] = "pressed Equip Best Plants" end
             end
             if state.AutoPlaceCapybaras and os.clock() - state.LastPlaceCapybara >= 1.25 then
                 state.LastPlaceCapybara = os.clock()
