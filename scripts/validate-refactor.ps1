@@ -1213,10 +1213,28 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_train"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_race"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_hatch"' -and
+    $dogRaceText -match 'Auto hatch waiting:' -and
+    $dogRaceText -match 'DogRaceAutoHatchWaiting' -and
+    $dogRaceText -notmatch 'hatchSelected\(state\.HatchCount,\s*false\)\s*then\s*\r?\n\s*state\.AutoHatch\s*=\s*false' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_selected_fruit"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_selected_trail"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_selected_dog"' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_selected_partner"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_full_progression"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_hybrid_progress"' -and
+    $dogRaceText -match 'updateHybrid' -and
+    $dogRaceText -match 'fightService\.EndContest:Connect' -and
+    $dogRaceText -match 'OnlineRewardService.*ClaimOnlineReward' -and
+    $dogRaceText -match 'OnlineQuestGui' -and
+    $dogRaceText -match 'claimButton\.MouseButton1Click' -and
+    $dogRaceText -match '(?s)AchievementService.*?ClaimAchievementEvent' -and
+    $dogRaceText -match 'QuestService.*ClaimQuestReward' -and
+    $dogRaceText -match 'ItemCrateService.*BuyCrateWithDiamonds' -and
+    $dogRaceText -match '(?s)ItemService.*?EquipItem' -and
+    $dogRaceText -match '(?s)ItemService.*?MergeItems' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_free_egg"' -and
+    $dogRaceText -match 'DogRaceFullProgression' -and
+    $dogRaceText -match 'DogRaceHybridPhase' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_speed_multiplier"' -and
     $dogRaceText -match 'clearSpeedOverride\(\)'
 )
@@ -1232,7 +1250,7 @@ Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/kn
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
-Write-Host "Dog Race support: PASS (native race/train, eggs, fruit/trail/upgrade shops, dog/partner unlocks, movement, rewards, cleanup)"
+Write-Host "Dog Race support: PASS (full progression, race/train hybrid, persistent eggs, timed gifts/free egg, achievements/tasks, shops, gear, unlocks, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"

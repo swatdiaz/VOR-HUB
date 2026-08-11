@@ -39,6 +39,10 @@ return function(context)
     local PetsDataHelper
     local PurchaseDataHelper
     local UpgradesDataHelper
+    local AchievementsDataHelper
+    local QuestsDataHelper
+    local CratesDataHelper
+    local ItemsDataHelper
     local GameDataUtil
     local EggsData = {}
     local FruitsData = {}
@@ -46,6 +50,7 @@ return function(context)
     local HorsesData = {}
     local PrincessesData = {}
     local UpgradesData = {}
+    local CratesData = {}
     pcall(function()
         Knit = require(ReplicatedStorage.Packages.Knit)
         Constants = require(ReplicatedStorage.Modules.Constants)
@@ -55,12 +60,17 @@ return function(context)
         PetsDataHelper = require(ReplicatedFirst.DataHelper.PetsDataHelper)
         PurchaseDataHelper = require(ReplicatedFirst.DataHelper.PurchaseDataHelper)
         UpgradesDataHelper = require(ReplicatedFirst.DataHelper.UpgradesDataHelper)
+        AchievementsDataHelper = require(ReplicatedFirst.DataHelper.AchievementsDataHelper)
+        QuestsDataHelper = require(ReplicatedFirst.DataHelper.QuestsDataHelper)
+        CratesDataHelper = require(ReplicatedFirst.DataHelper.CratesDataHelper)
+        ItemsDataHelper = require(ReplicatedFirst.DataHelper.ItemsDataHelper)
         EggsData = require(ReplicatedFirst.Data.EggsData)
         FruitsData = require(ReplicatedFirst.Data.FruitsData)
         TrailsData = require(ReplicatedFirst.Data.TrailsData)
         HorsesData = require(ReplicatedFirst.Data.HorsesData)
         PrincessesData = require(ReplicatedFirst.Data.PrincessesData)
         UpgradesData = require(ReplicatedFirst.Data.UpgradesData)
+        CratesData = require(ReplicatedFirst.Data.CratesData)
     end)
 
     local function getController(name)
@@ -87,16 +97,18 @@ return function(context)
     local DashController = getController("DashController")
     local ChestController = getController("ChestController")
     local EggHatchGuiController = getController("EggHatchGuiController")
+    local OnlineRewardGuiController = getController("OnlineRewardGuiController")
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local RacePage = addHomeCategory("Race", 1, CATEGORY_DECALS.Combat or CATEGORY_DECALS.Movement)
     local TrainingPage = addHomeCategory("Training", 2, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
     local ProgressionPage = addHomeCategory("Progression", 3, CATEGORY_DECALS.Progress)
-    local EggsPage = addHomeCategory("Eggs", 4, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local ShopsPage = addHomeCategory("Shops", 5, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local UnlocksPage = addHomeCategory("Unlocks", 6, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
-    local MovementPage = addHomeCategory("Movement", 7, CATEGORY_DECALS.Movement or CATEGORY_DECALS.Player)
-    local StatusPage = addHomeCategory("Status", 8, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
+    local AutomationPage = addHomeCategory("Full Auto", 4, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local EggsPage = addHomeCategory("Eggs", 5, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local ShopsPage = addHomeCategory("Shops", 6, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local UnlocksPage = addHomeCategory("Unlocks", 7, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
+    local MovementPage = addHomeCategory("Movement", 8, CATEGORY_DECALS.Movement or CATEGORY_DECALS.Player)
+    local StatusPage = addHomeCategory("Status", 9, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
 
     local RaceSection = RacePage:AddSection("Native Race", "Left")
     local RaceUtilitySection = RacePage:AddSection("Race Utility", "Right")
@@ -104,11 +116,15 @@ return function(context)
     local TrainingStatusSection = TrainingPage:AddSection("Training Status", "Right")
     local RebirthSection = ProgressionPage:AddSection("Rebirth", "Left")
     local RewardsSection = ProgressionPage:AddSection("Pets & Rewards", "Right")
+    local FullAutoSection = AutomationPage:AddSection("One-Click Progression", "Left")
+    local ClaimAutoSection = AutomationPage:AddSection("Claims & Tasks", "Right")
+    local HybridSection = AutomationPage:AddSection("Race + Power Hybrid", "Left")
     local EggHatchSection = EggsPage:AddSection("Native Egg Hatch", "Left")
     local EggStatusSection = EggsPage:AddSection("Egg Access", "Right")
     local FruitSection = ShopsPage:AddSection("Fruit Shop", "Left")
     local TrailSection = ShopsPage:AddSection("Trail Shop", "Right")
     local UpgradeSection = ShopsPage:AddSection("Bone Upgrades", "Left")
+    local GearSection = ShopsPage:AddSection("Gear Crates", "Right")
     local DogSection = UnlocksPage:AddSection("Dogs", "Left")
     local PartnerSection = UnlocksPage:AddSection("Partners", "Right")
     local MovementSection = MovementPage:AddSection("Movement", "Left")
@@ -126,6 +142,27 @@ return function(context)
         AutoRebirth = false,
         AutoEquipBest = false,
         AutoDailyChest = false,
+        FullProgression = false,
+        HybridMode = false,
+        HybridPhase = "Idle",
+        HybridPhaseStarted = 0,
+        HybridSawFight = false,
+        HybridRaceEnded = false,
+        HybridTrainSeconds = 30,
+        AutoOnlineRewards = false,
+        AutoFreeEgg = false,
+        AutoAchievements = false,
+        AutoTasks = false,
+        AutoFruit = false,
+        AutoTrail = false,
+        AutoUpgrade = false,
+        AutoDog = false,
+        AutoPartner = false,
+        AutoGearCrate = false,
+        AutoEquipGear = false,
+        AutoMergeGear = false,
+        SelectedCrate = "Crate_1",
+        GearBoneReserve = 5,
         AutoHatch = false,
         HatchCount = 1,
         SelectedEgg = "Egg_1_1",
@@ -136,6 +173,9 @@ return function(context)
         SelectedPartner = "Partner_1",
         LastHatch = 0,
         LastFruit = 0,
+        LastClaimSweep = 0,
+        LastShopSweep = 0,
+        LastGearSweep = 0,
         LastDash = 0,
         LastTrainRetry = 0,
         LastRaceRetry = 0,
@@ -306,6 +346,108 @@ return function(context)
         end
         state.LastAction = "Auto racing in " .. tostring(area)
         return true
+    end
+
+    local function startHybridTraining()
+        if isFighting() then
+            return false
+        end
+        if getData() and getData().AutoFight then
+            stopAutoRace()
+        end
+        local started = hasTrainingPosture() or startAutoTrain()
+        state.AutoTrain = false
+        if started then
+            state.HybridPhase = "Training"
+            state.HybridPhaseStarted = os.clock()
+            state.HybridSawFight = false
+            state.HybridRaceEnded = false
+            state.LastAction = "Hybrid: earning treadmill power"
+        end
+        return started
+    end
+
+    local function startHybridRace()
+        if isTraining() then
+            stopAutoTrain()
+        end
+        local started = startAutoRace()
+        state.AutoRace = false
+        if started then
+            state.HybridPhase = "Racing"
+            state.HybridPhaseStarted = os.clock()
+            state.HybridSawFight = isFighting()
+            state.HybridRaceEnded = false
+            state.LastAction = "Hybrid: entering the next race"
+        end
+        return started
+    end
+
+    local function stopHybrid()
+        state.HybridMode = false
+        state.HybridPhase = "Idle"
+        state.HybridSawFight = false
+        state.HybridRaceEnded = false
+        local data = getData()
+        if data and data.AutoFight then
+            stopAutoRace()
+        end
+        if isTraining() or (data and data.AutoTrain) then
+            stopAutoTrain()
+        end
+        state.LastAction = "Race + power hybrid stopped"
+    end
+
+    local function updateHybrid(now)
+        if not state.HybridMode then
+            return
+        end
+        if state.HybridPhase == "Idle" then
+            startHybridTraining()
+            return
+        end
+        if state.HybridPhase == "Training" then
+            if isFighting() then
+                state.HybridPhase = "Racing"
+                state.HybridPhaseStarted = now
+                state.HybridSawFight = true
+                return
+            end
+            if not hasTrainingPosture() and now - state.LastTrainRetry >= 3 then
+                state.LastTrainRetry = now
+                startHybridTraining()
+                return
+            end
+            if now - state.HybridPhaseStarted >= state.HybridTrainSeconds then
+                startHybridRace()
+            end
+            return
+        end
+        if state.HybridPhase == "Racing" then
+            if state.HybridRaceEnded then
+                stopAutoRace()
+                startHybridTraining()
+            elseif isFighting() then
+                state.HybridSawFight = true
+            elseif state.HybridSawFight then
+                stopAutoRace()
+                startHybridTraining()
+            elseif now - state.HybridPhaseStarted >= 120 then
+                stopAutoRace()
+                state.LastAction = "Hybrid race timed out; returning to power"
+                startHybridTraining()
+            end
+        end
+    end
+
+    local fightService = getService("FightService")
+    if fightService and fightService.EndContest and type(fightService.EndContest.Connect) == "function" then
+        track(fightService.EndContest:Connect(function()
+            if state.HybridMode and state.HybridPhase == "Racing" then
+                state.HybridRaceEnded = true
+                state.LastAction = "Hybrid: contest finished; returning to power"
+            end
+        end))
     end
 
     local function giveUpContest()
@@ -565,6 +707,10 @@ return function(context)
     local partnerChoices, partnerChoiceIds = buildChoices(PrincessesData, function(id, config)
         return string.format("%s [%s] — %s %s", tostring(config.DisplayName), id,
             compactNumber(config.UnlockValue), tostring(config.UnlockType))
+    end)
+    local crateChoices, crateChoiceIds = buildChoices(CratesData, function(id, config)
+        return string.format("%s [%s] — %s %s", tostring(config.Name or config.DisplayName or id), id,
+            compactNumber(config.Price), tostring(config.Currency or "Bones"))
     end)
 
     local function choiceForId(values, ids, targetId)
@@ -1079,6 +1225,235 @@ return function(context)
         return ok
     end
 
+    local function claimAvailableOnlineRewards()
+        local data = getData()
+        local times = Constants and Constants.ONLINE_REWARDS_TIME
+        local startTime = OnlineRewardGuiController and tonumber(OnlineRewardGuiController._OnlineStartTime)
+        if not data or type(times) ~= "table" or not startTime then
+            state.LastAction = "Online reward timer is not ready"
+            return 0
+        end
+        local elapsed = os.time() - startTime
+        local claimed = data.OnlineRewardsClaimLog or {}
+        local count = 0
+        for index, unlockTime in ipairs(times) do
+            if elapsed >= (tonumber(unlockTime) or math.huge) and claimed[index] ~= true then
+                local ok = fireServiceRemote("OnlineRewardService", "ClaimOnlineReward", index)
+                if ok then
+                    count = count + 1
+                end
+            end
+        end
+        state.LastAction = count > 0 and string.format("Claimed %d online gift(s)", count)
+            or "Online gifts: waiting for the next timer"
+        return count
+    end
+
+    local function claimFreeOnlineEgg()
+        local data = getData()
+        if not data or data.OnlineQuestTaskDown ~= true then
+            state.LastAction = "Free online egg: waiting for the timer"
+            return false
+        end
+        local onlineQuestGui = LocalPlayer:FindFirstChild("PlayerGui")
+            and LocalPlayer.PlayerGui:FindFirstChild("OnlineQuestGui")
+        local claimButton = onlineQuestGui and onlineQuestGui:FindFirstChild("ClaimButton", true)
+        if claimButton and claimButton:IsA("GuiButton") and type(firesignal) == "function" then
+            local ok, result = pcall(firesignal, claimButton.MouseButton1Click)
+            state.LastAction = ok and "Claimed the timed free pet egg through the native reward flow"
+                or ("Free online egg button failed: " .. tostring(result))
+            return ok
+        end
+        state.LastAction = "Native free egg claim signal unavailable"
+        return false
+    end
+
+    local function claimAvailableAchievements()
+        local data = getData()
+        if not data or not AchievementsDataHelper then
+            state.LastAction = "Achievement data unavailable"
+            return 0
+        end
+        local okTypes, achievementTypes = pcall(AchievementsDataHelper.GetChievementTypes)
+        if not okTypes or type(achievementTypes) ~= "table" then
+            state.LastAction = "Achievement types unavailable"
+            return 0
+        end
+        local count = 0
+        for _, achievementType in ipairs(achievementTypes) do
+            local rank = tonumber(data.AchievementRanks and data.AchievementRanks[achievementType]) or 0
+            local okMax, maxRank = pcall(AchievementsDataHelper.GetAchievementMaxRank, achievementType)
+            if okMax and rank < (tonumber(maxRank) or 0) then
+                local okId, achievementId = pcall(
+                    AchievementsDataHelper.GetAchievementIdByRank,
+                    achievementType,
+                    rank + 1
+                )
+                local okProgress, progress = pcall(
+                    AchievementsDataHelper.GetProgressValueByType,
+                    data,
+                    achievementType
+                )
+                local okRequirement, requirement = false, nil
+                if achievementId then
+                    okRequirement, requirement = pcall(
+                        AchievementsDataHelper.GetRequirementValue,
+                        achievementId
+                    )
+                end
+                if okId and okProgress and okRequirement
+                    and (tonumber(progress) or 0) >= (tonumber(requirement) or math.huge) then
+                    local fired = fireServiceRemote(
+                        "AchievementService",
+                        "ClaimAchievementEvent",
+                        achievementId
+                    )
+                    if fired then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+        state.LastAction = count > 0 and string.format("Claimed %d achievement(s)", count)
+            or "Achievements: nothing claimable yet"
+        return count
+    end
+
+    local function claimAvailableTasks()
+        local data = getData()
+        if not data or not QuestsDataHelper then
+            state.LastAction = "Task data unavailable"
+            return 0
+        end
+        local count = 0
+        for _, questType in ipairs({"Defeat", "Distance", "Strength"}) do
+            local okId, questId = pcall(QuestsDataHelper.GetFirstUnclaimedQuestId, data, questType)
+            if okId and questId then
+                local okTarget, target = pcall(QuestsDataHelper.GetTarget, questId)
+                local progress = tonumber(data.QuestProgress and data.QuestProgress[questType]) or 0
+                if okTarget and progress >= (tonumber(target) or math.huge) then
+                    local fired = fireServiceRemote("QuestService", "ClaimQuestReward", questType)
+                    if fired then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+        state.LastAction = count > 0 and string.format("Claimed %d task reward(s)", count)
+            or "Tasks: progressing toward the next reward"
+        return count
+    end
+
+    local function crateAccess()
+        local data = getData()
+        local crateId = state.SelectedCrate
+        if not data or not CratesDataHelper or not CratesData[crateId] then
+            return false, "Crate data unavailable"
+        end
+        local okRobux, isRobux = pcall(CratesDataHelper.IsRobuxCrate, crateId)
+        local okPrice, price = pcall(CratesDataHelper.GetPrice, crateId)
+        local okArea, locatedArea = pcall(CratesDataHelper.GetLocatedArea, crateId)
+        if okRobux and isRobux then
+            return false, string.format("Robux crate: %s R$ (manual prompt only)", compactNumber(price))
+        end
+        if okArea and locatedArea and locatedArea ~= "All"
+            and data.Areas and data.Areas[locatedArea] == false then
+            return false, "Locked area: " .. tostring(locatedArea)
+        end
+        local bones = tonumber(data.Diamonds) or 0
+        price = okPrice and tonumber(price) or math.huge
+        if bones < price + state.GearBoneReserve then
+            return false, string.format("Need %s bones plus %s reserve; have %s",
+                compactNumber(price), compactNumber(state.GearBoneReserve), compactNumber(bones))
+        end
+        return true, string.format("Ready: %s bones (%s reserved)",
+            compactNumber(price), compactNumber(state.GearBoneReserve))
+    end
+
+    local function buySelectedCrate(promptRobux)
+        local crateId = state.SelectedCrate
+        if CratesDataHelper then
+            local okRobux, isRobux = pcall(CratesDataHelper.IsRobuxCrate, crateId)
+            if okRobux and isRobux then
+                return promptRobux and promptProduct(crateId) or false
+            end
+        end
+        local allowed, reason = crateAccess()
+        if not allowed then
+            state.LastAction = reason
+            return false
+        end
+        local ok, result = fireServiceRemote("ItemCrateService", "BuyCrateWithDiamonds", crateId, 1)
+        state.LastAction = ok and ("Bought gear crate: " .. crateId)
+            or ("Gear crate failed: " .. tostring(result))
+        return ok
+    end
+
+    local function equipBestGear()
+        local data = getData()
+        if not data or not ItemsDataHelper then
+            state.LastAction = "Gear data unavailable"
+            return false
+        end
+        local best
+        for _, stack in pairs(data.Items or {}) do
+            if (tonumber(stack.Num) or 0) > 0 and (not best
+                or (tonumber(stack.RarityIndex) or 0) > (tonumber(best.RarityIndex) or 0)) then
+                best = stack
+            end
+        end
+        if not best then
+            state.LastAction = "No unequipped dog gear"
+            return false
+        end
+        local okSlot, emptySlot = pcall(ItemsDataHelper.GetFirstEmptySlotIndex, data)
+        if okSlot and emptySlot then
+            local ok, result = fireServiceRemote(
+                "ItemService",
+                "EquipItem",
+                best.ItemId,
+                best.RarityIndex
+            )
+            state.LastAction = ok and string.format("Equipped %s rarity %s", best.ItemId, best.RarityIndex)
+                or ("Gear equip failed: " .. tostring(result))
+            return ok
+        end
+        local weakestSlot, weakest
+        for slot, item in pairs(data.EquippedItems or {}) do
+            if not weakest or (tonumber(item.RarityIndex) or 0) < (tonumber(weakest.RarityIndex) or 0) then
+                weakestSlot, weakest = slot, item
+            end
+        end
+        if weakest and (tonumber(best.RarityIndex) or 0) > (tonumber(weakest.RarityIndex) or 0) then
+            local ok, result = fireServiceRemote("ItemService", "UnequipItem", tonumber(weakestSlot))
+            state.LastAction = ok and "Unequipped weakest gear for an upgrade"
+                or ("Gear unequip failed: " .. tostring(result))
+            return ok
+        end
+        state.LastAction = "Best dog gear is already equipped"
+        return false
+    end
+
+    local function mergeAvailableGear()
+        local data = getData()
+        local amount = tonumber(Constants and Constants.ITEMS_MERGE_AMOUNT) or 3
+        if not data then
+            return 0
+        end
+        local count = 0
+        for _, stack in pairs(data.Items or {}) do
+            if (tonumber(stack.Num) or 0) >= amount then
+                local ok = fireServiceRemote("ItemService", "MergeItems", stack.ItemId, stack.RarityIndex)
+                if ok then
+                    count = count + 1
+                end
+            end
+        end
+        state.LastAction = count > 0 and string.format("Merged %d gear stack(s)", count)
+            or string.format("Gear merge: waiting for %d matching pieces", amount)
+        return count
+    end
+
     local raceModeLabel = RaceUtilitySection:AddLabel("Race mode: scanning...")
     local treadmillLabel = TrainingStatusSection:AddLabel("Treadmill: scanning...")
     local strengthLabel = PlayerStatusSection:AddLabel("Power: --")
@@ -1097,6 +1472,11 @@ return function(context)
     local upgradeAccessLabel = UpgradeSection:AddLabel("Upgrade: scanning...")
     local dogAccessLabel = DogSection:AddLabel("Dog: scanning...")
     local partnerAccessLabel = PartnerSection:AddLabel("Partner: scanning...")
+    local crateAccessLabel = GearSection:AddLabel("Gear crate: scanning...")
+    local gearInventoryLabel = GearSection:AddLabel("Dog gear: scanning...")
+    local fullAutoLabel = FullAutoSection:AddLabel("Full progression: OFF")
+    local hybridLabel = HybridSection:AddLabel("Hybrid: idle")
+    local claimsLabel = ClaimAutoSection:AddLabel("Claims: scanning...")
     local actionLabel = AdapterStatusSection:AddLabel("Last action: Ready")
     local servicesLabel = AdapterStatusSection:AddLabel("Native controllers: scanning...")
     AdapterStatusSection:AddLabel("UniverseId: " .. tostring(game.GameId))
@@ -1107,6 +1487,7 @@ return function(context)
     local autoDashControl
     local autoHatchControl
     local speedInputControl
+    local automationControls = {}
 
     autoRaceControl = RaceSection:AddToggle({
         Name = "Auto Race",
@@ -1115,6 +1496,9 @@ return function(context)
         Default = false,
         Callback = function(enabled)
             if enabled then
+                if state.HybridMode and automationControls.Hybrid then
+                    automationControls.Hybrid:Set(false)
+                end
                 if state.AutoTrain and autoTrainControl then
                     autoTrainControl:Set(false)
                 end
@@ -1142,6 +1526,9 @@ return function(context)
         Default = false,
         Callback = function(enabled)
             if enabled then
+                if state.HybridMode and automationControls.Hybrid then
+                    automationControls.Hybrid:Set(false)
+                end
                 if state.AutoRace and autoRaceControl then
                     autoRaceControl:Set(false)
                 end
@@ -1161,7 +1548,7 @@ return function(context)
     })
     TrainingSection:AddButton({Name = "Stop Training", Callback = function() autoTrainControl:Set(false) end})
 
-    RebirthSection:AddToggle({
+    automationControls.Rebirth = RebirthSection:AddToggle({
         Name = "Auto Rebirth",
         Description = "Requests rebirth only after replicated power reaches the exact next native cost.",
         Flag = "dograce_auto_rebirth",
@@ -1179,7 +1566,7 @@ return function(context)
         end,
     })
 
-    RewardsSection:AddToggle({
+    automationControls.EquipBest = RewardsSection:AddToggle({
         Name = "Auto Equip Best Pets",
         Flag = "dograce_auto_equip_best",
         Default = false,
@@ -1191,7 +1578,7 @@ return function(context)
         end,
     })
     RewardsSection:AddButton({Name = "Equip Best Pets", Callback = equipBestPets})
-    RewardsSection:AddToggle({
+    automationControls.DailyChest = RewardsSection:AddToggle({
         Name = "Auto Daily Chest",
         Description = "Claims only when the replicated native cooldown has expired.",
         Flag = "dograce_auto_daily_chest",
@@ -1203,6 +1590,115 @@ return function(context)
     RewardsSection:AddButton({Name = "Claim Daily Chest", Callback = claimDailyChest})
     RewardsSection:AddButton({Name = "Claim Offline Wins", Callback = claimOfflineWins})
 
+    automationControls.Hybrid = HybridSection:AddToggle({
+        Name = "Auto Race + Treadmill Power",
+        Description = "Trains between contests, races natively, then returns to the treadmill immediately. The server rejects power ticks during an active contest.",
+        Flag = "dograce_hybrid_progress",
+        Default = false,
+        Callback = function(enabled)
+            if enabled then
+                if state.AutoRace and autoRaceControl then
+                    autoRaceControl:Set(false)
+                end
+                if state.AutoTrain and autoTrainControl then
+                    autoTrainControl:Set(false)
+                end
+                state.HybridMode = true
+                state.HybridPhase = "Idle"
+                state.HybridPhaseStarted = os.clock()
+                updateHybrid(os.clock())
+            else
+                stopHybrid()
+            end
+        end,
+    })
+    HybridSection:AddSlider({
+        Name = "Power Time Between Races",
+        Flag = "dograce_hybrid_train_seconds",
+        Min = 10,
+        Max = 120,
+        Step = 5,
+        Default = 30,
+        Suffix = "s",
+        Callback = function(value)
+            state.HybridTrainSeconds = math.clamp(tonumber(value) or 30, 10, 120)
+        end,
+    })
+    HybridSection:AddButton({Name = "Stop Hybrid", Callback = function() automationControls.Hybrid:Set(false) end})
+
+    automationControls.OnlineRewards = ClaimAutoSection:AddToggle({
+        Name = "Auto Online Gifts",
+        Description = "Claims every matured online gift and waits for the next timer.",
+        Flag = "dograce_auto_online_rewards",
+        Default = false,
+        Callback = function(enabled) state.AutoOnlineRewards = enabled == true end,
+    })
+    automationControls.FreeEgg = ClaimAutoSection:AddToggle({
+        Name = "Auto Free Egg",
+        Description = "Claims the timed free pet egg (including the Ghost Egg pool) whenever its online timer finishes.",
+        Flag = "dograce_auto_free_egg",
+        Default = false,
+        Callback = function(enabled) state.AutoFreeEgg = enabled == true end,
+    })
+    automationControls.Achievements = ClaimAutoSection:AddToggle({
+        Name = "Auto Achievements",
+        Flag = "dograce_auto_achievements",
+        Default = false,
+        Callback = function(enabled) state.AutoAchievements = enabled == true end,
+    })
+    automationControls.Tasks = ClaimAutoSection:AddToggle({
+        Name = "Auto Tasks",
+        Flag = "dograce_auto_tasks",
+        Default = false,
+        Callback = function(enabled) state.AutoTasks = enabled == true end,
+    })
+    ClaimAutoSection:AddButton({Name = "Claim Online Gifts Now", Callback = claimAvailableOnlineRewards})
+    ClaimAutoSection:AddButton({Name = "Claim Free Egg Now", Callback = claimFreeOnlineEgg})
+    ClaimAutoSection:AddButton({Name = "Claim Achievements Now", Callback = claimAvailableAchievements})
+    ClaimAutoSection:AddButton({Name = "Claim Task Rewards Now", Callback = claimAvailableTasks})
+
+    automationControls.Full = FullAutoSection:AddToggle({
+        Name = "FULL PROGRESSION",
+        Description = "One switch: power/race cycle, eggs, rewards, tasks, shops, unlocks, pets, gear, chest, and rebirth.",
+        Flag = "dograce_full_progression",
+        Default = false,
+        Callback = function(enabled)
+            state.FullProgression = enabled == true
+            local controls = {
+                automationControls.Hybrid,
+                autoHatchControl,
+                automationControls.Rebirth,
+                automationControls.EquipBest,
+                automationControls.DailyChest,
+                automationControls.OnlineRewards,
+                automationControls.FreeEgg,
+                automationControls.Achievements,
+                automationControls.Tasks,
+                automationControls.Fruit,
+                automationControls.Trail,
+                automationControls.Upgrade,
+                automationControls.Dog,
+                automationControls.Partner,
+                automationControls.GearCrate,
+                automationControls.EquipGear,
+                automationControls.MergeGear,
+            }
+            for _, control in ipairs(controls) do
+                if control then
+                    control:Set(enabled == true)
+                end
+            end
+            state.LastAction = enabled and "Full progression armed; locked systems will wait"
+                or "Full progression stopped"
+        end,
+    })
+    FullAutoSection:AddButton({Name = "STOP EVERYTHING", Callback = function()
+        automationControls.Full:Set(false)
+        if autoRaceControl then autoRaceControl:Set(false) end
+        if autoTrainControl then autoTrainControl:Set(false) end
+        if autoDashControl then autoDashControl:Set(false) end
+    end})
+
     EggHatchSection:AddDropdown({
         Name = "Egg",
         Description = "Every live native egg, including event and Robux eggs.",
@@ -1211,8 +1707,9 @@ return function(context)
         Default = choiceForId(eggChoices, eggChoiceIds, state.SelectedEgg),
         Callback = function(value)
             state.SelectedEgg = eggChoiceIds[value] or state.SelectedEgg
-            if state.AutoHatch and autoHatchControl then
-                autoHatchControl:Set(false)
+            if state.AutoHatch then
+                state.LastHatch = 0
+                state.LastAction = "Auto hatch retargeted to " .. state.SelectedEgg
             end
         end,
     })
@@ -1223,8 +1720,9 @@ return function(context)
         Default = "One",
         Callback = function(value)
             state.HatchCount = value == "Three" and 3 or 1
-            if state.AutoHatch and autoHatchControl then
-                autoHatchControl:Set(false)
+            if state.AutoHatch then
+                state.LastHatch = 0
+                state.LastAction = string.format("Auto hatch amount changed to %sx", state.HatchCount)
             end
         end,
     })
@@ -1246,25 +1744,18 @@ return function(context)
     })
     autoHatchControl = EggHatchSection:AddToggle({
         Name = "Auto Hatch",
-        Description = "Repeats the selected native hatch amount at the game's normal hatch delay.",
+        Description = "Stays enabled while short on currency and resumes automatically when the next hatch is affordable.",
         Flag = "dograce_auto_hatch",
         Default = false,
         Callback = function(enabled)
             state.AutoHatch = enabled == true
             if state.AutoHatch then
                 local allowed, reason = eggAccess(state.HatchCount)
-                if not allowed then
-                    state.AutoHatch = false
-                    state.LastAction = reason
-                    task.defer(function()
-                        if autoHatchControl then
-                            autoHatchControl:Set(false, true)
-                        end
-                    end)
-                    notify(reason, COLORS.warning)
-                else
-                    state.LastHatch = 0
-                end
+                state.LastHatch = 0
+                state.LastAction = allowed and "Auto hatch armed"
+                    or ("Auto hatch waiting: " .. reason)
+            else
+                state.LastAction = "Auto hatch stopped"
             end
         end,
     })
@@ -1287,6 +1778,13 @@ return function(context)
                 notify(state.LastAction, COLORS.warning)
             end
         end,
+    })
+    automationControls.Fruit = FruitSection:AddToggle({
+        Name = "Auto Buy Selected Fruit",
+        Description = "Waits for wins/rebirths and never auto-prompts Robux.",
+        Flag = "dograce_auto_fruit",
+        Default = false,
+        Callback = function(enabled) state.AutoFruit = enabled == true end,
     })
 
     TrailSection:AddDropdown({
@@ -1316,6 +1814,13 @@ return function(context)
         end,
     })
     TrailSection:AddButton({Name = "Unequip Selected Trail", Callback = unequipSelectedTrail})
+    automationControls.Trail = TrailSection:AddToggle({
+        Name = "Auto Buy / Equip Trail",
+        Description = "Waits at the native gate, then buys and equips the selected trail.",
+        Flag = "dograce_auto_trail",
+        Default = false,
+        Callback = function(enabled) state.AutoTrail = enabled == true end,
+    })
 
     UpgradeSection:AddDropdown({
         Name = "Upgrade",
@@ -1334,6 +1839,57 @@ return function(context)
                 notify(state.LastAction, COLORS.warning)
             end
         end,
+    })
+    automationControls.Upgrade = UpgradeSection:AddToggle({
+        Name = "Auto Selected Bone Upgrade",
+        Flag = "dograce_auto_upgrade",
+        Default = false,
+        Callback = function(enabled) state.AutoUpgrade = enabled == true end,
+    })
+
+    GearSection:AddDropdown({
+        Name = "Gear Crate",
+        Description = "Bone crates can auto-buy. Robux crates only open an official prompt from the manual button.",
+        Flag = "dograce_selected_crate",
+        Values = crateChoices,
+        Default = choiceForId(crateChoices, crateChoiceIds, state.SelectedCrate),
+        Callback = function(value)
+            state.SelectedCrate = crateChoiceIds[value] or state.SelectedCrate
+        end,
+    })
+    GearSection:AddSlider({
+        Name = "Bone Reserve",
+        Flag = "dograce_gear_bone_reserve",
+        Min = 0,
+        Max = 100,
+        Step = 1,
+        Default = 5,
+        Callback = function(value)
+            state.GearBoneReserve = math.max(0, tonumber(value) or 5)
+        end,
+    })
+    GearSection:AddButton({Name = "Buy One Gear Crate", Callback = function()
+        if not buySelectedCrate(true) then notify(state.LastAction, COLORS.warning) end
+    end})
+    GearSection:AddButton({Name = "Equip Best Dog Gear", Callback = equipBestGear})
+    GearSection:AddButton({Name = "Merge Available Gear", Callback = mergeAvailableGear})
+    automationControls.GearCrate = GearSection:AddToggle({
+        Name = "Auto Buy Selected Crate",
+        Flag = "dograce_auto_gear_crate",
+        Default = false,
+        Callback = function(enabled) state.AutoGearCrate = enabled == true end,
+    })
+    automationControls.EquipGear = GearSection:AddToggle({
+        Name = "Auto Equip Best Gear",
+        Flag = "dograce_auto_equip_gear",
+        Default = false,
+        Callback = function(enabled) state.AutoEquipGear = enabled == true end,
+    })
+    automationControls.MergeGear = GearSection:AddToggle({
+        Name = "Auto Merge Gear",
+        Flag = "dograce_auto_merge_gear",
+        Default = false,
+        Callback = function(enabled) state.AutoMergeGear = enabled == true end,
     })
 
     DogSection:AddDropdown({
@@ -1361,6 +1917,12 @@ return function(context)
                 notify(state.LastAction, COLORS.warning)
             end
         end,
+    })
+    automationControls.Dog = DogSection:AddToggle({
+        Name = "Auto Unlock / Equip Dog",
+        Flag = "dograce_auto_dog",
+        Default = false,
+        Callback = function(enabled) state.AutoDog = enabled == true end,
     })
 
     PartnerSection:AddDropdown({
@@ -1390,6 +1952,12 @@ return function(context)
         end,
     })
     PartnerSection:AddButton({Name = "Unequip Selected Partner", Callback = unequipSelectedPartner})
+    automationControls.Partner = PartnerSection:AddToggle({
+        Name = "Auto Unlock / Equip Partner",
+        Flag = "dograce_auto_partner",
+        Default = false,
+        Callback = function(enabled) state.AutoPartner = enabled == true end,
+    })
 
     speedInputControl = MovementSection:AddInput({
         Name = "Speed Multiplier",
@@ -1508,7 +2076,9 @@ return function(context)
             return string.format("%s: %s", ready and "READY" or owned and "OWNED" or "LOCKED", reason)
         end
         local eggReady, eggReason = eggAccess(state.HatchCount)
-        eggAccessLabel.Text = accessText(eggReady, eggReason)
+        eggAccessLabel.Text = state.AutoHatch and not eggReady
+            and ("WAITING: " .. eggReason)
+            or accessText(eggReady, eggReason)
         eggInventoryLabel.Text = string.format("Pet storage: %s / %s", compactNumber(storedPetCount(data or {})),
             compactNumber(maxPetStorage(data or {})))
         local fruitReady, fruitReason = fruitAccess()
@@ -1521,6 +2091,27 @@ return function(context)
         dogAccessLabel.Text = accessText(dogReady, dogReason)
         local partnerReady, partnerReason = partnerAccess(false)
         partnerAccessLabel.Text = accessText(partnerReady, partnerReason)
+        local crateReady, crateReason = crateAccess()
+        crateAccessLabel.Text = accessText(crateReady, crateReason)
+        local equippedGear, storedGear = 0, 0
+        if data and ItemsDataHelper then
+            local okEquipped, equipped = pcall(ItemsDataHelper.GetEquippedItemsNum, data)
+            local okStored, stored = pcall(ItemsDataHelper.GetUnequippedItemsNum, data)
+            equippedGear = okEquipped and tonumber(equipped) or 0
+            storedGear = okStored and tonumber(stored) or 0
+        end
+        gearInventoryLabel.Text = string.format("Dog gear: %d equipped | %d stored", equippedGear, storedGear)
+        fullAutoLabel.Text = state.FullProgression
+            and "Full progression: ON — locked systems are waiting"
+            or "Full progression: OFF"
+        hybridLabel.Text = string.format("Hybrid: %s | %ss power window",
+            state.HybridPhase, tostring(state.HybridTrainSeconds))
+        local freeEggReady = data and data.OnlineQuestTaskDown == true
+        claimsLabel.Text = string.format("Free egg: %s | Gifts %s | Tasks %s | Achievements %s",
+            freeEggReady and "READY" or "WAITING",
+            state.AutoOnlineRewards and "AUTO" or "OFF",
+            state.AutoTasks and "AUTO" or "OFF",
+            state.AutoAchievements and "AUTO" or "OFF")
         speedLabel.Text = string.format(
             "WalkSpeed: %.1f | %.3gx | Velocity: %.1f",
             humanoid and humanoid.WalkSpeed or 0,
@@ -1537,6 +2128,7 @@ return function(context)
             DashController,
             ChestController,
             EggHatchGuiController,
+            OnlineRewardGuiController,
         }
         local ready = 0
         for _, controller in ipairs(controllers) do
@@ -1554,12 +2146,23 @@ return function(context)
             gui:SetAttribute("DogRaceAutoTrain", hasTrainingPosture())
             gui:SetAttribute("DogRaceAutoRace", data and data.AutoFight == true or false)
             gui:SetAttribute("DogRaceAutoHatch", state.AutoHatch)
+            gui:SetAttribute("DogRaceAutoHatchWaiting", state.AutoHatch and not eggReady)
             gui:SetAttribute("DogRaceSelectedEgg", state.SelectedEgg)
             gui:SetAttribute("DogRaceSelectedFruit", state.SelectedFruit)
             gui:SetAttribute("DogRaceSelectedTrail", state.SelectedTrail)
             gui:SetAttribute("DogRaceSelectedDog", state.SelectedDog)
             gui:SetAttribute("DogRaceSelectedPartner", state.SelectedPartner)
+            gui:SetAttribute("DogRaceSelectedCrate", state.SelectedCrate)
             gui:SetAttribute("DogRaceSpeedMultiplier", state.SpeedMultiplier)
+            gui:SetAttribute("DogRaceFullProgression", state.FullProgression)
+            gui:SetAttribute("DogRaceHybridMode", state.HybridMode)
+            gui:SetAttribute("DogRaceHybridPhase", state.HybridPhase)
+            gui:SetAttribute("DogRaceAutoOnlineRewards", state.AutoOnlineRewards)
+            gui:SetAttribute("DogRaceAutoFreeEgg", state.AutoFreeEgg)
+            gui:SetAttribute("DogRaceFreeEggReady", freeEggReady == true)
+            gui:SetAttribute("DogRaceAutoAchievements", state.AutoAchievements)
+            gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
+            gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
         end)
     end
 
@@ -1592,6 +2195,22 @@ return function(context)
         state.AutoEquipBest = false
         state.AutoDailyChest = false
         state.AutoHatch = false
+        state.FullProgression = false
+        state.AutoOnlineRewards = false
+        state.AutoFreeEgg = false
+        state.AutoAchievements = false
+        state.AutoTasks = false
+        state.AutoFruit = false
+        state.AutoTrail = false
+        state.AutoUpgrade = false
+        state.AutoDog = false
+        state.AutoPartner = false
+        state.AutoGearCrate = false
+        state.AutoEquipGear = false
+        state.AutoMergeGear = false
+        if state.HybridMode then
+            stopHybrid()
+        end
         clearSpeedOverride()
         if DashController and type(DashController.StopDash) == "function" then
             pcall(DashController.StopDash, DashController)
@@ -1631,16 +2250,14 @@ return function(context)
         if automationAccumulator >= 0.5 then
             automationAccumulator = 0
             local data = getData()
+            updateHybrid(now)
             if state.AutoHatch then
                 local fast = data and data.GamePasses and data.GamePasses.FastHatch
                 local delay = fast and 1 or 5
                 if now - state.LastHatch >= delay then
                     state.LastHatch = now
                     if not hatchSelected(state.HatchCount, false) then
-                        state.AutoHatch = false
-                        if autoHatchControl then
-                            autoHatchControl:Set(false, true)
-                        end
+                        state.LastAction = "Auto hatch waiting: " .. state.LastAction
                     end
                 end
             end
@@ -1669,6 +2286,86 @@ return function(context)
                 and dailyChestReady(data) then
                 state.LastDailyChest = now
                 claimDailyChest()
+            end
+            if now - state.LastClaimSweep >= 2 then
+                state.LastClaimSweep = now
+                if state.AutoOnlineRewards then
+                    claimAvailableOnlineRewards()
+                end
+                if state.AutoFreeEgg then
+                    claimFreeOnlineEgg()
+                end
+                if state.AutoAchievements then
+                    claimAvailableAchievements()
+                end
+                if state.AutoTasks then
+                    claimAvailableTasks()
+                end
+            end
+            if now - state.LastShopSweep >= 2 then
+                state.LastShopSweep = now
+                if state.AutoFruit then
+                    local config = FruitsData[state.SelectedFruit]
+                    if config and config.Currency ~= "Robux" then
+                        buySelectedFruit()
+                    end
+                end
+                if state.AutoTrail then
+                    local config = TrailsData[state.SelectedTrail]
+                    if config and config.Currency ~= "Robux" then
+                        local owned = data and data.Trails and data.Trails[state.SelectedTrail]
+                        if owned then
+                            local equipped = data.EquippedTrail == state.SelectedTrail
+                                or (type(owned) == "table" and owned.Equipped == true)
+                            if not equipped then
+                                equipSelectedTrail()
+                            end
+                        else
+                            buySelectedTrail()
+                        end
+                    end
+                end
+                if state.AutoUpgrade then
+                    buySelectedUpgrade()
+                end
+                if state.AutoDog then
+                    local horse = data and data.Horses and data.Horses[state.SelectedDog]
+                    if horse then
+                        if horse.Equipped ~= true then
+                            equipSelectedDog()
+                        end
+                    else
+                        local config = HorsesData[state.SelectedDog]
+                        if config and config.UnlockCurrency ~= "Robux" then
+                            unlockSelectedDog()
+                        end
+                    end
+                end
+                if state.AutoPartner then
+                    local partner = data and data.Princesses and data.Princesses[state.SelectedPartner]
+                    if partner then
+                        if partner.Equipped ~= true then
+                            equipSelectedPartner()
+                        end
+                    else
+                        local config = PrincessesData[state.SelectedPartner]
+                        if config and config.UnlockType ~= "Robux" then
+                            unlockSelectedPartner()
+                        end
+                    end
+                end
+            end
+            if now - state.LastGearSweep >= 3 then
+                state.LastGearSweep = now
+                if state.AutoGearCrate then
+                    buySelectedCrate(false)
+                end
+                if state.AutoMergeGear then
+                    mergeAvailableGear()
+                end
+                if state.AutoEquipGear then
+                    equipBestGear()
+                end
             end
         end
     end))
