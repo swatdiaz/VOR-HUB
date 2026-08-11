@@ -15,7 +15,7 @@ games do not require users to replace their loadstring.
 ## Current immutable loader
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/8e974cff3989091184dc430104a567e6e61cc42a/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/adfc65f5a6f1a5bab23fccd8244faa71e220aa9d/loader.lua"))()
 ```
 
 Use this only when you intentionally want the current release frozen forever.
@@ -30,7 +30,7 @@ admin permission can update the original VOR Hub repository.
 
 - `loader.lua` - small immutable game router; it compiles only the detected game module
 - `core/` - shared luxury UI, settings, profiles, access gate, and utilities
-- `games/` - isolated Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Dragon Ball Legendary Powers, Capybaras VS Plants, Blox Fruits, and Dungeon builders
+- `games/` - isolated Grow a Garden 2, Capybaras VS Plants, Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Dragon Ball Legendary Powers, Blox Fruits, and Dungeon builders
 - `VOR_HUB.lua` - compatibility bootstrap pinned to the audited loader
 - `scripts/validate-refactor.ps1` - Luau/register/flag/controller validation
 - `update-github.ps1` - validates, creates the module and loader commits, updates the bootstrap, then pushes
