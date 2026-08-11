@@ -16,6 +16,37 @@ Do the smallest targeted change that satisfies the request. Do not perform an
 unrequested redesign, framework replacement, broad cleanup, file shuffle, or
 monolith rewrite.
 
+## Mental model: framework plus game plugins
+
+VOR Hub is a shared framework and a registry of isolated game plugins:
+
+```text
+loader.lua
+  -> core/settings.lua identifies the current UniverseId/PlaceId
+  -> core/* creates the shared UI, profiles, access, and utilities
+  -> exactly one matching games/*.lua builder is downloaded and executed
+```
+
+The repository can support many games because it does **not** load every game at
+startup. Preserve that property. A feature or bug belonging to one game belongs
+in that game's module, not in the loader or global UI.
+
+Game-module work is normal contributor work and does not require special owner
+approval when it stays within the existing contracts. A contributor may:
+
+- diagnose and fix behavior inside the supported game's module;
+- add local functions, state, cleanup, pages, sections, and controls for that game;
+- update remotes, object discovery, values, routes, and compatibility checks for
+  that game;
+- split an oversized game into game-specific helper modules loaded through
+  `context.LoadModule`, while keeping the public builder contract unchanged;
+- add a new isolated game plugin and its registry/validator entries.
+
+Do not solve a game bug by changing the shared UI framework. First trace the bug
+to its owning `games/*.lua` module and fix it there. Escalate to the owner only
+when the evidence proves the defect is actually shared across games or requires a
+protected core change.
+
 ## Protected architecture
 
 The shared shell is already refactored. Treat these as protected files:
@@ -71,6 +102,21 @@ Do not rename or remove existing game records or profile flags casually.
 Never paste a second UI library into a game module. Never make the loader download
 every game. The loader must resolve the current game and compile only its selected
 module.
+
+## Fixing or extending an existing game
+
+1. Start in the registered `games/*.lua` module for that game.
+2. Reproduce or trace the bug before editing. Identify the failing function,
+   remote/object path, state transition, or cleanup path.
+3. Keep new functions local to that module unless they are game-specific helper
+   modules loaded through `context.LoadModule`.
+4. Preserve existing control names, categories, flags, defaults, and saved-profile
+   behavior unless the requested fix explicitly changes them.
+5. Capability-check changed remotes and objects so a missing round/map/player
+   object produces a useful status instead of killing the whole UI.
+6. Test the changed feature plus toggle-off, reload, respawn, and any relevant
+   round/map transition.
+7. Do not touch unrelated games just because their code looks similar.
 
 ## UI contract
 
