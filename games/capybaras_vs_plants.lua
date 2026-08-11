@@ -115,6 +115,7 @@ return function(context)
         FarmNextTargetAt = 0,
         FarmCollisionState = {},
         PurchaseTurn = "Egg",
+        PurchaseCursor = {Egg = 0, Gear = 0},
     }
 
     local _, addHomeCategory, selectHomeCategory = createCategoryHomePage()
@@ -277,9 +278,20 @@ return function(context)
     local function buyNextSelected(order, selected, source)
         local _, _, _, priorities = shopPolicy(source)
         local candidates = refreshPurchaseGate(source) and priorities or selected
-        for _, name in ipairs(order) do
+        local count = #order
+        if count == 0 then
+            return false
+        end
+        local cursor = tonumber(state.PurchaseCursor[source]) or 0
+        for offset = 1, count do
+            local index = ((cursor + offset - 1) % count) + 1
+            local name = order[index]
             if candidates[name] and canPurchase(name, source) then
-                return purchase(name, source), name
+                local bought = purchase(name, source)
+                if bought then
+                    state.PurchaseCursor[source] = index
+                end
+                return bought, name
             end
         end
         return false
