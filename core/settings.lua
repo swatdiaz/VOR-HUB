@@ -9,6 +9,16 @@ return function(runtime)
     local universeId = tonumber(runtime.UniverseId) or game.GameId
 
     local supportedGames = {
+        GrowAGarden2 = {
+            Key = "GrowAGarden2",
+            DisplayName = "Grow a Garden 2",
+            UniverseId = 10200395747,
+            RootPlaceId = 97598239454123,
+            PlaceIds = {
+                [97598239454123] = true,
+            },
+            Module = "games/grow_a_garden_2.lua",
+        },
         CapybarasVsPlants = {
             Key = "CapybarasVsPlants",
             DisplayName = "Capybaras VS Plants",

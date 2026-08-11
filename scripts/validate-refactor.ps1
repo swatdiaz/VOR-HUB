@@ -12,6 +12,7 @@ $required = @(
     "core/profiles.lua",
     "core/access.lua",
     "core/utilities.lua",
+    "games/grow_a_garden_2.lua",
     "games/capybaras_vs_plants.lua",
     "games/murder_mystery_2.lua",
     "games/mypark.lua",
@@ -38,8 +39,12 @@ $compileFiles = $required + @(
 )
 
 if (-not (Test-Path -LiteralPath $Compiler)) {
-    $workspaceCompiler = Join-Path (Split-Path $repo -Parent) ".codex-tools\luau-0.730\luau-compile.exe"
-    if (Test-Path -LiteralPath $workspaceCompiler) {
+    $workspaceRoot = Split-Path $repo -Parent
+    $workspaceCompiler = @(
+        (Join-Path $workspaceRoot ".codex-tools\luau-0.731\luau-compile.exe"),
+        (Join-Path $workspaceRoot ".codex-tools\luau-0.730\luau-compile.exe")
+    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($workspaceCompiler) {
         $Compiler = $workspaceCompiler
     } else {
         throw "Luau compiler was not found: $Compiler"
@@ -1107,8 +1112,30 @@ if (-not ($capybarasRouting -and $capybarasNativeBehavior)) {
     throw "Capybaras VS Plants routing/native adapter contract failed"
 }
 
+$gag2Text = Get-Content -LiteralPath (Join-Path $repo "games/grow_a_garden_2.lua") -Raw
+$gag2Routing = (
+    $settingsText -match 'Key\s*=\s*"GrowAGarden2"' -and
+    $settingsText -match 'UniverseId\s*=\s*10200395747' -and
+    $settingsText -match 'RootPlaceId\s*=\s*97598239454123' -and
+    $settingsText -match 'Module\s*=\s*"games/grow_a_garden_2\.lua"'
+)
+$gag2NativeBehavior = (
+    $gag2Text -match 'stockNameSet\("SeedShop"\)' -and
+    $gag2Text -match 'SharedModules\.GearShopData' -and
+    $gag2Text -match 'FindFirstChild\("PetData"\)' -and
+    $gag2Text -match 'cost>0 and spawnChance>0' -and
+    $gag2Text -match 'SeedPackSpawnServerLocations' -and
+    $gag2Text -match 'GardenZoneData' -and
+    $gag2Text -match 'Net\.Shovel\.HitPlayer:Fire\(player\.UserId\)' -and
+    $gag2Text -match 'GrowAGarden2ModuleReady' -and
+    $gag2Text -notmatch 'Net\.Steal|StealFlags|Auto Steal at Night|Highest Value Steal First'
+)
+if (-not ($gag2Routing -and $gag2NativeBehavior)) {
+    throw "Grow a Garden 2 routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (12/12)"
+Write-Host "Game builder contract: PASS (13/13)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
@@ -1116,6 +1143,7 @@ Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
+Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"

@@ -1848,21 +1848,50 @@ return function(context)
                     child:Destroy()
                 end
             end
-            local shown = math.min(#control.Values, 7)
+            local optionButtons = {}
+            local searchBox
+            if multi then
+                searchBox = create("TextBox", {
+                    Size = UDim2.new(1, -7, 0, 28),
+                    BackgroundColor3 = COLORS.surfaceRaised,
+                    BorderSizePixel = 0,
+                    ClearTextOnFocus = false,
+                    PlaceholderText = "Search...",
+                    PlaceholderColor3 = COLORS.muted,
+                    Text = "",
+                    TextColor3 = COLORS.text,
+                    TextSize = 11,
+                    Font = Enum.Font.GothamMedium,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    LayoutOrder = 0,
+                    ZIndex = 15,
+                }, optionHolder)
+                corner(searchBox, 6)
+                stroke(searchBox, COLORS.border, 1, 0.45)
+                create("UIPadding", {
+                    PaddingLeft = UDim.new(0, 9),
+                    PaddingRight = UDim.new(0, 9),
+                }, searchBox)
+            end
             for index, value in ipairs(control.Values) do
+                local selected = multi and type(control.Value) == "table" and control.Value[value] == true
                 local optionButton = create("TextButton", {
                     Size = UDim2.new(1, -7, 0, 28),
                     BackgroundColor3 = COLORS.surfaceRaised,
                     BorderSizePixel = 0,
                     AutoButtonColor = false,
                     Text = tostring(value),
-                    TextColor3 = COLORS.muted,
+                    TextColor3 = selected and COLORS.accentBright or COLORS.muted,
                     TextSize = 11,
                     Font = Enum.Font.GothamMedium,
-                    LayoutOrder = index,
+                    LayoutOrder = index + (multi and 1 or 0),
                     ZIndex = 15,
                 }, optionHolder)
                 corner(optionButton, 6)
+                optionButtons[#optionButtons+1] = {
+                    Button = optionButton,
+                    SearchText = string.lower(tostring(value)),
+                }
                 Utilities.Track(optionButton.Activated:Connect(function()
                     if multi then
                         local selected = control.Value
@@ -1881,7 +1910,16 @@ return function(context)
                     end
                 end))
             end
-            optionHolder.ScrollBarImageTransparency = #control.Values > 7 and 0.12 or 1
+            if searchBox then
+                Utilities.Track(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
+                    for _,entry in ipairs(optionButtons) do
+                        entry.Button.Visible = query == "" or string.find(entry.SearchText,query,1,true) ~= nil
+                    end
+                    optionHolder.CanvasPosition = Vector2.zero
+                end))
+            end
+            optionHolder.ScrollBarImageTransparency = #control.Values > (multi and 6 or 7) and 0.12 or 1
         end
 
         function control:Set(value, silent)
@@ -1915,7 +1953,7 @@ return function(context)
             arrow.Text = control.Open and "⌃" or "⌄"
             if control.Open then
                 rebuild()
-                local shown = math.min(#control.Values, 7)
+                local shown = math.min(#control.Values + (multi and 1 or 0), 7)
                 local height = shown * 32
                 row.Size = UDim2.new(1, 0, 0, (options.Description and 58 or 48) + height + 5)
                 optionHolder.Size = UDim2.new(1, -20, 0, height)
