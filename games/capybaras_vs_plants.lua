@@ -21,7 +21,6 @@ return function(context)
     local Players = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
-    local ContextActionService = game:GetService("ContextActionService")
     local VirtualUser = game:GetService("VirtualUser")
     local LocalPlayer = Players.LocalPlayer
     local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -30,6 +29,8 @@ return function(context)
     local EggData = require(Modules:WaitForChild("EggData"))
     local GearData = require(Modules:WaitForChild("GearData"))
     local BossData = require(Modules:WaitForChild("BossData"))
+    local PlantData = require(Modules:WaitForChild("PlantData"))
+    local PurchasablePrices = require(Modules:WaitForChild("PurchasablePrices"))
     local GameInfo = require(Modules:WaitForChild("GameInfo"))
     local QuestData = require(Modules:WaitForChild("QuestData"))
     local ItemNameParser = require(Modules:WaitForChild("ItemNameParser"))
@@ -51,10 +52,17 @@ return function(context)
         AutoBuyEgg = false,
         AutoBuyGear = false,
         AutoSummonBoss = false,
-        PlantReach = false,
-        BossReach = false,
-        ShovelRange = 120,
-        TurboShovel = false,
+        AutoFarm = false,
+        FarmRange = 150,
+        FarmMinimumRarity = "Common",
+        FarmMinimumSize = 0,
+        FarmMaximumSize = 10,
+        FarmFocusTime = 3,
+        FarmStrafeRadius = 5,
+        FarmStrafeSpeed = 4,
+        FarmHoverHeight = 4,
+        FarmReturnToPosition = true,
+        FarmLoopDelay = 0.5,
         AutoEquipShovel = true,
         AutoHatch = false,
         AutoCollectMoney = false,
@@ -63,6 +71,19 @@ return function(context)
         AutoClaimPlaytime = false,
         AutoClaimDaily = false,
         AutoClaimQuests = false,
+        AutoGrowTree = false,
+        AutoBuyLane = false,
+        LaneMoneyReserve = 0,
+        AutoTurnInBounty = false,
+        BountyLoopDelay = 5,
+        EggMoneyReserve = 0,
+        EggRestartBuyingAt = 0,
+        EggWaitingForRestart = false,
+        EggPriorities = {},
+        GearMoneyReserve = 0,
+        GearRestartBuyingAt = 0,
+        GearWaitingForRestart = false,
+        GearPriorities = {},
         AntiAfk = true,
         BlinkBusy = false,
         Stock = {},
@@ -75,12 +96,18 @@ return function(context)
         LastPlacePlant = 0,
         LastPlaceCapybara = 0,
         LastRewardClaim = 0,
+        LastTreeGrowth = 0,
+        LastLanePurchase = 0,
+        LastBountyTurnIn = 0,
+        LastBountyRefresh = 0,
         HatchBusy = false,
         CurrentTarget = nil,
+        FarmOrigin = nil,
+        FarmAngle = 0,
+        FarmTargetStarted = 0,
+        FarmNextTargetAt = 0,
+        FarmCollisionState = {},
         PurchaseTurn = "Egg",
-        AttackCharacter = nil,
-        AttackOriginalPivot = nil,
-        AttackVisualRestore = nil,
     }
 
     local _, addHomeCategory, selectHomeCategory = createCategoryHomePage()
@@ -95,11 +122,13 @@ return function(context)
     local ShopInfoSection = ShopPage:AddSection("Purchase Route", "Right")
     local SummonSection = BossPage:AddSection("Boss Summoner", "Left")
     local BossStatusSection = BossPage:AddSection("Summon Status", "Right")
-    local ReachSection = ShovelPage:AddSection("Extended Shovel Reach", "Left")
-    local TurboSection = ShovelPage:AddSection("Shovel Combat", "Right")
+    local ReachSection = ShovelPage:AddSection("Orbit Auto Farm", "Left")
+    local TurboSection = ShovelPage:AddSection("Target Settings", "Right")
     local AutomationSection = UtilityPage:AddSection("Garden Automation", "Left")
     local PlayerSection = UtilityPage:AddSection("Player Utilities", "Right")
     local RewardSection = UtilityPage:AddSection("Reward Claims", "Right")
+    local ProgressionSection = UtilityPage:AddSection("Tree & Lanes", "Left")
+    local BountySection = UtilityPage:AddSection("Auto Bounty", "Right")
     local RuntimeSection = UtilityPage:AddSection("Runtime", "Left")
 
     local eggStatus = ShopStatusSection:AddLabel("Egg stock: Reading...")
@@ -110,6 +139,8 @@ return function(context)
     local shovelStatus = TurboSection:AddLabel("Shovel: Idle")
     local targetStatus = TurboSection:AddLabel("Target: None")
     local automationStatus = AutomationSection:AddLabel("Automation: Idle")
+    local progressionStatus = ProgressionSection:AddLabel("Progression: Monitoring")
+    local bountyStatus = BountySection:AddLabel("Bounties: Reading...")
 
     local function notify(message, color)
         Window:Notify("Capybaras VS Plants", tostring(message), 4, color or COLORS.accentBright)
@@ -163,8 +194,41 @@ return function(context)
         return tonumber(valueOf(itemData(name), "Cost", math.huge)) or math.huge
     end
 
-    local function canPurchase(name)
-        return stockOf(name) > 0 and money() >= costOf(name)
+    local function shopPolicy(source)
+        if source == "Egg" then
+            return state.EggMoneyReserve, state.EggRestartBuyingAt, "EggWaitingForRestart", state.EggPriorities
+        end
+        return state.GearMoneyReserve, state.GearRestartBuyingAt, "GearWaitingForRestart", state.GearPriorities
+    end
+
+    local function refreshPurchaseGate(source)
+        local reserve, restart, waitingKey = shopPolicy(source)
+        if state[waitingKey] and money() >= math.max(reserve, restart) then
+            state[waitingKey] = false
+        end
+        return state[waitingKey]
+    end
+
+    local function policyAllows(name, source)
+        local reserve, restart, waitingKey, priorities = shopPolicy(source)
+        local balance = money()
+        local cost = costOf(name)
+        if balance - cost < reserve then
+            state[waitingKey] = true
+            return false
+        end
+        if state[waitingKey] then
+            if balance >= math.max(reserve, restart) then
+                state[waitingKey] = false
+                return true
+            end
+            return priorities[name] == true
+        end
+        return true
+    end
+
+    local function canPurchase(name, source)
+        return stockOf(name) > 0 and money() >= costOf(name) and policyAllows(name, source)
     end
 
     local function purchase(name, source)
@@ -175,7 +239,7 @@ return function(context)
         if stockOf(name) <= 0 then
             return false
         end
-        if money() < costOf(name) then
+        if money() < costOf(name) or not policyAllows(name, source) then
             return false
         end
         state.LastPurchase = os.clock()
@@ -204,8 +268,10 @@ return function(context)
     end
 
     local function buyNextSelected(order, selected, source)
+        local _, _, _, priorities = shopPolicy(source)
+        local candidates = refreshPurchaseGate(source) and priorities or selected
         for _, name in ipairs(order) do
-            if selected[name] and canPurchase(name) then
+            if candidates[name] and canPurchase(name, source) then
                 return purchase(name, source), name
             end
         end
@@ -216,7 +282,7 @@ return function(context)
         task.spawn(function()
             local bought = 0
             for _, name in ipairs(order) do
-                if state.Alive and selected[name] and canPurchase(name) then
+                if state.Alive and selected[name] and canPurchase(name, source) then
                     if purchase(name, source) then
                         bought += 1
                     end
@@ -231,8 +297,10 @@ return function(context)
         refreshStock(false)
         local eggText, eggStock = selectedSummary(eggOrder, state.SelectedEggs)
         local gearText, gearStock = selectedSummary(gearOrder, state.SelectedGears)
-        setLabel(eggStatus, string.format("Eggs: %s | stock %d", eggText, eggStock))
-        setLabel(gearStatus, string.format("Gear: %s | stock %d", gearText, gearStock))
+        local eggGate = state.EggWaitingForRestart and (" | waiting for $" .. tostring(math.max(state.EggMoneyReserve, state.EggRestartBuyingAt))) or ""
+        local gearGate = state.GearWaitingForRestart and (" | waiting for $" .. tostring(math.max(state.GearMoneyReserve, state.GearRestartBuyingAt))) or ""
+        setLabel(eggStatus, string.format("Eggs: %s | stock %d%s", eggText, eggStock, eggGate))
+        setLabel(gearStatus, string.format("Gear: %s | stock %d%s", gearText, gearStock, gearGate))
         setLabel(moneyStatus, "Money: $" .. tostring(money()))
     end
 
@@ -351,162 +419,137 @@ return function(context)
         return bossNames[model.Name:split(":")[1]] == true
     end
 
-    local function validShovelTarget(model)
-        local configuration = model and model:FindFirstChild("ServerConfiguration")
-        local health = configuration and configuration:FindFirstChild("CurrentHealth")
-        if not model or not model.PrimaryPart or not health or tonumber(health.Value) <= 0 then
-            return false
+    local rarityOrder = {Common = 1, Rare = 2, Epic = 3, Legendary = 4, Mythic = 5, Godly = 6, Divine = 7, Secret = 8}
+
+    local function ownPlot()
+        local world = workspace:FindFirstChild("World")
+        local map = world and world:FindFirstChild("Map")
+        local plots = map and map:FindFirstChild("Plots")
+        for _, plot in ipairs(plots and plots:GetChildren() or {}) do
+            if plot:GetAttribute("Owner") == LocalPlayer.UserId then
+                return plot
+            end
         end
-        return isBoss(model) and state.BossReach or (not isBoss(model) and state.PlantReach)
     end
 
-    local function nearestShovelTarget()
+    local function farmTargetRarity(model)
+        local data = PlantData.getData(model.Name:split(":")[1])
+        return tostring(valueOf(data, "Rarity", "Common"))
+    end
+
+    local function validFarmTarget(model, root)
+        local configuration = model and model:FindFirstChild("ServerConfiguration")
+        local health = configuration and configuration:FindFirstChild("CurrentHealth")
+        local size = configuration and configuration:FindFirstChild("SizeScaling")
+        local plotNumber = configuration and configuration:FindFirstChild("Plot")
+        local plot = ownPlot()
+        if not model or not model.PrimaryPart or not configuration or not health or tonumber(health.Value) <= 0 or isBoss(model) then
+            return false
+        end
+        if plot and plotNumber and tostring(plotNumber.Value) ~= plot.Name then
+            return false
+        end
+        local scale = tonumber(size and size.Value) or 1
+        if scale < state.FarmMinimumSize or scale > state.FarmMaximumSize then
+            return false
+        end
+        if (rarityOrder[farmTargetRarity(model)] or 0) < (rarityOrder[state.FarmMinimumRarity] or 1) then
+            return false
+        end
+        return root and (model.PrimaryPart.Position - root.Position).Magnitude <= state.FarmRange
+    end
+
+    local function nearestFarmTarget()
         local _, _, root = getCharacter()
         local folder = plantsFolder()
-        if not root or not folder then
-            return nil
-        end
+        if not root or not folder then return nil end
         local best, bestDistance
         for _, model in ipairs(folder:GetChildren()) do
-            if validShovelTarget(model) then
+            if validFarmTarget(model, root) then
                 local distance = (model.PrimaryPart.Position - root.Position).Magnitude
-                if distance <= state.ShovelRange and (not bestDistance or distance < bestDistance) then
-                    best = model
-                    bestDistance = distance
+                if not bestDistance or distance < bestDistance then
+                    best, bestDistance = model, distance
                 end
             end
         end
         return best, bestDistance
     end
 
-    local function beginSilentVisual(character)
-        local camera = workspace.CurrentCamera
-        local cameraCFrame = camera and camera.CFrame
-        local renderName = "VOR_CVP_SilentCamera"
-        local clone
-        local transparency = {}
-        pcall(function()
-            local oldArchivable = character.Archivable
-            character.Archivable = true
-            clone = character:Clone()
-            character.Archivable = oldArchivable
-            clone.Name = "VOR_SilentShovelMask"
-            for _, object in ipairs(clone:GetDescendants()) do
-                if object:IsA("LuaSourceContainer") or object:IsA("Tool") then
-                    object:Destroy()
-                elseif object:IsA("BasePart") then
-                    object.Anchored = true
-                    object.CanCollide = false
-                    object.CanTouch = false
-                    object.CanQuery = false
+    local function setFarmCollision(enabled)
+        local character = LocalPlayer.Character
+        if enabled then
+            for _, part in ipairs(character and character:GetDescendants() or {}) do
+                if part:IsA("BasePart") and state.FarmCollisionState[part] == nil then
+                    state.FarmCollisionState[part] = part.CanCollide
+                    part.CanCollide = false
                 end
             end
-            clone.Parent = workspace
-        end)
-        for _, object in ipairs(character:GetDescendants()) do
-            if object:IsA("BasePart") then
-                transparency[object] = object.LocalTransparencyModifier
-                object.LocalTransparencyModifier = 1
+        else
+            for part, old in pairs(state.FarmCollisionState) do
+                if part.Parent then part.CanCollide = old end
             end
-        end
-        pcall(function()
-            RunService:BindToRenderStep(renderName, Enum.RenderPriority.Camera.Value + 50, function()
-                if camera and cameraCFrame then
-                    camera.CFrame = cameraCFrame
-                end
-            end)
-        end)
-        local cleaned = false
-        return function()
-            if cleaned then return end
-            cleaned = true
-            pcall(function() RunService:UnbindFromRenderStep(renderName) end)
-            for object, old in pairs(transparency) do
-                if object.Parent then
-                    object.LocalTransparencyModifier = old
-                end
-            end
-            if clone then
-                clone:Destroy()
-            end
+            table.clear(state.FarmCollisionState)
         end
     end
 
-    local function silentShovelAttack(target, turbo)
-        if state.BlinkBusy or not state.Alive or not target or not target.Parent then
-            return false
+    local function stopOrbitFarm()
+        local character, humanoid = getCharacter()
+        if state.FarmReturnToPosition and state.FarmOrigin and character and humanoid and humanoid.Health > 0 then
+            pcall(function() character:PivotTo(state.FarmOrigin) end)
         end
-        local character, humanoid, root = getCharacter()
-        local tool = getShovel(true)
-        if not tool and state.AutoEquipShovel then
-            tool = equipShovel()
-        end
-        if not character or not humanoid or humanoid.Health <= 0 or not root or not tool or not target.PrimaryPart then
-            return false
-        end
-        state.BlinkBusy = true
-        state.CurrentTarget = target
-        local originalPivot = character:GetPivot()
-        local restoreVisual = beginSilentVisual(character)
-        state.AttackCharacter = character
-        state.AttackOriginalPivot = originalPivot
-        state.AttackVisualRestore = restoreVisual
-        local targetPosition = target.PrimaryPart.Position
-        local flatAway = Vector3.new(root.Position.X - targetPosition.X, 0, root.Position.Z - targetPosition.Z)
-        flatAway = flatAway.Magnitude > 0.01 and flatAway.Unit or Vector3.zAxis
-        local attackPosition = targetPosition + flatAway * 4 + Vector3.new(0, 2.5, 0)
-        local started = os.clock()
-        repeat
-            if not target.Parent or not target.PrimaryPart then
-                break
-            end
-            targetPosition = target.PrimaryPart.Position
-            attackPosition = targetPosition + flatAway * 4 + Vector3.new(0, 2.5, 0)
-            pcall(function()
-                character:PivotTo(CFrame.lookAt(attackPosition, targetPosition))
-            end)
-            RunService.Heartbeat:Wait()
-            pcall(function()
-                tool:Activate()
-            end)
-            if not turbo then
-                break
-            end
-            task.wait()
-        until not state.Alive or (turbo and not state.TurboShovel) or os.clock() - started >= 0.82
-        task.wait(turbo and 0.04 or 0.13)
-        if state.Alive and character.Parent and humanoid.Health > 0 then
-            pcall(function()
-                character:PivotTo(originalPivot)
-            end)
-        end
-        restoreVisual()
-        state.AttackCharacter = nil
-        state.AttackOriginalPivot = nil
-        state.AttackVisualRestore = nil
-        state.BlinkBusy = false
+        setFarmCollision(false)
+        state.FarmOrigin = nil
         state.CurrentTarget = nil
-        return true
+        state.FarmTargetStarted = 0
+        state.FarmNextTargetAt = 0
+        setLabel(shovelStatus, "Auto farm: Idle")
+        setLabel(targetStatus, "Target: None")
     end
 
-    local RANGE_ACTION = "VOR_CVP_ExtendedShovel"
-    ContextActionService:BindActionAtPriority(RANGE_ACTION, function(_, inputState)
-        if inputState ~= Enum.UserInputState.Begin or not state.Alive then
-            return Enum.ContextActionResult.Pass
+    local function stepOrbitFarm(deltaTime)
+        if not state.AutoFarm or not state.Alive then return end
+        local character, humanoid, root = getCharacter()
+        if not character or not humanoid or humanoid.Health <= 0 or not root then return end
+        if not state.FarmOrigin then
+            state.FarmOrigin = character:GetPivot()
+            setFarmCollision(true)
         end
-        if not state.PlantReach and not state.BossReach then
-            return Enum.ContextActionResult.Pass
+        local now = os.clock()
+        local target = state.CurrentTarget
+        if target and (not validFarmTarget(target, root) or now - state.FarmTargetStarted >= state.FarmFocusTime) then
+            state.CurrentTarget = nil
+            state.FarmNextTargetAt = now + state.FarmLoopDelay
+            target = nil
         end
-        if not getShovel(true) then
-            return Enum.ContextActionResult.Pass
+        if not target and now >= state.FarmNextTargetAt then
+            target = nearestFarmTarget()
+            state.CurrentTarget = target
+            state.FarmTargetStarted = now
         end
-        local target = nearestShovelTarget()
-        if not target then
-            return Enum.ContextActionResult.Pass
+        if not target or not target.PrimaryPart then
+            setLabel(shovelStatus, "Auto farm: Waiting")
+            setLabel(targetStatus, "Target: No eligible plant")
+            return
         end
-        task.spawn(silentShovelAttack, target, false)
-        return Enum.ContextActionResult.Sink
-    end, false, 3000, Enum.UserInputType.MouseButton1)
+        local tool = getShovel(true)
+        if not tool and state.AutoEquipShovel then tool = equipShovel() end
+        if not tool then
+            setLabel(shovelStatus, "Auto farm: Shovel missing")
+            return
+        end
+        state.FarmAngle = (state.FarmAngle + math.max(0.1, state.FarmStrafeSpeed) * deltaTime) % (math.pi * 2)
+        local targetPosition = target.PrimaryPart.Position
+        local offset = Vector3.new(math.cos(state.FarmAngle) * state.FarmStrafeRadius, state.FarmHoverHeight, math.sin(state.FarmAngle) * state.FarmStrafeRadius)
+        local orbitPosition = targetPosition + offset
+        pcall(function()
+            character:PivotTo(CFrame.lookAt(orbitPosition, targetPosition))
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            tool:Activate()
+        end)
+        setLabel(shovelStatus, "Auto farm: Orbiting + turbo shovel")
+        setLabel(targetStatus, string.format("Target: %s | %s | %.1fx", target.Name:split(":")[1], farmTargetRarity(target), tonumber(valueOf(target.ServerConfiguration, "SizeScaling", 1)) or 1))
+    end
 
     local function nextReadyEgg()
         local folder = placedItemsFolder()
@@ -553,17 +596,6 @@ return function(context)
     end
 
     local Automation = (function()
-        local function ownPlot()
-            local world = workspace:FindFirstChild("World")
-            local map = world and world:FindFirstChild("Map")
-            local plots = map and map:FindFirstChild("Plots")
-            for _, plot in ipairs(plots and plots:GetChildren() or {}) do
-                if plot:GetAttribute("Owner") == LocalPlayer.UserId then
-                    return plot
-                end
-            end
-        end
-
         local function bestTool(attribute)
             local candidates = {}
             for _, parent in ipairs({LocalPlayer:FindFirstChildOfClass("Backpack"), LocalPlayer.Character}) do
@@ -622,29 +654,42 @@ return function(context)
         local function freeTowerCFrame()
             local plot = ownPlot()
             if not plot then return nil end
-            local center = plot:GetPivot().Position
             local placed = placedItemsFolder()
-            for zOffset = -31, 21, 5 do
-                for _, xOffset in ipairs({0, -5, 5, -10, 10}) do
-                    local point = Vector3.new(center.X + xOffset, 7.6, center.Z + zOffset)
-                    local free = true
-                    for _, model in ipairs(placed and placed:GetChildren() or {}) do
-                        if model:GetAttribute("Owner") == LocalPlayer.UserId and model.PrimaryPart then
-                            local delta = model.PrimaryPart.Position - point
-                            if Vector3.new(delta.X, 0, delta.Z).Magnitude < 4.5 then
-                                free = false
-                                break
-                            end
+            local slots = {}
+            local towerArea = plot:FindFirstChild("TowerArea")
+            for _, lane in ipairs(towerArea and towerArea:GetChildren() or {}) do
+                local laneNumber = tonumber(lane.Name:match("Purchased(%d+)$"))
+                if laneNumber then
+                    for _, part in ipairs(lane:GetChildren()) do
+                        if part:IsA("BasePart") and part.Name == "TowerAreaPart" then
+                            slots[#slots + 1] = {Lane = laneNumber, Part = part}
                         end
                     end
-                    if free then return CFrame.new(point) end
                 end
+            end
+            table.sort(slots, function(a, b)
+                if a.Lane == b.Lane then return a.Part.Position.Z < b.Part.Position.Z end
+                return a.Lane < b.Lane
+            end)
+            for _, slot in ipairs(slots) do
+                local point = slot.Part.Position
+                local free = true
+                for _, model in ipairs(placed and placed:GetChildren() or {}) do
+                    if model:GetAttribute("Owner") == LocalPlayer.UserId and model.PrimaryPart then
+                        local delta = model.PrimaryPart.Position - point
+                        if Vector3.new(delta.X, 0, delta.Z).Magnitude < 4.5 then
+                            free = false
+                            break
+                        end
+                    end
+                end
+                if free then return slot.Part.CFrame, slot.Lane end
             end
         end
 
         local function placeBestCapybara()
             local tool = bestTool("isTower")
-            local placement = freeTowerCFrame()
+            local placement, lane = freeTowerCFrame()
             if not tool then return false, "no capybara tool" end
             if not placement then return false, "no free placement" end
             if not equip(tool) then return false, "equip failed" end
@@ -660,10 +705,22 @@ return function(context)
                 Remotes.GetMouseCF.OnClientInvoke = function() return placement end
             end)
             if not assigned then return false, "placement callback unavailable" end
+            local beforeCount = 0
+            for _, model in ipairs(placedItemsFolder() and placedItemsFolder():GetChildren() or {}) do
+                if model:GetAttribute("Owner") == LocalPlayer.UserId then beforeCount += 1 end
+            end
             pcall(function() tool:Activate() end)
-            task.wait(0.35)
+            local started = os.clock()
+            local placedCount = beforeCount
+            repeat
+                task.wait(0.1)
+                placedCount = 0
+                for _, model in ipairs(placedItemsFolder() and placedItemsFolder():GetChildren() or {}) do
+                    if model:GetAttribute("Owner") == LocalPlayer.UserId then placedCount += 1 end
+                end
+            until placedCount > beforeCount or not tool.Parent or os.clock() - started >= 1.25
             pcall(function() Remotes.GetMouseCF.OnClientInvoke = oldInvoke end)
-            return true, tool.Name
+            return placedCount > beforeCount or not tool.Parent, "lane " .. tostring(lane)
         end
 
         local function claimPlaytime()
@@ -734,12 +791,85 @@ return function(context)
             return false
         end
 
+        local function growTree()
+            local ok, level = pcall(function() return Remotes.RequestTreeLevel:InvokeServer() end)
+            if not ok or type(level) ~= "number" then return false, "tree level unavailable" end
+            local growth = GameInfo.GrowthInfo[level + 1]
+            if not growth then return false, "maximum tree level" end
+            if money() < (tonumber(growth.Cost) or 0) then return false, "money requirement" end
+            if growth.RequiredBoss then
+                local bossOk, defeated = pcall(function() return Remotes.RequestDefeatedBosses:InvokeServer() end)
+                if not bossOk or type(defeated) ~= "table" or not defeated[growth.RequiredBoss] then
+                    return false, "boss requirement"
+                end
+            end
+            local available = {}
+            for _, parent in ipairs({LocalPlayer:FindFirstChildOfClass("Backpack"), LocalPlayer.Character}) do
+                for _, tool in ipairs(parent and parent:GetChildren() or {}) do
+                    if tool:IsA("Tool") and tool:GetAttribute("isPlant") then available[#available + 1] = tool end
+                end
+            end
+            local used = {}
+            for _, requirement in ipairs(growth.RequiredPlants or {}) do
+                local found
+                for _, tool in ipairs(available) do
+                    local lower = string.lower(tool.Name)
+                    local nameMatch = string.find(lower, string.lower(requirement.Name), 1, true) ~= nil
+                    local mutation = tostring(requirement.Mutations or "")
+                    local mutationMatch = mutation == "" or string.find(lower, string.lower(mutation), 1, true) ~= nil
+                    if not used[tool] and nameMatch and mutationMatch then found = tool break end
+                end
+                if not found then return false, "plant requirement" end
+                used[found] = true
+            end
+            local grew, result = pcall(function() return Remotes.RequestGrowth:InvokeServer() end)
+            return grew and result == true, grew and "growth requested" or tostring(result)
+        end
+
+        local function buyLane()
+            local plot = ownPlot()
+            local _, _, root = getCharacter()
+            local buttons = plot and plot:FindFirstChild("LaneButtons")
+            if not buttons or not root or type(firetouchinterest) ~= "function" then return false, "lane route unavailable" end
+            local choices = {}
+            for lane = 1, 7 do
+                local model = buttons:FindFirstChild("Lane" .. lane .. "Button")
+                local part = model and model:FindFirstChild("ButtonPart")
+                local price = tonumber(PurchasablePrices.LanePrices[lane]) or math.huge
+                if part and part.CanTouch and part.Transparency < 1 then
+                    choices[#choices + 1] = {Lane = lane, Part = part, Price = price}
+                end
+            end
+            table.sort(choices, function(a, b) return a.Price < b.Price end)
+            for _, choice in ipairs(choices) do
+                if money() - choice.Price >= state.LaneMoneyReserve then
+                    pcall(function()
+                        firetouchinterest(root, choice.Part, 0)
+                        task.wait(0.08)
+                        firetouchinterest(root, choice.Part, 1)
+                    end)
+                    return true, "lane " .. choice.Lane
+                end
+            end
+            return false, "reserve or price blocked"
+        end
+
+        local function turnInBounty()
+            local ok, data = pcall(function() return Remotes.RequestBounties:InvokeServer() end)
+            if not ok or type(data) ~= "table" or (data.EasyClaimed and data.HardClaimed) then return false end
+            local turned, result, message = pcall(function() return Remotes.TurnInBounty:InvokeServer() end)
+            return turned and result == true, message
+        end
+
         return {
             PlaceBestPlant = placeBestPlant,
             PlaceBestCapybara = placeBestCapybara,
             ClaimPlaytime = claimPlaytime,
             ClaimDaily = claimDaily,
             ClaimQuest = claimQuest,
+            GrowTree = growTree,
+            BuyLane = buyLane,
+            TurnInBounty = turnInBounty,
         }
     end)()
 
@@ -756,6 +886,9 @@ return function(context)
         end,
     })
     EggSection:AddToggle({Name = "Auto Buy Selected Eggs", Flag = "cvp_auto_buy_egg", Default = false, Callback = function(value) state.AutoBuyEgg = value end})
+    EggSection:AddInput({Name = "Money Reserve", Description = "Never spend below this amount", Flag = "cvp_egg_money_reserve", Placeholder = "0", Default = "0", Callback = function(value) state.EggMoneyReserve = math.max(0, tonumber(value) or 0) end})
+    EggSection:AddInput({Name = "Start Buying Again At", Description = "After reserve stops buying, wait for this balance", Flag = "cvp_egg_restart_at", Placeholder = "0", Default = "0", Callback = function(value) state.EggRestartBuyingAt = math.max(0, tonumber(value) or 0) end})
+    EggSection:AddDropdown({Name = "Priority Eggs", Description = "Can buy while waiting for restart, but never below reserve", Flag = "cvp_priority_eggs", Values = eggOrder, Multi = true, Default = state.EggPriorities, Callback = function(value) state.EggPriorities = type(value) == "table" and value or {} end})
     EggSection:AddButton({Name = "Buy Selected Eggs Once", Callback = function() buySelectedOnce(eggOrder, state.SelectedEggs, "Egg") end})
 
     GearSection:AddDropdown({
@@ -771,9 +904,12 @@ return function(context)
         end,
     })
     GearSection:AddToggle({Name = "Auto Buy Selected Gear", Flag = "cvp_auto_buy_gear", Default = false, Callback = function(value) state.AutoBuyGear = value end})
+    GearSection:AddInput({Name = "Money Reserve", Description = "Never spend below this amount", Flag = "cvp_gear_money_reserve", Placeholder = "0", Default = "0", Callback = function(value) state.GearMoneyReserve = math.max(0, tonumber(value) or 0) end})
+    GearSection:AddInput({Name = "Start Buying Again At", Description = "After reserve stops buying, wait for this balance", Flag = "cvp_gear_restart_at", Placeholder = "0", Default = "0", Callback = function(value) state.GearRestartBuyingAt = math.max(0, tonumber(value) or 0) end})
+    GearSection:AddDropdown({Name = "Priority Gear", Description = "Can buy while waiting for restart, but never below reserve", Flag = "cvp_priority_gears", Values = gearOrder, Multi = true, Default = state.GearPriorities, Callback = function(value) state.GearPriorities = type(value) == "table" and value or {} end})
     GearSection:AddButton({Name = "Buy Selected Gear Once", Callback = function() buySelectedOnce(gearOrder, state.SelectedGears, "Gear") end})
     ShopInfoSection:AddLabel("Uses RequestPersonalStock before every purchase.")
-    ShopInfoSection:AddLabel("Only items currently in stock are requested.")
+    ShopInfoSection:AddLabel("Priority items bypass restart waiting, never the reserve floor.")
 
     SummonSection:AddDropdown({
         Name = "Boss",
@@ -798,28 +934,26 @@ return function(context)
     end})
 
     ReachSection:AddToggle({
-        Name = "Plant Silent Shovel",
-        Description = "Redirects the shovel to the nearest plant while masking camera and body movement.",
-        Flag = "cvp_plant_reach",
+        Name = "Orbit Plant Auto Farm",
+        Description = "Orbits one walking plant and turbo-clicks the shovel until it dies or focus time expires.",
+        Flag = "cvp_orbit_auto_farm",
         Default = false,
-        Callback = function(value) state.PlantReach = value end,
+        Callback = function(value)
+            state.AutoFarm = value
+            if not value then stopOrbitFarm() end
+        end,
     })
-    ReachSection:AddToggle({
-        Name = "Boss Silent Shovel",
-        Description = "Redirects shovel hits to the nearest native boss target.",
-        Flag = "cvp_boss_reach",
-        Default = false,
-        Callback = function(value) state.BossReach = value end,
-    })
-    ReachSection:AddSlider({Name = "Shovel Range", Flag = "cvp_shovel_range", Min = 8, Max = 300, Step = 2, Default = 120, Suffix = " studs", Callback = function(value) state.ShovelRange = tonumber(value) or 120 end})
+    ReachSection:AddSlider({Name = "Range", Flag = "cvp_farm_range", Min = 25, Max = 500, Step = 5, Default = 150, Suffix = " studs", Callback = function(value) state.FarmRange = tonumber(value) or 150 end})
+    ReachSection:AddDropdown({Name = "Minimum Rarity", Flag = "cvp_farm_minimum_rarity", Values = {"Common", "Rare", "Epic", "Legendary", "Mythic", "Godly", "Divine", "Secret"}, Default = "Common", Callback = function(value) state.FarmMinimumRarity = value or "Common" end})
+    ReachSection:AddSlider({Name = "Minimum Plant Size", Flag = "cvp_farm_minimum_size", Min = 0, Max = 10, Step = 0.1, Default = 0, Suffix = "x", Callback = function(value) state.FarmMinimumSize = tonumber(value) or 0 end})
+    ReachSection:AddSlider({Name = "Maximum Plant Size", Flag = "cvp_farm_maximum_size", Min = 0, Max = 10, Step = 0.1, Default = 10, Suffix = "x", Callback = function(value) state.FarmMaximumSize = tonumber(value) or 10 end})
 
-    TurboSection:AddToggle({
-        Name = "Turbo Shovel",
-        Description = "Activates every frame so every server-accepted 0.25s hit window is used.",
-        Flag = "cvp_turbo_shovel",
-        Default = false,
-        Callback = function(value) state.TurboShovel = value end,
-    })
+    TurboSection:AddSlider({Name = "Focus Time Per Target", Flag = "cvp_farm_focus_time", Min = 1, Max = 20, Step = 0.5, Default = 3, Suffix = "s", Callback = function(value) state.FarmFocusTime = tonumber(value) or 3 end})
+    TurboSection:AddSlider({Name = "Strafe Radius", Flag = "cvp_farm_strafe_radius", Min = 2, Max = 7, Step = 0.25, Default = 5, Suffix = " studs", Callback = function(value) state.FarmStrafeRadius = tonumber(value) or 5 end})
+    TurboSection:AddSlider({Name = "Strafe Speed", Flag = "cvp_farm_strafe_speed", Min = 1, Max = 20, Step = 0.5, Default = 4, Callback = function(value) state.FarmStrafeSpeed = tonumber(value) or 4 end})
+    TurboSection:AddSlider({Name = "Hover Height", Flag = "cvp_farm_hover_height", Min = 0, Max = 15, Step = 0.5, Default = 4, Suffix = " studs", Callback = function(value) state.FarmHoverHeight = tonumber(value) or 4 end})
+    TurboSection:AddToggle({Name = "Return To Position", Flag = "cvp_farm_return_position", Default = true, Callback = function(value) state.FarmReturnToPosition = value end})
+    TurboSection:AddSlider({Name = "Loop Delay", Flag = "cvp_farm_loop_delay", Min = 0, Max = 10, Step = 0.1, Default = 0.5, Suffix = "s", Callback = function(value) state.FarmLoopDelay = tonumber(value) or 0.5 end})
     TurboSection:AddToggle({Name = "Auto Equip Shovel", Flag = "cvp_auto_equip_shovel", Default = true, Callback = function(value) state.AutoEquipShovel = value end})
 
     AutomationSection:AddToggle({Name = "Auto Hatch Ready Eggs", Flag = "cvp_auto_hatch", Default = false, Callback = function(value) state.AutoHatch = value end})
@@ -839,6 +973,11 @@ return function(context)
     RewardSection:AddToggle({Name = "Auto Claim Playtime Rewards", Flag = "cvp_auto_claim_playtime", Default = false, Callback = function(value) state.AutoClaimPlaytime = value end})
     RewardSection:AddToggle({Name = "Auto Claim Daily Reward", Flag = "cvp_auto_claim_daily", Default = false, Callback = function(value) state.AutoClaimDaily = value end})
     RewardSection:AddToggle({Name = "Auto Claim Quests", Flag = "cvp_auto_claim_quests", Default = false, Callback = function(value) state.AutoClaimQuests = value end})
+    ProgressionSection:AddToggle({Name = "Auto Level Up Tree", Flag = "cvp_auto_grow_tree", Default = false, Callback = function(value) state.AutoGrowTree = value end})
+    ProgressionSection:AddToggle({Name = "Auto Buy Lane", Flag = "cvp_auto_buy_lane", Default = false, Callback = function(value) state.AutoBuyLane = value end})
+    ProgressionSection:AddInput({Name = "Lane Money Reserve", Description = "Lane purchases never spend below this balance", Flag = "cvp_lane_money_reserve", Placeholder = "0", Default = "0", Callback = function(value) state.LaneMoneyReserve = math.max(0, tonumber(value) or 0) end})
+    BountySection:AddToggle({Name = "Auto Turn In Bounty", Flag = "cvp_auto_turn_in_bounty", Default = false, Callback = function(value) state.AutoTurnInBounty = value end})
+    BountySection:AddSlider({Name = "Loop Delay", Flag = "cvp_bounty_loop_delay", Min = 1, Max = 60, Step = 1, Default = 5, Suffix = "s", Callback = function(value) state.BountyLoopDelay = tonumber(value) or 5 end})
     RuntimeSection:AddLabel("PlaceId: " .. tostring(game.PlaceId))
     RuntimeSection:AddLabel("UniverseId: " .. tostring(game.GameId))
     RuntimeSection:AddLabel("Game build: " .. tostring(game.PlaceVersion))
@@ -882,35 +1021,15 @@ return function(context)
     end)
 
     task.spawn(function()
+        local previous = os.clock()
         while state.Alive do
-            if state.TurboShovel and not state.BlinkBusy then
-                if state.PlantReach or state.BossReach then
-                    local target = nearestShovelTarget()
-                    if target then
-                        setLabel(shovelStatus, "Shovel: Turbo redirecting")
-                        setLabel(targetStatus, "Target: " .. target.Name:split(":")[1])
-                        silentShovelAttack(target, true)
-                    else
-                        setLabel(shovelStatus, "Shovel: Turbo ready")
-                        setLabel(targetStatus, "Target: None in range")
-                        local tool = getShovel(true)
-                        if not tool and state.AutoEquipShovel then tool = equipShovel() end
-                        if tool then pcall(function() tool:Activate() end) end
-                        RunService.Heartbeat:Wait()
-                    end
-                else
-                    setLabel(shovelStatus, "Shovel: Turbo native range")
-                    setLabel(targetStatus, "Target: Native shovel targeting")
-                    local tool = getShovel(true)
-                    if not tool and state.AutoEquipShovel then tool = equipShovel() end
-                    if tool then pcall(function() tool:Activate() end) end
-                    RunService.Heartbeat:Wait()
-                end
+            local now = os.clock()
+            local deltaTime = math.min(now - previous, 0.1)
+            previous = now
+            if state.AutoFarm then
+                stepOrbitFarm(deltaTime)
+                RunService.Heartbeat:Wait()
             else
-                if not state.BlinkBusy then
-                    setLabel(shovelStatus, "Shovel: Idle")
-                    setLabel(targetStatus, "Target: None")
-                end
                 task.wait(0.1)
             end
         end
@@ -945,6 +1064,33 @@ return function(context)
                 if state.AutoClaimDaily and Automation.ClaimDaily() then activity[#activity + 1] = "daily reward" end
                 if state.AutoClaimQuests and Automation.ClaimQuest() then activity[#activity + 1] = "quest reward" end
             end
+            if state.AutoGrowTree and os.clock() - state.LastTreeGrowth >= 3 then
+                state.LastTreeGrowth = os.clock()
+                local ok, message = Automation.GrowTree()
+                if ok then activity[#activity + 1] = "grew tree" end
+                setLabel(progressionStatus, ok and "Tree: Leveled up" or ("Tree: " .. tostring(message)))
+            end
+            if state.AutoBuyLane and os.clock() - state.LastLanePurchase >= 1.5 then
+                state.LastLanePurchase = os.clock()
+                local ok, message = Automation.BuyLane()
+                if ok then activity[#activity + 1] = "bought " .. tostring(message) end
+                setLabel(progressionStatus, ok and ("Lane: Bought " .. tostring(message)) or ("Lane: " .. tostring(message)))
+            end
+            if state.AutoTurnInBounty and os.clock() - state.LastBountyTurnIn >= state.BountyLoopDelay then
+                state.LastBountyTurnIn = os.clock()
+                local ok, message = Automation.TurnInBounty()
+                if ok then activity[#activity + 1] = "turned in bounty" end
+                if message then setLabel(bountyStatus, ok and "Bounties: Turned in" or ("Bounties: " .. tostring(message))) end
+            end
+            if os.clock() - state.LastBountyRefresh >= 2 then
+                state.LastBountyRefresh = os.clock()
+                local ok, bounties = pcall(function() return Remotes.RequestBounties:InvokeServer() end)
+                if ok and type(bounties) == "table" then
+                    local easy = bounties.EasyClaimed and "Easy claimed" or (bounties.Easy and bounties.Easy.Description or "Easy unavailable")
+                    local hard = bounties.HardClaimed and "Hard claimed" or (bounties.Hard and bounties.Hard.Description or "Hard unavailable")
+                    setLabel(bountyStatus, "Easy: " .. tostring(easy) .. " | Hard: " .. tostring(hard))
+                end
+            end
             setLabel(automationStatus, #activity > 0 and ("Automation: " .. table.concat(activity, ", ")) or "Automation: Monitoring")
             task.wait(0.25)
         end
@@ -958,7 +1104,7 @@ return function(context)
         state.AutoBuyEgg = false
         state.AutoBuyGear = false
         state.AutoSummonBoss = false
-        state.TurboShovel = false
+        state.AutoFarm = false
         state.AutoHatch = false
         state.AutoCollectMoney = false
         state.AutoPlacePlants = false
@@ -966,16 +1112,10 @@ return function(context)
         state.AutoClaimPlaytime = false
         state.AutoClaimDaily = false
         state.AutoClaimQuests = false
-        if state.AttackCharacter and state.AttackCharacter.Parent and state.AttackOriginalPivot then
-            pcall(function() state.AttackCharacter:PivotTo(state.AttackOriginalPivot) end)
-        end
-        if state.AttackVisualRestore then
-            pcall(state.AttackVisualRestore)
-        end
-        state.AttackCharacter = nil
-        state.AttackOriginalPivot = nil
-        state.AttackVisualRestore = nil
-        ContextActionService:UnbindAction(RANGE_ACTION)
+        state.AutoGrowTree = false
+        state.AutoBuyLane = false
+        state.AutoTurnInBounty = false
+        stopOrbitFarm()
     end
 
     updateShopLabels()
