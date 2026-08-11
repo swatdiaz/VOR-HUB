@@ -30,6 +30,8 @@ return function(context)
     local GearData = require(Modules:WaitForChild("GearData"))
     local BossData = require(Modules:WaitForChild("BossData"))
     local PlantData = require(Modules:WaitForChild("PlantData"))
+    local TowerData = require(Modules:WaitForChild("TowerData"))
+    local MutationData = require(Modules:WaitForChild("MutationData"))
     local PurchasablePrices = require(Modules:WaitForChild("PurchasablePrices"))
     local GameInfo = require(Modules:WaitForChild("GameInfo"))
     local QuestData = require(Modules:WaitForChild("QuestData"))
@@ -608,19 +610,60 @@ return function(context)
     end
 
     local Automation = (function()
+        local function bestPlacedRegularBaseDps()
+            local best = 0
+            for _, model in ipairs(placedItemsFolder() and placedItemsFolder():GetChildren() or {}) do
+                if model:GetAttribute("Owner") == LocalPlayer.UserId then
+                    local configuration = model:FindFirstChild("ServerConfiguration")
+                    local tower = TowerData.getData(model.Name:split(":")[1])
+                    if configuration and valueOf(configuration, "Type", "") == "Tower" and tower and not tower:FindFirstChild("PercentDamage") then
+                        local attackSpeed = tonumber(valueOf(tower, "AttackSpeed", 0)) or 0
+                        local damage = tonumber(valueOf(tower, "Damage", 0)) or 0
+                        if attackSpeed > 0 then best = math.max(best, damage / attackSpeed) end
+                    end
+                end
+            end
+            return best
+        end
+
+        local function towerDps(tool, bestRegularBaseDps)
+            local variant, mutations, size, baseName = ItemNameParser(tool.Name)
+            local tower = TowerData.getData(baseName)
+            if not tower then return 0 end
+            local attackSpeed = tonumber(valueOf(tower, "AttackSpeed", 0)) or 0
+            if attackSpeed <= 0 then return 0 end
+            local damage = tonumber(valueOf(tower, "Damage", 0)) or 0
+            local percentDamage = tower:FindFirstChild("PercentDamage")
+            if percentDamage and bestRegularBaseDps > 0 then
+                damage = bestRegularBaseDps * (tonumber(percentDamage.Value) or 0) * attackSpeed
+            end
+            local ok, adjustedDamage = pcall(MutationData.calculateDamage, damage, variant or "", mutations or "", tonumber(size) or 1)
+            return ok and (tonumber(adjustedDamage) or 0) / attackSpeed or 0
+        end
+
         local function bestTool(attribute)
             local candidates = {}
+            local bestRegularBaseDps = bestPlacedRegularBaseDps()
             for _, parent in ipairs({LocalPlayer:FindFirstChildOfClass("Backpack"), LocalPlayer.Character}) do
                 for _, tool in ipairs(parent and parent:GetChildren() or {}) do
                     if tool:IsA("Tool") and tool:GetAttribute(attribute) then
                         local _, _, size, baseName = ItemNameParser(tool.Name)
                         local ok, value = pcall(GetItemValue, {itemName = baseName, SizeScaling = size})
-                        candidates[#candidates + 1] = {Tool = tool, Value = ok and tonumber(value) or 0}
+                        candidates[#candidates + 1] = {
+                            Tool = tool,
+                            Dps = towerDps(tool, bestRegularBaseDps),
+                            Value = ok and tonumber(value) or 0,
+                        }
                     end
                 end
             end
-            table.sort(candidates, function(a, b) return a.Value > b.Value end)
-            return candidates[1] and candidates[1].Tool
+            table.sort(candidates, function(a, b)
+                if a.Dps ~= b.Dps then return a.Dps > b.Dps end
+                if a.Value ~= b.Value then return a.Value > b.Value end
+                return a.Tool.Name < b.Tool.Name
+            end)
+            local best = candidates[1]
+            return best and best.Tool, best and best.Dps or 0
         end
 
         local function equip(tool)
@@ -765,7 +808,10 @@ return function(context)
         end
 
         local function placeBestCapybara()
-            return placeToolInFreeRow(bestTool("isTower"), "Tower")
+            local tool, dps = bestTool("isTower")
+            local name = tool and tool.Name or "None"
+            local ok, message = placeToolInFreeRow(tool, "Tower")
+            return ok, message, dps, name
         end
 
         local function findEggTool()
@@ -1201,8 +1247,8 @@ return function(context)
             end
             if state.AutoPlaceCapybaras and os.clock() - state.LastPlaceCapybara >= 1.25 then
                 state.LastPlaceCapybara = os.clock()
-                local ok = Automation.PlaceBestCapybara()
-                if ok then activity[#activity + 1] = "placed capybara" end
+                local ok, _, dps, name = Automation.PlaceBestCapybara()
+                if ok then activity[#activity + 1] = string.format("placed %s (%.0f DPS)", tostring(name), tonumber(dps) or 0) end
             end
             if os.clock() - state.LastRewardClaim >= 1 then
                 state.LastRewardClaim = os.clock()

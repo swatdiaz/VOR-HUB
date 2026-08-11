@@ -1109,6 +1109,9 @@ $capybarasNativeBehavior = (
     $capybarasText -match 'only have 5 capybaras in one lane' -and
     $capybarasText -match 'laneLimitPopupVisible\(\)' -and
     $capybarasText -match 'autoPlaceCapybarasToggle:Set\(false, true\)' -and
+    $capybarasText -match 'MutationData\.calculateDamage' -and
+    $capybarasText -match 'damage / attackSpeed' -and
+    $capybarasText -match 'if a\.Dps ~= b\.Dps then return a\.Dps > b\.Dps end' -and
     $capybarasText -match '__VORCapybarasVsPlantsCleanup'
 )
 if (-not ($capybarasRouting -and $capybarasNativeBehavior)) {
