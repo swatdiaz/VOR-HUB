@@ -9,6 +9,16 @@ return function(runtime)
     local universeId = tonumber(runtime.UniverseId) or game.GameId
 
     local supportedGames = {
+        CapybarasVsPlants = {
+            Key = "CapybarasVsPlants",
+            DisplayName = "Capybaras VS Plants",
+            UniverseId = 8841437826,
+            RootPlaceId = 104973076655377,
+            PlaceIds = {
+                [104973076655377] = true,
+            },
+            Module = "games/capybaras_vs_plants.lua",
+        },
         MurderMystery2 = {
             Key = "MurderMystery2",
             DisplayName = "Murder Mystery 2",

@@ -2476,6 +2476,8 @@ return function(context)
             launchOrder = {"Farming", "Upgrades", "Shop", "Rewards", "Status"}
         elseif SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key == "BeeSwarm" then
             launchOrder = {"Farming", "Quests", "Progression", "Utilities", "Status"}
+        elseif SETTINGS.ActiveGame and SETTINGS.ActiveGame.Key == "CapybarasVsPlants" then
+            launchOrder = {"🛒 Shop", "👹 Boss", "⛏️ Shovel", "🌱 AFK"}
         elseif self.Pages.Shooting then
             launchOrder = {"Shooting", "Offense", "Defense", "Dribble", "Visuals"}
         else

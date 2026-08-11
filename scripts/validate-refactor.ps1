@@ -12,6 +12,7 @@ $required = @(
     "core/profiles.lua",
     "core/access.lua",
     "core/utilities.lua",
+    "games/capybaras_vs_plants.lua",
     "games/murder_mystery_2.lua",
     "games/mypark.lua",
     "games/practical_basketball.lua",
@@ -1085,14 +1086,36 @@ if (-not ($dragonBallRouting -and $dragonBallNativeBehavior)) {
     throw "Dragon Ball Legendary Powers routing/native/progression contract failed"
 }
 
+$capybarasText = Get-Content -LiteralPath (Join-Path $repo "games/capybaras_vs_plants.lua") -Raw
+$capybarasRouting = (
+    $settingsText -match 'Key\s*=\s*"CapybarasVsPlants"' -and
+    $settingsText -match 'UniverseId\s*=\s*8841437826' -and
+    $settingsText -match 'RootPlaceId\s*=\s*104973076655377' -and
+    $settingsText -match 'Module\s*=\s*"games/capybaras_vs_plants\.lua"'
+)
+$capybarasNativeBehavior = (
+    $capybarasText -match 'RequestPersonalStock:InvokeServer' -and
+    $capybarasText -match 'Remotes\.BuyItem:FireServer\(name\)' -and
+    $capybarasText -match 'Remotes\.SummonBoss:InvokeServer\("Summon", state\.SelectedBoss\)' -and
+    $capybarasText -match 'local function processReadyEggs\(single\)' -and
+    $capybarasText -match 'Multi\s*=\s*true' -and
+    $capybarasText -match 'Remotes\.CollectionMachine:FireServer\(\)' -and
+    $capybarasText -match 'Remotes\.ClaimQuest:InvokeServer' -and
+    $capybarasText -match '__VORCapybarasVsPlantsCleanup'
+)
+if (-not ($capybarasRouting -and $capybarasNativeBehavior)) {
+    throw "Capybaras VS Plants routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (11/11)"
+Write-Host "Game builder contract: PASS (12/12)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
+Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Shared Farm Position controls: PASS ($($canonicalPositionFlags.Count)/$($canonicalPositionFlags.Count))"
 Write-Host "Blox Fruits category routing: PASS ($($expectedCategories.Count)/$($expectedCategories.Count))"
 Write-Host "Blox Fruits raid boss selection: PASS (raid tags, replicated catalog, and sea fallbacks)"
