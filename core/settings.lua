@@ -123,6 +123,16 @@ return function(runtime)
             },
             Module = "games/iron_man_reimagined.lua",
         },
+        DogRace = {
+            Key = "DogRace",
+            DisplayName = "[AA] Dog Race",
+            UniverseId = 10350558449,
+            RootPlaceId = 119609933650338,
+            PlaceIds = {
+                [119609933650338] = true,
+            },
+            Module = "games/dog_race.lua",
+        },
         DragonBallLegendaryPowers = {
             Key = "DragonBallLegendaryPowers",
             DisplayName = "Dragon Ball Legendary Powers",

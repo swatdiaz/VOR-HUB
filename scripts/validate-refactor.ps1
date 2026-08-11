@@ -23,6 +23,7 @@ $required = @(
     "games/bee_swarm_simulator.lua",
     "games/gunfight_arena.lua",
     "games/iron_man_reimagined.lua",
+    "games/dog_race.lua",
     "games/dragon_ball_legendary_powers.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
@@ -1182,14 +1183,43 @@ if (-not ($ironManRouting -and $ironManNativeBehavior)) {
     throw "Iron Man: Reimagined routing/native adapter contract failed"
 }
 
+$dogRaceText = Get-Content -LiteralPath (Join-Path $repo "games/dog_race.lua") -Raw
+$dogRaceRouting = (
+    $settingsText -match 'Key\s*=\s*"DogRace"' -and
+    $settingsText -match 'UniverseId\s*=\s*10350558449' -and
+    $settingsText -match 'RootPlaceId\s*=\s*119609933650338' -and
+    $settingsText -match 'Module\s*=\s*"games/dog_race\.lua"'
+)
+$dogRaceNativeBehavior = (
+    $dogRaceText -match '__VORDogRaceCleanup' -and
+    $dogRaceText -match 'GetController\("TrainController"\)' -and
+    $dogRaceText -match 'StartAutoTrain' -and
+    $dogRaceText -match 'GetController\("AutoController"\)' -and
+    $dogRaceText -match 'StartAutoFight' -and
+    $dogRaceText -match 'QuitContestEvent' -and
+    $dogRaceText -match 'UnbindFromRenderStep\("fight"\)' -and
+    $dogRaceText -match 'GetController\("DashController"\)' -and
+    $dogRaceText -match 'hasTrainingPosture' -and
+    $dogRaceText -match 'GetRebirthCost' -and
+    $dogRaceText -match 'ClaimOfflineWinsEvent' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_train"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_race"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_speed_multiplier"' -and
+    $dogRaceText -match 'clearSpeedOverride\(\)'
+)
+if (-not ($dogRaceRouting -and $dogRaceNativeBehavior)) {
+    throw "Dog Race routing/native adapter contract failed"
+}
+
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (14/14)"
+Write-Host "Game builder contract: PASS (15/15)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
+Write-Host "Dog Race support: PASS (native train/race/dash, contest give-up, respawn posture, speed, rebirth, pets, rewards, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"
