@@ -583,24 +583,84 @@ local eventSeedRuntimeStatus="Idle"
 local defenseRuntimeStatus="Idle"
 
 -- EVENT SEEDS
+local function worldPosition(instance)
+	if not instance then return nil end
+	if instance:IsA("BasePart") then return instance.Position end
+	if instance:IsA("Attachment") then return instance.WorldPosition end
+	if instance:IsA("Model") then local ok,pivot=pcall(instance.GetPivot,instance); if ok then return pivot.Position end end
+	local part=instance:FindFirstAncestorWhichIsA("BasePart")
+	if part then return part.Position end
+	local model=instance:FindFirstAncestorWhichIsA("Model")
+	if model then local ok,pivot=pcall(model.GetPivot,model); if ok then return pivot.Position end end
+	return nil
+end
+local function eventSeedName(marker)
+	if marker:GetAttribute("MegaSeed")==true then return "Mega Seed" end
+	if marker:GetAttribute("RainbowSeed")==true then return "Rainbow Seed" end
+	if marker:GetAttribute("GoldSeed")==true then return "Gold Seed" end
+	return tostring(marker:GetAttribute("SeedPack") or "Event Seed")
+end
+local function findEventSeedPrompt(marker,map,timeout)
+	local targetPosition=worldPosition(marker); if not targetPosition then return nil end
+	local deadline=os.clock()+(timeout or 1.5)
+	repeat
+		local best,bestDistance=nil,math.huge
+		local function search(root)
+			if not root then return end
+			for _,candidate in ipairs(root:GetDescendants()) do
+				if candidate:IsA("ProximityPrompt") and candidate.Enabled then
+					local position=worldPosition(candidate)
+					local distance=position and (position-targetPosition).Magnitude or math.huge
+					if distance<bestDistance and distance<=14 then best,bestDistance=candidate,distance end
+				end
+			end
+		end
+		search(marker)
+		search(map and map:FindFirstChild("SeedPackSpawnClient"))
+		if best then return best end
+		task.wait(0.05)
+	until not marker.Parent or os.clock()>=deadline
+	return nil
+end
+local function holdEventSeedPrompt(prompt)
+	if not (prompt and prompt.Parent and prompt.Enabled) then return false end
+	local holdDuration=math.max(0,tonumber(prompt.HoldDuration) or 0)
+	local ok=pcall(function()
+		prompt:InputHoldBegin()
+		task.wait(holdDuration+0.12)
+		if prompt.Parent then prompt:InputHoldEnd() end
+	end)
+	if not ok and type(fireproximityprompt)=="function" then ok=pcall(fireproximityprompt,prompt,holdDuration) end
+	return ok
+end
+local eventSeedAttempts=setmetatable({},{__mode="k"})
 task.spawn(function()
 	while ALIVE do
-		if F.eventSeeds and Net then
-			pcall(function()
+		if F.eventSeeds then
+			local acquired,saved=false,nil
+			local ok,err=pcall(function()
 				local map=workspace:FindFirstChild("Map"); local locs=map and map:FindFirstChild("SeedPackSpawnServerLocations")
 				local locations=locs and locs:GetChildren() or {}
 				if #locations==0 then eventSeedRuntimeStatus="Waiting for spawn"; return end
 				local hrp=getHRP(); if not hrp then eventSeedRuntimeStatus="Waiting for character"; return end
 				eventSeedRuntimeStatus="Collecting "..tostring(#locations)
-				acquire(); local saved=hrp.CFrame
-				for _,m in ipairs(locations) do
+				acquire(); acquired=true; saved=hrp.CFrame
+				for _,marker in ipairs(locations) do
 					if not F.eventSeeds then break end
-					local cf=m:IsA("BasePart") and m.CFrame or (m:IsA("Model") and pcall(function() return m:GetPivot() end) and m:GetPivot())
-					if cf then hrp.CFrame=cf+Vector3.new(0,3,0); task.wait(0.25) end
+					if os.clock()-(eventSeedAttempts[marker] or 0)<5 then continue end
+					eventSeedAttempts[marker]=os.clock()
+					local position=worldPosition(marker)
+					if position then
+						eventSeedRuntimeStatus="Claiming "..eventSeedName(marker)
+						hrp.CFrame=CFrame.new(position+Vector3.new(0,2.5,0)); task.wait(0.15)
+						local prompt=findEventSeedPrompt(marker,map,1.5)
+						if prompt then holdEventSeedPrompt(prompt) else task.wait(0.2) end
+					end
 				end
-				local h2=getHRP(); if h2 then h2.CFrame=saved end; release()
 				eventSeedRuntimeStatus="Waiting for spawn"
 			end)
+			if acquired then local h2=getHRP(); if h2 and saved then h2.CFrame=saved end; release() end
+			if not ok then eventSeedRuntimeStatus="Collector error"; warn("[VOR HUB] Event seed collector: "..tostring(err)) end
 		else eventSeedRuntimeStatus="Idle" end
 		task.wait(0.5)
 	end

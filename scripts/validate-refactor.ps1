@@ -1125,6 +1125,12 @@ $gag2NativeBehavior = (
     $gag2Text -match 'FindFirstChild\("PetData"\)' -and
     $gag2Text -match 'cost>0 and spawnChance>0' -and
     $gag2Text -match 'SeedPackSpawnServerLocations' -and
+    $gag2Text -match 'SeedPackSpawnClient' -and
+    $gag2Text -match 'prompt:InputHoldBegin\(\)' -and
+    $gag2Text -match 'prompt\.HoldDuration' -and
+    $gag2Text -match 'marker:GetAttribute\("MegaSeed"\)' -and
+    $gag2Text -match 'marker:GetAttribute\("RainbowSeed"\)' -and
+    $gag2Text -match 'marker:GetAttribute\("GoldSeed"\)' -and
     $gag2Text -match 'GardenZoneData' -and
     $gag2Text -match 'Net\.Shovel\.HitPlayer:Fire\(player\.UserId\)' -and
     $gag2Text -match 'GrowAGarden2ModuleReady' -and
