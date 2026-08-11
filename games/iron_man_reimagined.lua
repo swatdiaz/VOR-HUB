@@ -131,6 +131,10 @@ return function(context)
         AutoRepair = false,
         AutoFlares = false,
         AutoFlight = false,
+        FlightSpeedMultiplier = 1,
+        FlightVelocity = nil,
+        FlightNativeVelocity = nil,
+        FlightAppliedVelocity = nil,
         AimAssist = false,
         AimPart = "Head",
         AimRadius = 260,
@@ -175,6 +179,69 @@ return function(context)
         local skeleton = character and character:FindFirstChild("Skeleton")
         return skeleton and skeleton:FindFirstChildOfClass("Humanoid")
             or character and character:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function clearFlightSpeedOverride()
+        local velocity = state.FlightVelocity
+        local nativeVelocity = state.FlightNativeVelocity
+        if velocity and velocity.Parent and nativeVelocity then
+            pcall(function()
+                velocity.VectorVelocity = nativeVelocity
+            end)
+        end
+        state.FlightVelocity = nil
+        state.FlightNativeVelocity = nil
+        state.FlightAppliedVelocity = nil
+    end
+
+    local function findNativeFlightVelocity(character)
+        if not character then
+            return nil
+        end
+        local characterPrimary = character.PrimaryPart
+        local skeleton = character:FindFirstChild("Skeleton")
+        local skeletonPrimary = skeleton and skeleton.PrimaryPart
+        for _, object in ipairs(character:GetDescendants()) do
+            if object:IsA("LinearVelocity") and object.MaxForce >= 100000 then
+                local attachment = object.Attachment0
+                local bodyPart = attachment and attachment.Parent
+                if bodyPart and (bodyPart == characterPrimary
+                    or bodyPart == skeletonPrimary
+                    or bodyPart.Name == "HumanoidRootPart") then
+                    return object
+                end
+            end
+        end
+        return nil
+    end
+
+    local function updateFlightSpeedOverride()
+        local character = LocalPlayer.Character
+        local suit = getSuit(character)
+        local multiplier = math.clamp(tonumber(state.FlightSpeedMultiplier) or 1, 1, 3)
+        if multiplier <= 1 or not suit or suit:GetAttribute("Flight") ~= true then
+            clearFlightSpeedOverride()
+            return
+        end
+
+        local velocity = findNativeFlightVelocity(character)
+        if velocity ~= state.FlightVelocity then
+            clearFlightSpeedOverride()
+            state.FlightVelocity = velocity
+        end
+        if not velocity then
+            return
+        end
+
+        local currentVelocity = velocity.VectorVelocity
+        local lastApplied = state.FlightAppliedVelocity
+        local nativeVelocity = currentVelocity
+        if lastApplied and (currentVelocity - lastApplied).Magnitude <= 0.05 then
+            nativeVelocity = state.FlightNativeVelocity or currentVelocity
+        end
+        state.FlightNativeVelocity = nativeVelocity
+        state.FlightAppliedVelocity = nativeVelocity * multiplier
+        velocity.VectorVelocity = state.FlightAppliedVelocity
     end
 
     local function fireRemote(name, ...)
@@ -422,6 +489,7 @@ return function(context)
     local modeLabel = SuitStatusSection:AddLabel("Mode: --")
     local piecesLabel = SuitStatusSection:AddLabel("Pieces: --")
     local targetLabel = CombatAutomationSection:AddLabel("Target: None")
+    local flightSpeedLabel = FlightAutomationSection:AddLabel("Flight speed: native 1.0x")
     local actionLabel = AdapterStatusSection:AddLabel("Last action: Ready")
     local remoteLabel = AdapterStatusSection:AddLabel("Native remotes: scanning...")
     AdapterStatusSection:AddLabel("Verified live: Mark 42, 2000 suit HP, 100 base flight speed.")
@@ -528,6 +596,22 @@ return function(context)
     FlightActionsSection:AddButton({Name = "Supersonic Boost", Callback = function() tapKey(Enum.KeyCode.B) end})
     FlightActionsSection:AddButton({Name = "Deploy Flares", Callback = function() tapKey(Enum.KeyCode.C) end})
     FlightActionsSection:AddButton({Name = "Dash", Callback = function() tapKey(Enum.KeyCode.LeftControl) end})
+    FlightAutomationSection:AddSlider({
+        Name = "Flight Speed Multiplier",
+        Description = "Multiplies native suit velocity while preserving steering and supersonic boost.",
+        Flag = "imr_flight_speed_multiplier",
+        Min = 1,
+        Max = 3,
+        Step = 0.1,
+        Default = 1,
+        Suffix = "x",
+        Callback = function(value)
+            state.FlightSpeedMultiplier = math.clamp(tonumber(value) or 1, 1, 3)
+            if state.FlightSpeedMultiplier <= 1 then
+                clearFlightSpeedOverride()
+            end
+        end,
+    })
     FlightAutomationSection:AddToggle({
         Name = "Auto Flight",
         Description = "Re-enables native flight after suit/character transitions when the suit is powered.",
@@ -646,6 +730,12 @@ return function(context)
         ) or "Mode: no suit"
         piecesLabel.Text = string.format("Pieces attached: %d / %d", attached, total)
         targetLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.DisplayName or "None")
+        local _, _, root = getCharacter()
+        flightSpeedLabel.Text = string.format(
+            "Flight speed: %.0f studs/s | %.1fx",
+            root and root.AssemblyLinearVelocity.Magnitude or 0,
+            state.FlightSpeedMultiplier
+        )
         actionLabel.Text = "Last action: " .. state.LastAction
         local ready, count = 0, 0
         for _, remote in pairs(remotes) do
@@ -661,6 +751,7 @@ return function(context)
             gui:SetAttribute("IronManEnergy", tonumber(suit and suit:GetAttribute("Energy")) or 0)
             gui:SetAttribute("IronManPower", suit and suit:GetAttribute("Power") == true or false)
             gui:SetAttribute("IronManFlight", suit and suit:GetAttribute("Flight") == true or false)
+            gui:SetAttribute("IronManFlightSpeedMultiplier", state.FlightSpeedMultiplier)
             gui:SetAttribute("IronManAttachedPieces", attached)
             gui:SetAttribute("IronManTotalPieces", total)
         end)
@@ -674,6 +765,8 @@ return function(context)
         state.AutoRepair = false
         state.AutoFlares = false
         state.AutoFlight = false
+        state.FlightSpeedMultiplier = 1
+        clearFlightSpeedOverride()
         state.AimAssist = false
         state.PlayerEsp = false
         if nativeFunctions then
@@ -711,6 +804,8 @@ return function(context)
         if not state.Alive then
             return
         end
+
+        updateFlightSpeedOverride()
 
         if state.AimAssist then
             local camera = workspace.CurrentCamera
