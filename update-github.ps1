@@ -34,6 +34,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $modulePaths = @(
+    "AGENTS.md",
     "core",
     "games",
     "server",
