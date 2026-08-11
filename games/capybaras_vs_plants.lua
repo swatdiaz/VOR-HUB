@@ -53,6 +53,7 @@ return function(context)
         AutoBuyGear = false,
         AutoSummonBoss = false,
         AutoFarm = false,
+        FarmPrioritizeBosses = false,
         FarmRange = 150,
         FarmMinimumRarity = "Common",
         FarmMinimumSize = 0,
@@ -68,6 +69,7 @@ return function(context)
         AutoCollectMoney = false,
         AutoPlacePlants = false,
         PlantEquipDelay = 1.5,
+        AutoPlaceEggs = false,
         AutoPlaceCapybaras = false,
         AutoClaimPlaytime = false,
         AutoClaimDaily = false,
@@ -95,6 +97,7 @@ return function(context)
         LastCollection = 0,
         LastHatch = 0,
         LastPlacePlant = 0,
+        LastPlaceEgg = 0,
         LastPlaceCapybara = 0,
         LastRewardClaim = 0,
         LastTreeGrowth = 0,
@@ -444,11 +447,14 @@ return function(context)
         local size = configuration and configuration:FindFirstChild("SizeScaling")
         local plotNumber = configuration and configuration:FindFirstChild("Plot")
         local plot = ownPlot()
-        if not model or not model.PrimaryPart or not configuration or not health or tonumber(health.Value) <= 0 or isBoss(model) then
+        if not model or not model.PrimaryPart or not configuration or not health or tonumber(health.Value) <= 0 then
             return false
         end
         if plot and plotNumber and tostring(plotNumber.Value) ~= plot.Name then
             return false
+        end
+        if isBoss(model) then
+            return root and (model.PrimaryPart.Position - root.Position).Magnitude <= state.FarmRange
         end
         local scale = tonumber(size and size.Value) or 1
         if scale < state.FarmMinimumSize or scale > state.FarmMaximumSize then
@@ -464,15 +470,19 @@ return function(context)
         local _, _, root = getCharacter()
         local folder = plantsFolder()
         if not root or not folder then return nil end
-        local best, bestDistance
+        local best, bestDistance, bestBoss, bestBossDistance
         for _, model in ipairs(folder:GetChildren()) do
             if validFarmTarget(model, root) then
                 local distance = (model.PrimaryPart.Position - root.Position).Magnitude
                 if not bestDistance or distance < bestDistance then
                     best, bestDistance = model, distance
                 end
+                if isBoss(model) and (not bestBossDistance or distance < bestBossDistance) then
+                    bestBoss, bestBossDistance = model, distance
+                end
             end
         end
+        if state.FarmPrioritizeBosses and bestBoss then return bestBoss, bestBossDistance end
         return best, bestDistance
     end
 
@@ -672,10 +682,9 @@ return function(context)
             end
         end
 
-        local function placeBestCapybara()
-            local tool = bestTool("isTower")
+        local function placeToolInFreeRow(tool)
             local placement, lane = freeTowerCFrame()
-            if not tool then return false, "no capybara tool" end
+            if not tool then return false, "placement tool missing" end
             if not placement then return false, "no free placement" end
             if not equip(tool) then return false, "equip failed" end
             local mouse = LocalPlayer:GetMouse()
@@ -706,6 +715,54 @@ return function(context)
             until placedCount > beforeCount or not tool.Parent or os.clock() - started >= 1.25
             pcall(function() Remotes.GetMouseCF.OnClientInvoke = oldInvoke end)
             return placedCount > beforeCount or not tool.Parent, "lane " .. tostring(lane)
+        end
+
+        local function placeBestCapybara()
+            return placeToolInFreeRow(bestTool("isTower"))
+        end
+
+        local function findEggTool()
+            local eggs = ReplicatedStorage:FindFirstChild("Assets")
+            eggs = eggs and eggs:FindFirstChild("Eggs")
+            for _, parent in ipairs({LocalPlayer.Character, LocalPlayer:FindFirstChildOfClass("Backpack")}) do
+                for _, tool in ipairs(parent and parent:GetChildren() or {}) do
+                    local trueName = tool:IsA("Tool") and tool:GetAttribute("trueName")
+                    if trueName and eggs and eggs:FindFirstChild(tostring(trueName)) then
+                        return tool
+                    end
+                end
+            end
+        end
+
+        local function placeEgg()
+            local tool = findEggTool()
+            if not tool then return false, "no egg tool" end
+            return placeToolInFreeRow(tool)
+        end
+
+        local function pickupAllCapybaras()
+            local placed = placedItemsFolder()
+            local towers = {}
+            for _, model in ipairs(placed and placed:GetChildren() or {}) do
+                local configuration = model:FindFirstChild("ServerConfiguration")
+                if model:GetAttribute("Owner") == LocalPlayer.UserId and valueOf(configuration, "Type", "") == "Tower" then
+                    towers[#towers + 1] = model
+                end
+            end
+            table.sort(towers, function(a, b)
+                local aLane = tonumber(valueOf(a:FindFirstChild("ServerConfiguration"), "Lane", 0)) or 0
+                local bLane = tonumber(valueOf(b:FindFirstChild("ServerConfiguration"), "Lane", 0)) or 0
+                if aLane == bLane then return a.Name < b.Name end
+                return aLane < bLane
+            end)
+            local picked = 0
+            for _, model in ipairs(towers) do
+                if not state.Alive then break end
+                local sent = pcall(function() Remotes.PickUp:FireServer(model.Name) end)
+                if sent then picked += 1 end
+                task.wait(0.08)
+            end
+            return picked > 0, picked
         end
 
         local function claimPlaytime()
@@ -848,7 +905,9 @@ return function(context)
 
         return {
             PlaceBestPlant = placeBestPlant,
+            PlaceEgg = placeEgg,
             PlaceBestCapybara = placeBestCapybara,
+            PickupAllCapybaras = pickupAllCapybaras,
             ClaimPlaytime = claimPlaytime,
             ClaimDaily = claimDaily,
             ClaimQuest = claimQuest,
@@ -928,6 +987,11 @@ return function(context)
             if not value then stopOrbitFarm() end
         end,
     })
+    ReachSection:AddToggle({Name = "Prioritize Bosses", Description = "Bosses are selected before normal plants when one is in range", Flag = "cvp_farm_prioritize_bosses", Default = false, Callback = function(value)
+        state.FarmPrioritizeBosses = value
+        state.CurrentTarget = nil
+        state.FarmNextTargetAt = 0
+    end})
     ReachSection:AddSlider({Name = "Range", Flag = "cvp_farm_range", Min = 25, Max = 500, Step = 5, Default = 150, Suffix = " studs", Callback = function(value) state.FarmRange = tonumber(value) or 150 end})
     ReachSection:AddDropdown({Name = "Minimum Rarity", Flag = "cvp_farm_minimum_rarity", Values = {"Common", "Rare", "Epic", "Legendary", "Mythic", "Godly", "Divine", "Secret"}, Default = "Common", Callback = function(value) state.FarmMinimumRarity = value or "Common" end})
     ReachSection:AddSlider({Name = "Minimum Plant Size", Flag = "cvp_farm_minimum_size", Min = 0, Max = 10, Step = 0.1, Default = 0, Suffix = "x", Callback = function(value) state.FarmMinimumSize = tonumber(value) or 0 end})
@@ -945,8 +1009,21 @@ return function(context)
     AutomationSection:AddToggle({Name = "Auto Claim Plant Money", Flag = "cvp_auto_collect_money", Default = false, Callback = function(value) state.AutoCollectMoney = value end})
     AutomationSection:AddToggle({Name = "Auto Place Best Plants", Flag = "cvp_auto_place_plants", Default = false, Callback = function(value) state.AutoPlacePlants = value end})
     AutomationSection:AddSlider({Name = "Equip Best Plants Delay", Description = "Delay between native Equip Best Plants button presses", Flag = "cvp_place_best_plants_delay", Min = 0.25, Max = 30, Step = 0.25, Default = 1.5, Suffix = "s", Callback = function(value) state.PlantEquipDelay = math.max(0.25, tonumber(value) or 1.5) end})
+    AutomationSection:AddToggle({Name = "Auto Place Eggs", Description = "Scans purchased rows and fills the next free slot", Flag = "cvp_auto_place_eggs", Default = false, Callback = function(value) state.AutoPlaceEggs = value end})
     AutomationSection:AddToggle({Name = "Auto Place Best Capybaras", Flag = "cvp_auto_place_capybaras", Default = false, Callback = function(value) state.AutoPlaceCapybaras = value end})
     AutomationSection:AddButton({Name = "Equip Best Plants", Callback = function() Automation.PlaceBestPlant() end})
+    AutomationSection:AddButton({Name = "Place One Egg", Callback = function()
+        task.spawn(function()
+            local ok, message = Automation.PlaceEgg()
+            notify(ok and ("Placed egg in " .. tostring(message)) or tostring(message), ok and COLORS.success or COLORS.warning)
+        end)
+    end})
+    AutomationSection:AddButton({Name = "Pickup All Capybaras", Callback = function()
+        task.spawn(function()
+            local ok, count = Automation.PickupAllCapybaras()
+            notify(ok and ("Picked up " .. tostring(count) .. " capybara(s)") or "No placed capybaras found", ok and COLORS.success or COLORS.warning)
+        end)
+    end})
     AutomationSection:AddButton({Name = "Hatch Ready Eggs Now", Callback = function()
         task.spawn(function()
             local count = processReadyEggs(false)
@@ -1039,6 +1116,11 @@ return function(context)
                 local ok = Automation.PlaceBestPlant()
                 if ok then activity[#activity + 1] = "pressed Equip Best Plants" end
             end
+            if state.AutoPlaceEggs and os.clock() - state.LastPlaceEgg >= 1.25 then
+                state.LastPlaceEgg = os.clock()
+                local ok, message = Automation.PlaceEgg()
+                if ok then activity[#activity + 1] = "placed egg in " .. tostring(message) end
+            end
             if state.AutoPlaceCapybaras and os.clock() - state.LastPlaceCapybara >= 1.25 then
                 state.LastPlaceCapybara = os.clock()
                 local ok = Automation.PlaceBestCapybara()
@@ -1094,6 +1176,7 @@ return function(context)
         state.AutoHatch = false
         state.AutoCollectMoney = false
         state.AutoPlacePlants = false
+        state.AutoPlaceEggs = false
         state.AutoPlaceCapybaras = false
         state.AutoClaimPlaytime = false
         state.AutoClaimDaily = false
