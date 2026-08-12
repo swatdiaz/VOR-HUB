@@ -395,7 +395,9 @@ $raidRangeSafety = (
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?RaidRuntime\.VoidKillStep\(nil\).*?retreatHeight = math\.max\(65, safeHeight \+ 25\)' -and
     $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
-    $bloxText -match '(?s)state\.RaidVoidFallbackActive and modelAlive\(fallbackEnemy\).*?moveToFarmPosition\(targetCFrame\)' -and
+    $bloxText -match 'local holdCFrame = island\.Part\.CFrame \+ Vector3\.new\(raidX, safeHeight, raidZ\)' -and
+    $bloxText -match '(?s)if state\.RaidVoidActive then.*?state\.ActiveFarmTarget = nil.*?state\.RaidTargetName = nil.*?moveTo\(holdCFrame\).*?cancelMove\(false\)' -and
+    $bloxText -notmatch 'Native fallback:' -and
     $bloxText -match 'BloxRaidSafeModeActive' -and
     $bloxText -match 'BloxRaidVoidFallbackActive' -and
     $bloxText -match 'BloxSafeMode' -and

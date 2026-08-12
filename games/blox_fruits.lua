@@ -4030,29 +4030,24 @@ return function(context)
             end
             local voided = RaidRuntime.VoidKillStep(island)
             if state.RaidVoidActive then
-                local fallbackEnemy = state.RaidVoidFocus
-                local fallbackRoot = modelRoot(fallbackEnemy)
-                if state.RaidVoidFallbackActive and modelAlive(fallbackEnemy) and fallbackRoot then
-                    state.ActiveFarmTarget = fallbackEnemy
-                    state.ActiveFarmVerticalLock = true
-                    state.CurrentEnemyName = normalizeEnemyName(fallbackEnemy.Name)
-                    state.RaidTargetName = state.CurrentEnemyName
-                    syncFarmAuraRange(safeHeight)
-                    local targetCFrame = positionAtEnemy(fallbackEnemy, true, safeHeight, raidX, raidZ)
-                    if targetCFrame then
-                        moveToFarmPosition(targetCFrame)
-                    end
+                state.ActiveFarmTarget = nil
+                state.ActiveFarmVerticalLock = false
+                state.RaidTargetName = nil
+                local root = rootPart()
+                local holdCFrame = island.Part.CFrame + Vector3.new(raidX, safeHeight, raidZ)
+                if root and (root.Position - holdCFrame.Position).Magnitude > 45 then
+                    moveTo(holdCFrame)
                 else
-                    state.ActiveFarmTarget = nil
-                    state.ActiveFarmVerticalLock = false
-                    state.RaidTargetName = nil
-                    moveTo(island.Part.CFrame + Vector3.new(0, safeHeight, 0))
+                    cancelMove(false)
+                    if root then
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end
                 end
                 raidLabel.Text = string.format(
-                    "Dungeon / Raid: Island %d FORCE KILL | Waiting: %d | Native fallback: %s | Killed: %d | Total: %d",
+                    "Dungeon / Raid: Island %d OVERKILL | Waiting in place: %d | Killed: %d | Total: %d",
                     island.Index,
                     state.RaidVoidStaged,
-                    state.RaidVoidFallbackActive and "ACTIVE" or "idle",
                     voided,
                     state.RaidVoidKillCount
                 )
@@ -7671,11 +7666,11 @@ return function(context)
                 gui:SetAttribute("BloxRaidTarget", state.RaidTargetName or "")
             end,
         })
-        RaidSection:AddLabel("Raid farm stays at least 35 studs above NPCs. Combat Height can raise it, never lower it.")
+        RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
         RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking and yields to final-island Void Kill automatically.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Tries the network finish first, then closes distance and falls back to native credited attacks instead of stalling",
+            Description = "Parks once on Island 5 and lets Overkill finish the wave without chasing individual enemies",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)
