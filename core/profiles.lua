@@ -374,12 +374,16 @@ return function(context)
         local profiles = page:AddSection("Profiles", "Right")
         local access = page:AddSection("Access & Community", "Left")
         local runtime = page:AddSection("Runtime", "Right")
+        local backgroundOptions = {"VOR Signature (557862299)", "VOR Void", "VOR Purple"}
+        if SETTINGS.PanelBackgrounds and SETTINGS.PanelBackgrounds["🎯 Sniper Arena"] then
+            table.insert(backgroundOptions, 1, "🎯 Sniper Arena")
+        end
 
         appearance:AddDropdown({
             Name = "UI Background",
             Description = "Changes the artwork behind the VOR panels",
             Flag = "vor_panel_background",
-            Options = {"VOR Signature (557862299)", "VOR Void", "VOR Purple"},
+            Options = backgroundOptions,
             Default = SETTINGS.DefaultPanelBackground,
             Callback = function(value)
                 self:SetPanelBackground(value)
@@ -433,7 +437,7 @@ return function(context)
             Name = "Hub Transparency",
             Description = "Controls transparency across the complete shell and its panels",
             Flag = "hub_transparency",
-            Min = 0.10,
+            Min = 0,
             Max = 0.80,
             Default = 0.24,
             Step = 0.05,

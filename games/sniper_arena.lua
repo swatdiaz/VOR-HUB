@@ -6,6 +6,7 @@ return function(context)
     local createCategoryHomePage = assert(context.CreateCategoryHomePage, "Sniper Arena: category builder is required")
     local CATEGORY_DECALS = context.CategoryDecals or context.CATEGORY_DECALS or {}
     local COLORS = context.Colors or context.COLORS or {}
+    local SETTINGS = context.SETTINGS or context.Settings or {}
     local track = context.Track or function(connection) return connection end
     local gui = context.Gui
 
@@ -15,6 +16,7 @@ return function(context)
     local UserInputService = game:GetService("UserInputService")
     local Lighting = game:GetService("Lighting")
     local CollectionService = game:GetService("CollectionService")
+    local HttpService = game:GetService("HttpService")
     local LocalPlayer = Players.LocalPlayer
     local LocalMouse = LocalPlayer:GetMouse()
     local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
@@ -22,6 +24,43 @@ return function(context)
         or (type(mousemoverel) == "function" and mousemoverel or nil)
     local clickMouseOne = type(runtimeEnvironment.mouse1click) == "function" and runtimeEnvironment.mouse1click
         or (type(mouse1click) == "function" and mouse1click or nil)
+
+    local function installSniperArenaBackground()
+        local requestFunction = runtimeEnvironment.request or runtimeEnvironment.http_request
+            or (type(runtimeEnvironment.syn) == "table" and runtimeEnvironment.syn.request)
+        local writeFile = runtimeEnvironment.writefile
+        local isFile = runtimeEnvironment.isfile
+        local makeFolder = runtimeEnvironment.makefolder
+        local isFolder = runtimeEnvironment.isfolder
+        local customAsset = runtimeEnvironment.getcustomasset or runtimeEnvironment.getsynasset
+        if type(requestFunction) ~= "function" or type(writeFile) ~= "function"
+            or type(customAsset) ~= "function" then return false end
+
+        local assetFolder = "VORHub/Assets"
+        local assetPath = assetFolder .. "/sniper_arena_9534705677.png"
+        local ok = pcall(function()
+            if type(makeFolder) == "function" then
+                if type(isFolder) ~= "function" or not isFolder("VORHub") then makeFolder("VORHub") end
+                if type(isFolder) ~= "function" or not isFolder(assetFolder) then makeFolder(assetFolder) end
+            end
+            if type(isFile) ~= "function" or not isFile(assetPath) then
+                local metadataJson = game:HttpGet("https://thumbnails.roblox.com/v1/games/icons?universeIds=9534705677&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false")
+                local metadata = HttpService:JSONDecode(metadataJson)
+                local imageUrl = metadata and metadata.data and metadata.data[1] and metadata.data[1].imageUrl
+                assert(type(imageUrl) == "string" and imageUrl ~= "", "Sniper Arena thumbnail URL unavailable")
+                local response = requestFunction({Url = imageUrl, Method = "GET"})
+                local body = response and (response.Body or response.body)
+                assert(type(body) == "string" and #body > 0, "Sniper Arena thumbnail download failed")
+                writeFile(assetPath, body)
+            end
+            SETTINGS.PanelBackgrounds = SETTINGS.PanelBackgrounds or {}
+            SETTINGS.PanelBackgrounds["🎯 Sniper Arena"] = customAsset(assetPath)
+            SETTINGS.DefaultPanelBackground = "🎯 Sniper Arena"
+        end)
+        return ok
+    end
+
+    installSniperArenaBackground()
 
     local previousCleanup = runtimeEnvironment.__VORSniperArenaCleanup
     runtimeEnvironment.__VORSniperArenaCleanup = nil
@@ -47,29 +86,36 @@ return function(context)
     local MailboxStore = safeRequire(Remote and Remote:FindFirstChild("MailboxService") and Remote.MailboxService:FindFirstChild("LocalMailboxStore"))
     local MatchmakingService = safeRequire(Remote and Remote:FindFirstChild("MatchmakingService"))
     local CareerStore = safeRequire(Remote and Remote:FindFirstChild("CareerStatsService") and Remote.CareerStatsService:FindFirstChild("LocalCareerStatsStore"))
+    local GachaService = safeRequire(Remote and Remote:FindFirstChild("GachaService"))
+    local GachaConfig = safeRequire(Config and Config:FindFirstChild("GachaConfig")) or {}
     local CombatController = Client and Client:FindFirstChild("CombatController")
+    local CombatControllerApi = safeRequire(CombatController)
     local ClientComponent = CombatController and CombatController:FindFirstChild("ClientComponent")
     local ClientShootableComponent = safeRequire(ClientComponent and ClientComponent:FindFirstChild("ClientShootableComponent"))
+    local SlideHelper = safeRequire(Client and Client:FindFirstChild("CombatHelper") and Client.CombatHelper:FindFirstChild("Slide"))
+    local GameConfig = safeRequire(Config and Config:FindFirstChild("Config")) or {}
     local WeaponConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Weapon")) or {}
     local MatchConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Matchmaking")) or {}
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-    local CombatPage = addHomeCategory("Combat", 1, CATEGORY_DECALS.Combat)
-    local InventoryPage = addHomeCategory("Inventory", 2, CATEGORY_DECALS.Mastery or CATEGORY_DECALS.Progress)
-    local ProgressPage = addHomeCategory("Progress", 3, CATEGORY_DECALS.Progress)
-    local VisualsPage = addHomeCategory("Visuals", 4, CATEGORY_DECALS.Visuals)
-    local WorldPage = addHomeCategory("World", 5, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
+    local CombatPage = addHomeCategory("🎯 Combat", 1, CATEGORY_DECALS.Combat)
+    local InventoryPage = addHomeCategory("🎒 Inventory", 2, CATEGORY_DECALS.Mastery or CATEGORY_DECALS.Progress)
+    local ProgressPage = addHomeCategory("🏆 Progress", 3, CATEGORY_DECALS.Progress)
+    local VisualsPage = addHomeCategory("👁️ Visuals", 4, CATEGORY_DECALS.Visuals)
+    local WorldPage = addHomeCategory("🌍 World", 5, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
 
     local AimSection = CombatPage:AddSection("Aim Assist", "Left")
     local CombatStatusSection = CombatPage:AddSection("Combat Status", "Right")
     local WeaponModsSection = CombatPage:AddSection("Weapon Mods", "Left")
     local WeaponSection = InventoryPage:AddSection("Owned Snipers", "Left")
     local UnlockSection = InventoryPage:AddSection("Server Unlock Progress", "Right")
+    local CaseSection = InventoryPage:AddSection("Owned Cases", "Right")
     local ClaimSection = ProgressPage:AddSection("Claims", "Left")
     local CoachSection = ProgressPage:AddSection("What To Do Next", "Right")
     local EspSection = VisualsPage:AddSection("Enemy ESP", "Left")
     local VisibilitySection = VisualsPage:AddSection("Visibility", "Right")
     local QueueSection = WorldPage:AddSection("Matchmaking", "Left")
+    local MovementSection = WorldPage:AddSection("Native Slide", "Left")
     local WorldStatusSection = WorldPage:AddSection("Server Status", "Right")
 
     HomePage:AddSection("Sniper Arena Support", "Left"):AddParagraph({
@@ -79,8 +125,8 @@ return function(context)
     local guide = HomePage:AddSection("Quick Start", "Right")
     guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Cursor Aimbot visibly tracks targets. Trigger Assist, hitbox expansion, recoil, spread, and reload controls are separate toggles."})
     guide:AddParagraph({Title = "Progress", Content = "Use Auto Unlock Earned Snipers and Auto Claim. The server still enforces kill requirements and reward readiness."})
-    guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("Combat") end})
-    guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("Progress") end})
+    guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("🎯 Combat") end})
+    guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("🏆 Progress") end})
 
     local defaults = {
         Brightness = Lighting.Brightness,
@@ -103,7 +149,13 @@ return function(context)
         WallCheck = false,
         ShowFov = false,
         TriggerBot = false,
-        TriggerDelay = 0.08,
+        TriggerDelay = 0,
+        TriggerClicks = 0,
+        TriggerNativeAttempts = 0,
+        TriggerNativeShots = 0,
+        TriggerMouseFallbacks = 0,
+        LastTriggerTarget = "",
+        HitboxAssistedShots = 0,
         HitboxExpand = false,
         HitboxSize = 5,
         NoRecoil = false,
@@ -126,6 +178,13 @@ return function(context)
         AutoTasks = false,
         AutoMail = false,
         AutoOnlineRewards = false,
+        AutoOpenCases = false,
+        CaseBatchSize = 5,
+        CasesOpened = 0,
+        LastCaseOpen = 0,
+        SlideBoost = false,
+        SlideMultiplier = 1.5,
+        BoostedSlides = 0,
         SelectedFamily = "SSG",
         LastClaim = 0,
         LastUnlock = 0,
@@ -137,6 +196,31 @@ return function(context)
     local highlights = {}
     local hitboxDefaults = setmetatable({}, {__mode = "k"})
     local weaponValueDefaults = setmetatable({}, {__mode = "k"})
+
+    local originalSlide, boostedSlide
+    if SlideHelper and type(SlideHelper.Slide) == "function" then
+        originalSlide = SlideHelper.Slide
+        boostedSlide = function(options, token)
+            if not state.Alive or not state.SlideBoost then
+                return originalSlide(options, token)
+            end
+            local adjusted = {}
+            if type(options) == "table" then
+                for key, value in pairs(options) do adjusted[key] = value end
+            end
+            local multiplier = math.clamp(tonumber(state.SlideMultiplier) or 1, 1, 3)
+            if tonumber(adjusted.CustomSpeed) then
+                adjusted.CustomSpeed = adjusted.CustomSpeed * multiplier
+            else
+                local defaultSpeed = GameConfig.Movement and tonumber(GameConfig.Movement.SlideSpeed) or 1
+                adjusted.Speed = (tonumber(adjusted.Speed) or defaultSpeed) * multiplier
+            end
+            local result = originalSlide(adjusted, token)
+            if result then state.BoostedSlides += 1 end
+            return result
+        end
+        SlideHelper.Slide = boostedSlide
+    end
 
     local function notify(message, color)
         Window:Notify("Sniper Arena", tostring(message), 4, color or COLORS.accentBright)
@@ -247,15 +331,22 @@ return function(context)
         return records
     end
 
+    local function headPart(model)
+        if not model then return nil end
+        local collider = model:FindFirstChild("Collider")
+        local colliderHead = collider and collider:FindFirstChild("Head")
+        return colliderHead and colliderHead:IsA("BasePart") and colliderHead
+            or model:FindFirstChild("Head", true)
+    end
+
     local function targetPart(model)
         if not model then return nil end
-        if state.AimPart == "Head" then return model:FindFirstChild("Head", true) or model:FindFirstChild("HumanoidRootPart", true) end
+        if state.AimPart == "Head" then return headPart(model) or model:FindFirstChild("HumanoidRootPart", true) end
         if state.AimPart == "Torso" then return model:FindFirstChild("UpperTorso", true) or model:FindFirstChild("Torso", true) or model:FindFirstChild("HumanoidRootPart", true) end
         return model:FindFirstChild("HumanoidRootPart", true) or model:FindFirstChild("Head", true)
     end
 
-    local function lineOfSight(part)
-        if not state.WallCheck then return true end
+    local function rayVisible(part, model)
         local camera = workspace.CurrentCamera
         if not camera or not part then return false end
         local params = RaycastParams.new()
@@ -263,7 +354,25 @@ return function(context)
         params.FilterDescendantsInstances = LocalPlayer.Character and {LocalPlayer.Character} or {}
         params.IgnoreWater = true
         local result = workspace:Raycast(camera.CFrame.Position, part.Position - camera.CFrame.Position, params)
-        return result == nil or result.Instance:IsDescendantOf(part.Parent)
+        return result == nil or result.Instance:IsDescendantOf(model or part.Parent)
+    end
+
+    local function lineOfSight(part)
+        if not state.WallCheck then return true end
+        local model = part and part:FindFirstAncestorOfClass("Model")
+        return rayVisible(part, model)
+    end
+
+    local function visibleBodyPart(model)
+        if not model then return nil end
+        return model:FindFirstChild("UpperTorso", true)
+            or model:FindFirstChild("Torso", true)
+            or model:FindFirstChild("HumanoidRootPart", true)
+    end
+
+    local function hasVisibleBody(model)
+        local body = visibleBodyPart(model)
+        return body ~= nil and rayVisible(body, model)
     end
 
     local function acquireTarget()
@@ -278,6 +387,35 @@ return function(context)
                 if visible and point.Z > 0 then
                     local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
                     if distance < bestDistance and lineOfSight(part) then best, bestDistance = part, distance end
+                end
+            end
+        end
+        return best
+    end
+
+    local function acquireExpandedHitboxTarget()
+        if not state.HitboxExpand or not isActiveMatch() then return nil end
+        local camera = workspace.CurrentCamera
+        if not camera then return nil end
+        local pointer = UserInputService:GetMouseLocation()
+        local best, bestDistance = nil, math.huge
+        for _, hostile in ipairs(hostileModels()) do
+            local part = headPart(hostile.Model)
+            if part then
+                local center, visible = camera:WorldToViewportPoint(part.Position)
+                if visible and center.Z > 0 then
+                    local halfSize = math.clamp(state.HitboxSize, 1, 30) / 2
+                    local rightEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.RightVector * halfSize)
+                    local upEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.UpVector * halfSize)
+                    local radius = math.max(
+                        (Vector2.new(rightEdge.X, rightEdge.Y) - Vector2.new(center.X, center.Y)).Magnitude,
+                        (Vector2.new(upEdge.X, upEdge.Y) - Vector2.new(center.X, center.Y)).Magnitude,
+                        8
+                    )
+                    local distance = (Vector2.new(center.X, center.Y) - pointer).Magnitude
+                    if distance <= radius and distance < bestDistance and hasVisibleBody(hostile.Model) then
+                        best, bestDistance = part, distance
+                    end
                 end
             end
         end
@@ -332,6 +470,9 @@ return function(context)
                 cachedAt, cachedTarget = now, nil
                 if state.Alive and state.SilentAim and math.random(1, 100) <= state.SilentAimChance then
                     cachedTarget = acquireTarget()
+                elseif state.Alive and state.HitboxExpand then
+                    cachedTarget = acquireExpandedHitboxTarget()
+                    if cachedTarget then state.HitboxAssistedShots += 1 end
                 end
                 return cachedTarget
             end
@@ -397,6 +538,7 @@ return function(context)
                     head.Size = original.Size
                     head.Transparency = original.Transparency
                     head.CanCollide = original.CanCollide
+                    head.CanQuery = original.CanQuery
                 end)
             end
             hitboxDefaults[head] = nil
@@ -408,16 +550,17 @@ return function(context)
         local active = {}
         local function expandModelHead(model)
             if not model or not model:IsA("Model") then return end
-            local head = model:FindFirstChild("Head", true)
+            local head = headPart(model)
             if not head or not head:IsA("BasePart") then return end
             active[head] = true
             if not hitboxDefaults[head] then
-                hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide}
+                hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide, CanQuery = head.CanQuery}
             end
-            local size = math.clamp(state.HitboxSize, 1, 10)
+            local size = math.clamp(state.HitboxSize, 1, 30)
             head.Size = Vector3.new(size, size, size)
             head.Transparency = 0.5
             head.CanCollide = false
+            head.CanQuery = true
         end
         for _, hostile in ipairs(hostileModels()) do
             expandModelHead(hostile.Model)
@@ -433,6 +576,7 @@ return function(context)
                         head.Size = original.Size
                         head.Transparency = original.Transparency
                         head.CanCollide = original.CanCollide
+                        head.CanQuery = original.CanQuery
                     end)
                 end
                 hitboxDefaults[head] = nil
@@ -440,12 +584,12 @@ return function(context)
         end
     end
 
-    local function isHostileTarget(instance)
-        if not instance then return false end
+    local function hostileForTarget(instance)
+        if not instance then return nil end
         for _, hostile in ipairs(hostileModels()) do
-            if instance:IsDescendantOf(hostile.Model) then return true end
+            if instance:IsDescendantOf(hostile.Model) then return hostile end
         end
-        return false
+        return nil
     end
 
     local function pointerOverVor()
@@ -459,6 +603,77 @@ return function(context)
             if object:IsDescendantOf(gui) then return true end
         end
         return false
+    end
+
+    local triggerInputToken = "VOR_TRIGGER_" .. tostring(LocalPlayer.UserId)
+    local triggerInputHeld = false
+
+    local function releaseTriggerInput()
+        if not triggerInputHeld then return end
+        triggerInputHeld = false
+        local primaryAction = CombatControllerApi and CombatControllerApi.PrimaryAction
+        if primaryAction and type(primaryAction.End) == "function" then
+            pcall(primaryAction.End, triggerInputToken)
+        end
+    end
+
+    local function fireTriggerInput()
+        local primaryAction = CombatControllerApi and CombatControllerApi.PrimaryAction
+        if primaryAction and type(primaryAction.Begin) == "function" then
+            if triggerInputHeld then return false end
+            triggerInputHeld = true
+            state.TriggerNativeAttempts += 1
+            local ok, fired = pcall(primaryAction.Begin, triggerInputToken)
+            task.spawn(function()
+                RunService.Heartbeat:Wait()
+                releaseTriggerInput()
+            end)
+            if ok and fired then
+                state.TriggerNativeShots += 1
+                return true
+            end
+            return false
+        end
+        if clickMouseOne then
+            local ok = pcall(clickMouseOne)
+            if ok then state.TriggerMouseFallbacks += 1 end
+            return ok
+        end
+        return false
+    end
+
+    local lastTriggerTarget, lastTriggerAt = nil, -math.huge
+    local function tryTrigger()
+        if not state.Alive or not state.TriggerBot or not isActiveMatch()
+            or pointerOverVor() or UserInputService:GetFocusedTextBox() ~= nil then
+            lastTriggerTarget = nil
+            return false
+        end
+        local target = LocalMouse.Target
+        local hostile = hostileForTarget(target)
+        if hostile and state.HitboxExpand and not hasVisibleBody(hostile.Model) then
+            target, hostile = nil, nil
+        end
+        if not hostile and state.HitboxExpand then
+            target = acquireExpandedHitboxTarget()
+            hostile = hostileForTarget(target)
+        end
+        if not target or not hostile then
+            lastTriggerTarget = nil
+            return false
+        end
+        local now = os.clock()
+        local firstHover = target ~= lastTriggerTarget
+        local repeatDelay = math.max(tonumber(state.TriggerDelay) or 0, 1 / 240)
+        if not firstHover and now - lastTriggerAt < repeatDelay then return false end
+        lastTriggerTarget = target
+        lastTriggerAt = now
+        local clicked = fireTriggerInput()
+        if clicked then
+            state.TriggerClicks += 1
+            state.LastTriggerTarget = target:GetFullName()
+        end
+        return clicked
     end
 
     local function restoreWeaponValues()
@@ -696,6 +911,49 @@ return function(context)
         return claimed
     end
 
+    local function ownedCases()
+        local cases = {}
+        local store = GachaService and GachaService.LocalGachaStore
+        if not store then return cases end
+        local ok, data = pcall(store.data, store)
+        if not ok or type(data) ~= "table" then return cases end
+        for id, entry in pairs(data) do
+            local owned = type(entry) == "table" and tonumber(entry.Owned) or 0
+            if owned and owned > 0 and GachaConfig[id] then
+                cases[#cases + 1] = {Id = id, Owned = owned, Display = tostring(GachaConfig[id].Display or id)}
+            end
+        end
+        table.sort(cases, function(a, b) return a.Display < b.Display end)
+        return cases
+    end
+
+    local function openOwnedCases()
+        if not GachaService or type(GachaService.Gacha) ~= "function" then
+            state.LastAction = "Case service unavailable"
+            return 0
+        end
+        if os.clock() - state.LastCaseOpen < 0.75 then return 0 end
+        state.LastCaseOpen = os.clock()
+        local cases = ownedCases()
+        if #cases == 0 then
+            state.LastAction = "No owned cases ready"
+            return 0
+        end
+        local selected = cases[1]
+        local count = math.min(selected.Owned, math.clamp(state.CaseBatchSize, 1, 5))
+        local ok, result = pcall(GachaService.Gacha, selected.Id, count)
+        if not ok or type(result) ~= "table" or not result.Success then
+            local message = type(result) == "table" and (result.Message or result.Error) or result
+            state.LastAction = "Case open stopped: " .. tostring(message or "server rejected request")
+            return 0
+        end
+        state.CasesOpened += count
+        state.LastAction = string.format("Opened %d %s", count, selected.Display)
+        local finish = Remote and Remote:FindFirstChild("GachaService") and Remote.GachaService:FindFirstChild("GachaEnd")
+        if finish and finish:IsA("RemoteEvent") then pcall(finish.FireServer, finish) end
+        return count
+    end
+
     local function queue(name)
         if not MatchmakingService or type(MatchmakingService.Match) ~= "function" then notify("Matchmaking unavailable", COLORS.warning) return end
         local ok, result = pcall(MatchmakingService.Match, name)
@@ -720,9 +978,12 @@ return function(context)
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Default = false, Callback = function(v) state.ShowFov = v == true end})
 
     CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
-    CombatStatusSection:AddSlider({Name = "Trigger Delay", Flag = "sniper_arena_trigger_delay", Min = 0.03, Max = 0.3, Step = 0.01, Default = 0.08, Suffix = "s", Callback = function(v) state.TriggerDelay = tonumber(v) or 0.08 end})
-    CombatStatusSection:AddToggle({Name = "Expand Enemy + Bot Heads", Description = "Forgiving-shot alternative to Silent Aim. Active-match only, including nested bot heads, with full restoration.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
-    CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
+    CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
+    CombatStatusSection:AddToggle({Name = "Big Head (Visible Body Required)", Description = "Manual and session-only. The enlarged head is assisted only while the enemy's real torso or root has a clear camera ray.", Flag = "sniper_arena_hitbox_visible_body_v3", Persist = false, Default = false, Callback = function(v)
+        state.HitboxExpand = v == true
+        if not state.HitboxExpand then restoreHitboxes() end
+    end})
+    CombatStatusSection:AddSlider({Name = "Big Head Size (Experimental)", Description = "Expands enemy and bot heads. Very large values are intentionally ridiculous and may not register every server-checked shot.", Flag = "sniper_arena_hitbox_size_v3", Persist = false, Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
 
@@ -744,6 +1005,11 @@ return function(context)
     UnlockSection:AddButton({Name = "Unlock Everything Earned", Callback = function() local n = unlockEarned() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
     UnlockSection:AddLabel("FE unlock-all is not faked: ownership stays server-authoritative.")
     local unlockLabel = UnlockSection:AddLabel("Unlocks: scanning...")
+
+    CaseSection:AddToggle({Name = "Auto Open Owned Cases", Description = "Uses the native case service and stops when ownership or inventory-space checks fail.", Flag = "sniper_arena_auto_open_cases", Default = false, Callback = function(v) state.AutoOpenCases = v == true end})
+    CaseSection:AddSlider({Name = "Cases Per Batch", Flag = "sniper_arena_case_batch", Min = 1, Max = 5, Step = 1, Default = 5, Callback = function(v) state.CaseBatchSize = math.clamp(tonumber(v) or 5, 1, 5) end})
+    CaseSection:AddButton({Name = "Open Next Owned Case Batch", Callback = function() local n = openOwnedCases() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
+    local caseLabel = CaseSection:AddLabel("Cases: scanning...")
 
     ClaimSection:AddToggle({Name = "Auto Claim Tasks", Flag = "sniper_arena_auto_tasks", Default = false, Callback = function(v) state.AutoTasks = v == true end})
     ClaimSection:AddToggle({Name = "Auto Claim Mail", Flag = "sniper_arena_auto_mail", Default = false, Callback = function(v) state.AutoMail = v == true end})
@@ -776,6 +1042,9 @@ return function(context)
         if camera and not state.FovOverride then camera.FieldOfView = defaults.CameraFov end
     end})
     VisibilitySection:AddSlider({Name = "Camera FOV", Flag = "sniper_arena_camera_fov", Min = 50, Max = 120, Step = 1, Default = 80, Callback = function(v) state.CameraFov = tonumber(v) or 80 end})
+
+    MovementSection:AddToggle({Name = "Native Slide Speed", Description = "Multiplies the game's own slide impulse. No CFrame teleporting.", Flag = "sniper_arena_native_slide_speed", Default = false, Callback = function(v) state.SlideBoost = v == true end})
+    MovementSection:AddSlider({Name = "Slide Multiplier", Description = "Experimental native range. Start at 1.5x.", Flag = "sniper_arena_slide_multiplier", Min = 1, Max = 3, Step = 0.1, Default = 1.5, Suffix = "x", Callback = function(v) state.SlideMultiplier = math.clamp(tonumber(v) or 1.5, 1, 3) end})
 
     local queueNames = {}
     for name in pairs(MatchConfig.Queues or {}) do queueNames[#queueNames + 1] = name end
@@ -845,6 +1114,10 @@ return function(context)
         combatLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.Parent and state.CurrentTarget.Parent.Name or "none")
         ammoLabel.Text = string.format("Team %s | Health %s | Ping %sms", tostring(LocalPlayer:GetAttribute("Team") or "--"), tostring(LocalPlayer:GetAttribute("Health") or "--"), tostring(LocalPlayer:GetAttribute("Ping") or "--"))
         weaponModsLabel.Text = string.format("Modified weapon values: %d", state.ModifiedWeaponValues)
+        local cases = ownedCases()
+        local caseTotal = 0
+        for _, entry in ipairs(cases) do caseTotal += entry.Owned end
+        caseLabel.Text = string.format("Owned %d across %d case type(s) | Opened %d", caseTotal, #cases, state.CasesOpened)
         actionLabel.Text = "Last action: " .. state.LastAction
         pcall(function()
             gui:SetAttribute("SniperArenaModuleReady", true)
@@ -856,6 +1129,13 @@ return function(context)
             gui:SetAttribute("SniperArenaOwnedWeapons", count)
             gui:SetAttribute("SniperArenaBestOwnedFamily", bestOwnedPrimary() or "")
             gui:SetAttribute("SniperArenaAutoUnlock", state.AutoUnlock)
+            gui:SetAttribute("SniperArenaAutoOpenCases", state.AutoOpenCases)
+            gui:SetAttribute("SniperArenaOwnedCases", caseTotal)
+            gui:SetAttribute("SniperArenaCasesOpened", state.CasesOpened)
+            gui:SetAttribute("SniperArenaSlideBoost", state.SlideBoost)
+            gui:SetAttribute("SniperArenaSlideMultiplier", state.SlideMultiplier)
+            gui:SetAttribute("SniperArenaBoostedSlides", state.BoostedSlides)
+            gui:SetAttribute("SniperArenaNativeSlideAvailable", originalSlide ~= nil)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
@@ -867,9 +1147,16 @@ return function(context)
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
+            gui:SetAttribute("SniperArenaTriggerClicks", state.TriggerClicks)
+            gui:SetAttribute("SniperArenaTriggerNativeAttempts", state.TriggerNativeAttempts)
+            gui:SetAttribute("SniperArenaTriggerNativeShots", state.TriggerNativeShots)
+            gui:SetAttribute("SniperArenaTriggerMouseFallbacks", state.TriggerMouseFallbacks)
+            gui:SetAttribute("SniperArenaLastTriggerTarget", state.LastTriggerTarget)
             gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
+            gui:SetAttribute("SniperArenaNativeTriggerAvailable", CombatControllerApi ~= nil)
             gui:SetAttribute("SniperArenaHitboxExpand", state.HitboxExpand)
             gui:SetAttribute("SniperArenaHitboxSize", state.HitboxSize)
+            gui:SetAttribute("SniperArenaHitboxAssistedShots", state.HitboxAssistedShots)
             gui:SetAttribute("SniperArenaNoRecoil", state.NoRecoil)
             gui:SetAttribute("SniperArenaNoSpread", state.NoSpread)
             gui:SetAttribute("SniperArenaFastReload", state.FastReload)
@@ -881,7 +1168,8 @@ return function(context)
     local renderStepName = "VORSniperArenaCamera_" .. tostring(LocalPlayer.UserId)
     local renderStepBound = false
 
-    runtimeEnvironment.__VORSniperArenaCleanup = function()
+    local ownedCleanup
+    ownedCleanup = function()
         if not state.Alive then return end
         state.Alive = false
         state.AimAssist = false
@@ -892,8 +1180,14 @@ return function(context)
         state.NoRecoil = false
         state.NoSpread = false
         state.FastReload = false
+        state.AutoOpenCases = false
+        state.SlideBoost = false
+        releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
+        if originalSlide and boostedSlide and SlideHelper and SlideHelper.Slide == boostedSlide then
+            SlideHelper.Slide = originalSlide
+        end
         if renderStepBound then
             pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
             renderStepBound = false
@@ -917,39 +1211,44 @@ return function(context)
         local camera = workspace.CurrentCamera
         if camera then camera.FieldOfView = defaults.CameraFov end
     end
+    runtimeEnvironment.__VORSniperArenaCleanup = ownedCleanup
     if gui then track(gui.Destroying:Connect(function()
-        local cleanup = runtimeEnvironment.__VORSniperArenaCleanup
-        runtimeEnvironment.__VORSniperArenaCleanup = nil
-        if type(cleanup) == "function" then cleanup() end
+        -- A stale GUI can be destroyed after a replacement adapter is already
+        -- running. It must never steal and invoke the replacement's cleanup.
+        if runtimeEnvironment.__VORSniperArenaCleanup == ownedCleanup then
+            runtimeEnvironment.__VORSniperArenaCleanup = nil
+        end
+        ownedCleanup()
     end)) end
 
     renderStepBound = pcall(function()
         RunService:BindToRenderStep(renderStepName, Enum.RenderPriority.Last.Value - 1, function(deltaTime)
             if not state.Alive then return end
+            updateHitboxes()
             updateAim(deltaTime)
             updateFovCircle()
             updateEnvironment()
         end)
     end)
 
-    local automationClock, statusClock, espClock, triggerClock, weaponClock = 0, 0, 0, 0, 0
+    track(LocalMouse.Move:Connect(tryTrigger))
+
+    local automationClock, statusClock, espClock, weaponClock, caseClock = 0, 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
-        triggerClock = triggerClock + deltaTime
         weaponClock = weaponClock + deltaTime
         automationClock = automationClock + deltaTime
-        if espClock >= 0.15 then espClock = 0 updateEsp() updateHitboxes() end
-        if state.TriggerBot and clickMouseOne and triggerClock >= state.TriggerDelay then
-            triggerClock = 0
-            if isActiveMatch() and not pointerOverVor() and UserInputService:GetFocusedTextBox() == nil
-                and isHostileTarget(LocalMouse.Target) then
-                pcall(clickMouseOne)
-            end
-        end
+        caseClock = caseClock + deltaTime
+        if espClock >= 0.15 then espClock = 0 updateEsp() end
+        tryTrigger()
         if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end
+        if caseClock >= 0.85 then
+            caseClock = 0
+            if state.AutoOpenCases then openOwnedCases() end
+        end
         if automationClock >= 5 then
             automationClock = 0
             if state.AutoUnlock then unlockEarned() end

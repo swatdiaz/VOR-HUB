@@ -1078,6 +1078,9 @@ $sniperArenaRouting = (
 )
 $sniperArenaNativeBehavior = (
     $sniperArenaText -match '__VORSniperArenaCleanup' -and
+    $sniperArenaText -match 'local ownedCleanup' -and
+    $sniperArenaText -match '__VORSniperArenaCleanup == ownedCleanup' -and
+    $sniperArenaText -notmatch 'local cleanup = runtimeEnvironment\.__VORSniperArenaCleanup' -and
     $sniperArenaText -match 'WeaponService' -and
     $sniperArenaText -match 'StatusService\.GetStatus,\s*"Killed"' -and
     $sniperArenaText -match 'KilledUnlock' -and
@@ -1103,12 +1106,22 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'local function sameTeamModel\(model\)' -and
     $sniperArenaText -match 'if sameTeamModel\(model\) then return end' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_trigger_delay_ms"' -and
+    $sniperArenaText -match 'track\(LocalMouse\.Move:Connect\(tryTrigger\)\)' -and
+    $sniperArenaText -match 'local firstHover = target ~= lastTriggerTarget' -and
     $sniperArenaText -match 'LocalPlayer:GetAttribute\("GameRoom"\)' -and
     $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
-    $sniperArenaText -match 'isActiveMatch\(\) and not pointerOverVor\(\)' -and
-    $sniperArenaText -match 'isHostileTarget\(LocalMouse\.Target\)' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
+    $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or pointerOverVor\(\)' -and
+    $sniperArenaText -match 'hostileForTarget\(target\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_visible_body_v3"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_size_v3"[^\r\n]*Persist\s*=\s*false[^\r\n]*Max\s*=\s*30' -and
+    $sniperArenaText -match 'local function hasVisibleBody\(model\)' -and
+    $sniperArenaText -match 'distance < bestDistance and hasVisibleBody\(hostile\.Model\)' -and
+    $sniperArenaText -match 'state\.HitboxExpand and not hasVisibleBody\(hostile\.Model\)' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
+    $sniperArenaText -match 'head\.CanQuery = true' -and
+    $sniperArenaText -match 'updateHitboxes\(\)\s*\r?\n\s*updateAim\(deltaTime\)' -and
+    $sniperArenaText -match 'acquireExpandedHitboxTarget\(\)' -and
     $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
     $sniperArenaText -match 'if model and not sameTeamModel\(model\) then expandModelHead\(model\) end' -and
     $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and
@@ -1119,6 +1132,14 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'valueObject\.Value = replacement' -and
     $sniperArenaText -match 'restoreWeaponValues\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_open_cases"' -and
+    $sniperArenaText -match 'GachaService\.Gacha' -and
+    $sniperArenaText -notmatch 'sniper_arena_movement_boost' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_native_slide_speed"' -and
+    $sniperArenaText -match 'SlideHelper\.Slide = boostedSlide' -and
+    $sniperArenaText -match 'GameConfig\.Movement\.SlideSpeed' -and
+    $sniperArenaText -match 'adjusted\.Speed = .*\* multiplier' -and
+    $sniperArenaText -notmatch 'root\.CFrame = root\.CFrame \+' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Default\s*=\s*false' -and
@@ -1127,6 +1148,18 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -notmatch 'GetTagged\("Boss"\)' -and
     $sniperArenaText -match 'model:IsDescendantOf\(tempRoot\)' -and
+    $sniperArenaText -match 'addHomeCategory\("[^\"]* Combat"' -and
+    $sniperArenaText -match 'addHomeCategory\("[^\"]* Inventory"' -and
+    $sniperArenaText -match 'addHomeCategory\("[^\"]* Progress"' -and
+    $sniperArenaText -match 'addHomeCategory\("[^\"]* Visuals"' -and
+    $sniperArenaText -match 'addHomeCategory\("[^\"]* World"' -and
+    $sniperArenaText -match 'installSniperArenaBackground\(\)' -and
+    $sniperArenaText -match 'thumbnails\.roblox\.com/v1/games/icons\?universeIds=9534705677' -and
+    $sniperArenaText -match 'SETTINGS\.DefaultPanelBackground = "[^\"]* Sniper Arena"' -and
+    $profilesText -match 'table\.insert\(backgroundOptions, 1, "[^\"]* Sniper Arena"\)' -and
+    $profilesText -match '(?s)Name\s*=\s*"Hub Transparency".*?Min\s*=\s*0,' -and
+    $uiText -match 'local lowEndSolidify = math\.clamp\(\(0\.15 - value\) / 0\.15, 0, 1\)' -and
+    $uiText -match 'base \* \(1 - 0\.35 \* lowEndSolidify\)' -and
     $sniperArenaText -match 'SniperArenaModuleReady'
 )
 if (-not ($sniperArenaRouting -and $sniperArenaNativeBehavior)) {
