@@ -1241,6 +1241,9 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'EnlargeAllPets' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_craft_pets"' -and
     $dogRaceText -match 'DogRaceAutoCraftPets' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_pet_craft_threshold"' -and
+    $dogRaceText -match 'petCraftNeeded' -and
+    $dogRaceText -match 'DogRacePetCraftNeeded' -and
     $dogRaceText -match 'PotionService' -and
     $dogRaceText -match 'UsePotion' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_potions"' -and

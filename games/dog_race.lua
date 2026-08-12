@@ -174,6 +174,8 @@ return function(context)
         AutoRebirth = false,
         AutoEquipBest = false,
         AutoCraftPets = false,
+        PetCraftThreshold = 75,
+        PetCraftHeadroom = 10,
         AutoPotions = false,
         PotionUsing = false,
         PotionRunId = 0,
@@ -948,6 +950,20 @@ return function(context)
         return false
     end
 
+    function Equipment.petCraftNeeded(data, incomingCount)
+        if not data then
+            return false
+        end
+        local stored = storedPetCount(data)
+        local maximum = maxPetStorage(data)
+        if maximum == math.huge or maximum <= 0 then
+            return false
+        end
+        local threshold = math.floor(maximum * state.PetCraftThreshold / 100)
+        local safeLimit = math.max(0, maximum - state.PetCraftHeadroom)
+        return stored + math.max(0, tonumber(incomingCount) or 0) >= math.min(threshold, safeLimit)
+    end
+
     function Equipment.craftAllPets(force)
         local data = getData()
         if not data or (not force and not Equipment.hasCraftablePets(data)) then
@@ -1177,6 +1193,16 @@ return function(context)
             return promptLockedPurchase and promptProduct(purchaseKey) or false
         end
         local data = getData()
+        if data and state.AutoCraftPets and Equipment.petCraftNeeded(data, count)
+            and Equipment.hasCraftablePets(data) then
+            Equipment.craftAllPets(false)
+            state.LastAction = string.format(
+                "Maintaining pet capacity before hatch (%d/%d)",
+                storedPetCount(data),
+                maxPetStorage(data)
+            )
+            return false
+        end
         if data and GameDataUtil and type(GameDataUtil.CheckStorageFull) == "function" then
             local okFull, full = pcall(GameDataUtil.CheckStorageFull, data, count)
             if okFull and full then
@@ -2327,14 +2353,27 @@ return function(context)
     RewardsSection:AddButton({Name = "Equip Best Pets", Callback = equipBestPets})
     automationControls.CraftPets = RewardsSection:AddToggle({
         Name = "Auto Craft Pets",
-        Description = "Crafts every duplicate set, prevents full storage from blocking hatches, then equips the best pets again.",
+        Description = "Lets duplicates build, then proactively crafts them at the selected storage threshold or before the next hatch would exhaust safe headroom.",
         Flag = "dograce_auto_craft_pets",
         Default = false,
         Callback = function(enabled)
             state.AutoCraftPets = enabled == true
-            if state.AutoCraftPets then
+            if state.AutoCraftPets and Equipment.petCraftNeeded(getData(), state.HatchCount) then
                 Equipment.craftAllPets(false)
             end
+        end,
+    })
+    RewardsSection:AddSlider({
+        Name = "Craft At Storage",
+        Description = "Starts native Craft All at this inventory percentage instead of waiting until full.",
+        Flag = "dograce_pet_craft_threshold",
+        Min = 50,
+        Max = 95,
+        Step = 5,
+        Default = 75,
+        Suffix = "%",
+        Callback = function(value)
+            state.PetCraftThreshold = math.clamp(tonumber(value) or 75, 50, 95)
         end,
     })
     RewardsSection:AddButton({Name = "Craft All Duplicate Pets", Callback = function()
@@ -2908,9 +2947,9 @@ return function(context)
             tostring(cost or "--")
         )
         areaLabel.Text = "Area: " .. tostring(area or "--")
-        petsLabel.Text = string.format("Pets: %d / %s | Equipped: %d | Craft %s",
+        petsLabel.Text = string.format("Pets: %d / %s | Equipped: %d | Craft %s @ %d%%",
             petCount, compactNumber(maxPetStorage(data or {})), equippedPets,
-            state.AutoCraftPets and "AUTO" or "OFF")
+            state.AutoCraftPets and "AUTO" or "OFF", state.PetCraftThreshold)
         local function accessText(ready, reason)
             local owned = string.find(reason, "already owned", 1, true)
                 or string.find(reason, "Owned;", 1, true)
@@ -3024,6 +3063,8 @@ return function(context)
             gui:SetAttribute("DogRaceAutoPotions", state.AutoPotions)
             gui:SetAttribute("DogRacePetCount", petCount)
             gui:SetAttribute("DogRacePetStorageMax", maxPetStorage(data or {}))
+            gui:SetAttribute("DogRacePetCraftThreshold", state.PetCraftThreshold)
+            gui:SetAttribute("DogRacePetCraftNeeded", Equipment.petCraftNeeded(data, state.HatchCount))
             gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
             gui:SetAttribute("DogRaceAutoMergeGear", state.AutoMergeGear)
             gui:SetAttribute("DogRaceAutoEquipGear", state.AutoEquipGear)
@@ -3172,7 +3213,8 @@ return function(context)
             end
             if state.AutoCraftPets and now - state.LastPetCraft >= 5 then
                 state.LastPetCraft = now
-                if Equipment.hasCraftablePets(data) then
+                if Equipment.petCraftNeeded(data, state.HatchCount)
+                    and Equipment.hasCraftablePets(data) then
                     Equipment.craftAllPets(false)
                 end
             end
