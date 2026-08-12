@@ -388,7 +388,8 @@ return function(context)
             ThirdSeaUsesMobAura = false,
             ThirdSeaFarmNames = {},
             ThirdSeaBossMode = false,
-            TweenSpeed = 300,
+            SafeTween = true,
+            TweenSpeed = 250,
             LastPositionJitterAt = 0,
             PositionJitterCorner = 0,
             PositionTarget = nil,
@@ -1178,6 +1179,9 @@ return function(context)
             if speedOverride == nil and state.AutoRaid
                 and LocalPlayer:GetAttribute("IslandRaiding") == true then
                 effectiveSpeed = math.min(effectiveSpeed, DoubleAttackEngine.RaidTweenSpeed)
+            end
+            if speedOverride == nil and state.SafeTween then
+                effectiveSpeed = math.min(effectiveSpeed, 250)
             end
             if distance >= 1200 then
                 effectiveSpeed = math.min(effectiveSpeed, 300)
@@ -6645,15 +6649,27 @@ return function(context)
         })
         WorldFarmSection:AddLabel("Live-spawn only: no bush tour. Empty servers alternate First Sea and Third Sea; a collected berry stops hopping.")
 
+        FarmSettingsSection:AddToggle({
+            Name = "Safe Tween",
+            Description = "Caps normal farm and travel tweening at 250 studs/second to prevent server snap-back",
+            Flag = "blox_safe_tween",
+            Default = true,
+            Callback = function(enabled)
+                state.SafeTween = enabled == true
+                gui:SetAttribute("BloxSafeTween", state.SafeTween)
+            end,
+        })
         FarmSettingsSection:AddSlider({
             Name = "Tween Speed",
+            Description = "Maximum 300; use 250 with Safe Tween if the server restores your old position",
             Flag = "blox_tween_speed",
             Min = 50,
-            Max = 650,
+            Max = 300,
             Step = 10,
-            Default = 300,
+            Default = 250,
             Callback = function(value)
-                state.TweenSpeed = value
+                state.TweenSpeed = math.clamp(tonumber(value) or 250, 50, 300)
+                gui:SetAttribute("BloxTweenSpeed", state.TweenSpeed)
             end,
         })
         FarmSettingsSection:AddLabel("The shared Farm Position Controller drives Auto Level, bosses, raids, Mob Aura, and selected-mob farming.")

@@ -385,6 +385,9 @@ $raidRangeSafety = (
     $bloxText -match 'RaidRecoveryPercent = 70' -and
     $bloxText -match 'RaidRecoveryHeight = 1000' -and
     $bloxText -match 'RaidTweenSpeed = 150' -and
+    $bloxText -match 'Flag\s*=\s*"blox_safe_tween"' -and
+    $bloxText -match '(?s)Name\s*=\s*"Tween Speed".*?Max\s*=\s*300.*?Default\s*=\s*250' -and
+    $bloxText -match 'if speedOverride == nil and state\.SafeTween then\s+effectiveSpeed = math\.min\(effectiveSpeed, 250\)' -and
     $bloxText -match '(?s)if speedOverride == nil and state\.AutoRaid.*?LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?effectiveSpeed = math\.min\(effectiveSpeed, DoubleAttackEngine\.RaidTweenSpeed\)' -and
     $bloxText -match '(?s)local function moveToFarmPosition\(targetCFrame\).*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?return moveTo\(targetCFrame\)' -and
     $bloxText -match 'state\.RaidFarmOffset = function\(\)' -and
