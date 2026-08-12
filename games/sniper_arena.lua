@@ -16,7 +16,12 @@ return function(context)
     local Lighting = game:GetService("Lighting")
     local CollectionService = game:GetService("CollectionService")
     local LocalPlayer = Players.LocalPlayer
+    local LocalMouse = LocalPlayer:GetMouse()
     local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
+    local moveMouseRelative = type(runtimeEnvironment.mousemoverel) == "function" and runtimeEnvironment.mousemoverel
+        or (type(mousemoverel) == "function" and mousemoverel or nil)
+    local clickMouseOne = type(runtimeEnvironment.mouse1click) == "function" and runtimeEnvironment.mouse1click
+        or (type(mouse1click) == "function" and mouse1click or nil)
 
     local previousCleanup = runtimeEnvironment.__VORSniperArenaCleanup
     runtimeEnvironment.__VORSniperArenaCleanup = nil
@@ -89,13 +94,17 @@ return function(context)
         SilentAim = false,
         SilentAimChance = 100,
         SilentAimPrediction = 0,
-        AimActivation = "Always",
+        AimActivation = "While Aiming",
         AimPart = "Head",
-        AimRadius = 650,
-        AimStrength = 80,
+        AimRadius = 2000,
+        AimSmoothness = 2,
         TeamCheck = true,
         WallCheck = false,
-        ShowFov = true,
+        ShowFov = false,
+        TriggerBot = false,
+        TriggerDelay = 0.08,
+        HitboxExpand = false,
+        HitboxSize = 5,
         EnemyEsp = false,
         EspNameText = false,
         EspNameRange = 350,
@@ -121,6 +130,7 @@ return function(context)
     }
     local drawings = {}
     local highlights = {}
+    local hitboxDefaults = setmetatable({}, {__mode = "k"})
 
     local function notify(message, color)
         Window:Notify("Sniper Arena", tostring(message), 4, color or COLORS.accentBright)
@@ -183,15 +193,10 @@ return function(context)
         if holder then
             for _, model in ipairs(holder:GetChildren()) do
                 if model:IsA("Model") then
-                    local role = tostring(model:GetAttribute("Role") or "")
-                    local kind = role == "Boss" and "BOSS" or (CollectionService:HasTag(model, "Bot") and "BOT" or "ENEMY")
+                    local kind = CollectionService:HasTag(model, "Bot") and "BOT" or "ENEMY"
                     addHostile(records, seen, model, model:GetAttribute("DisplayName") or model.Name, kind)
                 end
             end
-        end
-        for _, tagged in ipairs(CollectionService:GetTagged("Boss")) do
-            local model = tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model")
-            addHostile(records, seen, model, model and (model:GetAttribute("DisplayName") or model.Name), "BOSS")
         end
         for _, player in ipairs(Players:GetPlayers()) do
             if isEnemy(player) then addHostile(records, seen, player.Character, player.DisplayName, "PLAYER") end
@@ -221,7 +226,7 @@ return function(context)
     local function acquireTarget()
         local camera = workspace.CurrentCamera
         if not camera then return nil end
-        local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+        local center = UserInputService:GetMouseLocation()
         local best, bestDistance = nil, state.AimRadius
         for _, hostile in ipairs(hostileModels()) do
             local part = targetPart(hostile.Model)
@@ -240,7 +245,7 @@ return function(context)
         if not state.AimAssist then return false end
         if state.AimActivation == "Always" then return true end
         if state.AimActivation == "While Firing" then return state.IsFiring end
-        return state.IsAiming
+        return state.IsAiming or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
     end
 
     local function updateAim(deltaTime)
@@ -249,9 +254,17 @@ return function(context)
         local part = acquireTarget()
         state.CurrentTarget = part
         if not camera or not part then return end
-        local desired = CFrame.lookAt(camera.CFrame.Position, part.Position)
-        local alpha = 1 - math.exp(-math.clamp(state.AimStrength, 1, 100) * deltaTime / 7)
-        camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
+        local point, visible = camera:WorldToViewportPoint(part.Position)
+        if not visible or point.Z <= 0 then return end
+        local mousePosition = UserInputService:GetMouseLocation()
+        local divisor = math.clamp(state.AimSmoothness, 1, 5)
+        if moveMouseRelative then
+            pcall(moveMouseRelative, (point.X - mousePosition.X) / divisor, (point.Y - mousePosition.Y) / divisor)
+        else
+            local desired = CFrame.lookAt(camera.CFrame.Position, part.Position)
+            local alpha = 1 - math.exp(-80 * deltaTime / (7 * divisor))
+            camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
+        end
     end
 
     local originalLocalShoot, originalCameraGetter, originalTargetResolver, silentCameraGetter, silentTargetResolver
@@ -323,9 +336,60 @@ return function(context)
         local camera = workspace.CurrentCamera
         fovCircle.Visible = state.Alive and state.AimAssist and state.ShowFov and camera ~= nil
         if camera then
-            fovCircle.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+            fovCircle.Position = UserInputService:GetMouseLocation()
             fovCircle.Radius = state.AimRadius
         end
+    end
+
+    local function restoreHitboxes()
+        for head, original in pairs(hitboxDefaults) do
+            if head and head.Parent then
+                pcall(function()
+                    head.Size = original.Size
+                    head.Transparency = original.Transparency
+                    head.CanCollide = original.CanCollide
+                end)
+            end
+            hitboxDefaults[head] = nil
+        end
+    end
+
+    local function updateHitboxes()
+        if not state.HitboxExpand then restoreHitboxes() return end
+        local active = {}
+        for _, hostile in ipairs(hostileModels()) do
+            local head = hostile.Model:FindFirstChild("Head")
+            if head and head:IsA("BasePart") then
+                active[head] = true
+                if not hitboxDefaults[head] then
+                    hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide}
+                end
+                local size = math.clamp(state.HitboxSize, 1, 10)
+                head.Size = Vector3.new(size, size, size)
+                head.Transparency = 0.5
+                head.CanCollide = false
+            end
+        end
+        for head, original in pairs(hitboxDefaults) do
+            if not active[head] then
+                if head and head.Parent then
+                    pcall(function()
+                        head.Size = original.Size
+                        head.Transparency = original.Transparency
+                        head.CanCollide = original.CanCollide
+                    end)
+                end
+                hitboxDefaults[head] = nil
+            end
+        end
+    end
+
+    local function isHostileTarget(instance)
+        if not instance then return false end
+        for _, hostile in ipairs(hostileModels()) do
+            if instance:IsDescendantOf(hostile.Model) then return true end
+        end
+        return false
     end
 
     local function clearEsp(player)
@@ -381,7 +445,7 @@ return function(context)
                     entry.Highlight.FillTransparency = state.EspFillTransparency
                     entry.Billboard.Enabled = state.EspNameText and distance <= state.EspNameRange
                     entry.Label.TextColor3 = state.EspColor
-                    entry.Label.Text = hostile.Kind == "BOT" and "BOT" or (hostile.Kind == "BOSS" and "BOSS" or hostile.Name)
+                    entry.Label.Text = hostile.Kind == "BOT" and "BOT" or hostile.Name
                 else clearEsp(model) end
             else clearEsp(model) end
         end
@@ -524,18 +588,22 @@ return function(context)
     if #families == 0 then families = {"SSG"} end
     state.SelectedFamily = bestOwnedPrimary() or families[1]
 
-    AimSection:AddToggle({Name = "Aim Assist", Flag = "sniper_arena_aim_v2", Persist = false, Default = true, Callback = function(v) state.AimAssist = v == true end})
+    AimSection:AddToggle({Name = "Cursor Aimbot", Description = "Uses the executor mouse mover like the proven Polo script. Hold right-click by default.", Flag = "sniper_arena_cursor_aimbot", Persist = false, Default = true, Callback = function(v) state.AimAssist = v == true end})
     AimSection:AddToggle({Name = "Silent Aim", Description = "Redirects the native LocalShoot ray without moving your camera.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
     AimSection:AddSlider({Name = "Silent Hit Chance", Flag = "sniper_arena_silent_chance", Min = 1, Max = 100, Step = 1, Default = 100, Suffix = "%", Callback = function(v) state.SilentAimChance = tonumber(v) or 100 end})
     AimSection:AddSlider({Name = "Target Prediction", Flag = "sniper_arena_silent_prediction", Min = 0, Max = 0.3, Step = 0.01, Default = 0, Suffix = "s", Callback = function(v) state.SilentAimPrediction = tonumber(v) or 0 end})
-    AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_aim_activation_v2", Persist = false, Options = {"While Aiming", "While Firing", "Always"}, Default = "Always", Callback = function(v) state.AimActivation = v or "Always" end})
+    AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_cursor_activation", Persist = false, Options = {"While Aiming", "While Firing", "Always"}, Default = "While Aiming", Callback = function(v) state.AimActivation = v or "While Aiming" end})
     AimSection:AddDropdown({Name = "Target Part", Flag = "sniper_arena_aim_part", Options = {"Head", "Torso", "Root"}, Default = "Head", Callback = function(v) state.AimPart = v or "Head" end})
-    AimSection:AddSlider({Name = "Aim Strength", Flag = "sniper_arena_aim_strength_v2", Persist = false, Min = 1, Max = 100, Step = 1, Default = 80, Suffix = "%", Callback = function(v) state.AimStrength = tonumber(v) or 80 end})
-    AimSection:AddSlider({Name = "Aim Radius", Flag = "sniper_arena_aim_radius_v2", Persist = false, Min = 30, Max = 900, Step = 10, Default = 650, Suffix = "px", Callback = function(v) state.AimRadius = tonumber(v) or 650 end})
+    AimSection:AddSlider({Name = "Aimbot Smoothness", Flag = "sniper_arena_cursor_smoothness", Persist = false, Min = 1, Max = 5, Step = 1, Default = 2, Callback = function(v) state.AimSmoothness = tonumber(v) or 2 end})
+    AimSection:AddSlider({Name = "Aim Radius", Flag = "sniper_arena_cursor_radius", Persist = false, Min = 100, Max = 2000, Step = 50, Default = 2000, Suffix = "px", Callback = function(v) state.AimRadius = tonumber(v) or 2000 end})
     AimSection:AddToggle({Name = "Team Check", Flag = "sniper_arena_team_check", Default = true, Callback = function(v) state.TeamCheck = v == true end})
     AimSection:AddToggle({Name = "Wall Check", Description = "Off is aggressive; on only selects targets with a clear ray.", Flag = "sniper_arena_wall_check_v2", Persist = false, Default = false, Callback = function(v) state.WallCheck = v == true end})
-    AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov", Default = true, Callback = function(v) state.ShowFov = v == true end})
+    AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Persist = false, Default = false, Callback = function(v) state.ShowFov = v == true end})
 
+    CombatStatusSection:AddToggle({Name = "Triggerbot", Description = "Clicks when the cursor is over a live hostile model.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
+    CombatStatusSection:AddSlider({Name = "Trigger Delay", Flag = "sniper_arena_trigger_delay", Min = 0.03, Max = 0.3, Step = 0.01, Default = 0.08, Suffix = "s", Callback = function(v) state.TriggerDelay = tonumber(v) or 0.08 end})
+    CombatStatusSection:AddToggle({Name = "Expand Enemy Heads", Description = "Client-side hitbox expansion with full restoration on toggle-off and cleanup.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
+    CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
 
@@ -562,7 +630,7 @@ return function(context)
     local actionLabel = CoachSection:AddLabel("Last action: Ready")
 
     EspSection:AddToggle({Name = "Enemy ESP", Flag = "sniper_arena_esp", Default = false, Callback = function(v) state.EnemyEsp = v == true if not state.EnemyEsp then for p in pairs(highlights) do clearEsp(p) end end end})
-    EspSection:AddToggle({Name = "Minimal Name Text", Description = "Optional transparent text only. Bots show BOT and bosses show BOSS.", Flag = "sniper_arena_esp_minimal_names", Persist = false, Default = false, Callback = function(v) state.EspNameText = v == true end})
+    EspSection:AddToggle({Name = "Minimal Name Text", Description = "Optional transparent text only. Bots show BOT.", Flag = "sniper_arena_esp_minimal_names", Persist = false, Default = false, Callback = function(v) state.EspNameText = v == true end})
     EspSection:AddSlider({Name = "Name Text Range", Flag = "sniper_arena_esp_name_range", Min = 50, Max = 1500, Step = 50, Default = 350, Suffix = "m", Callback = function(v) state.EspNameRange = tonumber(v) or 350 end})
     EspSection:AddColorPicker({Name = "Outline Color", Flag = "sniper_arena_esp_color", Default = state.EspColor, Callback = function(v) if typeof(v) == "Color3" then state.EspColor = v end end})
     EspSection:AddColorPicker({Name = "Body Accent", Flag = "sniper_arena_esp_accent", Default = state.EspAccent, Callback = function(v) if typeof(v) == "Color3" then state.EspAccent = v end end})
@@ -663,10 +731,16 @@ return function(context)
             gui:SetAttribute("SniperArenaBestOwnedFamily", bestOwnedPrimary() or "")
             gui:SetAttribute("SniperArenaAutoUnlock", state.AutoUnlock)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
+            gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
+            gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
             gui:SetAttribute("SniperArenaAimRadius", state.AimRadius)
             gui:SetAttribute("SniperArenaAimTarget", state.CurrentTarget and state.CurrentTarget:GetFullName() or "")
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
+            gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
+            gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
+            gui:SetAttribute("SniperArenaHitboxExpand", state.HitboxExpand)
+            gui:SetAttribute("SniperArenaHitboxSize", state.HitboxSize)
             gui:SetAttribute("SniperArenaEnemyEsp", state.EnemyEsp)
         end)
     end
@@ -680,6 +754,9 @@ return function(context)
         state.AimAssist = false
         state.SilentAim = false
         state.EnemyEsp = false
+        state.TriggerBot = false
+        state.HitboxExpand = false
+        restoreHitboxes()
         if renderStepBound then
             pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
             renderStepBound = false
@@ -718,13 +795,18 @@ return function(context)
         end)
     end)
 
-    local automationClock, statusClock, espClock = 0, 0, 0
+    local automationClock, statusClock, espClock, triggerClock = 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
+        triggerClock = triggerClock + deltaTime
         automationClock = automationClock + deltaTime
-        if espClock >= 0.15 then espClock = 0 updateEsp() end
+        if espClock >= 0.15 then espClock = 0 updateEsp() updateHitboxes() end
+        if state.TriggerBot and clickMouseOne and triggerClock >= state.TriggerDelay then
+            triggerClock = 0
+            if isHostileTarget(LocalMouse.Target) then pcall(clickMouseOne) end
+        end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end
         if automationClock >= 5 then
             automationClock = 0

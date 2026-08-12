@@ -1092,15 +1092,23 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
     $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_v2"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_radius_v2"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_smoothness"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_radius"' -and
+    $sniperArenaText -match 'moveMouseRelative' -and
+    $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
+    $sniperArenaText -match 'isHostileTarget\(LocalMouse\.Target\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
+    $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
+    $sniperArenaText -match 'restoreHitboxes\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
     $sniperArenaText -match 'hostile\.Kind == "BOT" and "BOT"' -and
     $sniperArenaText -match 'HighlightHolder' -and
-    $sniperArenaText -match 'GetTagged\("Boss"\)' -and
+    $sniperArenaText -notmatch 'GetTagged\("Boss"\)' -and
     $sniperArenaText -match 'model:IsDescendantOf\(tempRoot\)' -and
     $sniperArenaText -match 'SniperArenaModuleReady'
 )
@@ -1331,7 +1339,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, aim assist, ESP, server-checked unlocks, loadouts, claims, queues)"
+Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, triggerbot, enemy-head hitbox, optional ESP, server-checked unlocks, loadouts, claims, queues)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
