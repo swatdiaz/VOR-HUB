@@ -161,6 +161,8 @@ return function(context)
 
     local function addHostile(records, seen, model, displayName, kind)
         if not model or not model:IsA("Model") or seen[model] or model == LocalPlayer.Character then return end
+        local tempRoot = workspace:FindFirstChild("_Temp")
+        if tempRoot and model:IsDescendantOf(tempRoot) then return end
         local humanoid = model:FindFirstChildOfClass("Humanoid")
         local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
         if not humanoid or not root or modelHealth(model, humanoid) <= 0 then return end

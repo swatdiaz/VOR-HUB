@@ -1097,6 +1097,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'HealthFill' -and
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -match 'GetTagged\("Boss"\)' -and
+    $sniperArenaText -match 'model:IsDescendantOf\(tempRoot\)' -and
     $sniperArenaText -match 'SniperArenaModuleReady'
 )
 if (-not ($sniperArenaRouting -and $sniperArenaNativeBehavior)) {
