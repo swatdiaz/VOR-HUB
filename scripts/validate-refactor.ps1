@@ -1113,7 +1113,8 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
     $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or pointerOverVor\(\)' -and
     $sniperArenaText -match 'isHostileTarget\(target\)' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_experimental_v2"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
+    $sniperArenaText -notmatch 'Flag\s*=\s*"sniper_arena_hitbox' -and
+    $sniperArenaText -match 'VOR Big Head is disabled while Apollo/Polo hit registration is being compared' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
     $sniperArenaText -match 'head\.CanQuery = true' -and
     $sniperArenaText -match 'updateHitboxes\(\)\s*\r?\n\s*updateAim\(deltaTime\)' -and
