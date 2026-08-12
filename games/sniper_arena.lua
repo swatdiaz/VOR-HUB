@@ -47,6 +47,8 @@ return function(context)
     local MailboxStore = safeRequire(Remote and Remote:FindFirstChild("MailboxService") and Remote.MailboxService:FindFirstChild("LocalMailboxStore"))
     local MatchmakingService = safeRequire(Remote and Remote:FindFirstChild("MatchmakingService"))
     local CareerStore = safeRequire(Remote and Remote:FindFirstChild("CareerStatsService") and Remote.CareerStatsService:FindFirstChild("LocalCareerStatsStore"))
+    local GachaService = safeRequire(Remote and Remote:FindFirstChild("GachaService"))
+    local GachaConfig = safeRequire(Config and Config:FindFirstChild("GachaConfig")) or {}
     local CombatController = Client and Client:FindFirstChild("CombatController")
     local CombatControllerApi = safeRequire(CombatController)
     local ClientComponent = CombatController and CombatController:FindFirstChild("ClientComponent")
@@ -66,11 +68,13 @@ return function(context)
     local WeaponModsSection = CombatPage:AddSection("Weapon Mods", "Left")
     local WeaponSection = InventoryPage:AddSection("Owned Snipers", "Left")
     local UnlockSection = InventoryPage:AddSection("Server Unlock Progress", "Right")
+    local CaseSection = InventoryPage:AddSection("Owned Cases", "Right")
     local ClaimSection = ProgressPage:AddSection("Claims", "Left")
     local CoachSection = ProgressPage:AddSection("What To Do Next", "Right")
     local EspSection = VisualsPage:AddSection("Enemy ESP", "Left")
     local VisibilitySection = VisualsPage:AddSection("Visibility", "Right")
     local QueueSection = WorldPage:AddSection("Matchmaking", "Left")
+    local MovementSection = WorldPage:AddSection("Movement", "Left")
     local WorldStatusSection = WorldPage:AddSection("Server Status", "Right")
 
     HomePage:AddSection("Sniper Arena Support", "Left"):AddParagraph({
@@ -133,6 +137,12 @@ return function(context)
         AutoTasks = false,
         AutoMail = false,
         AutoOnlineRewards = false,
+        AutoOpenCases = false,
+        CaseBatchSize = 5,
+        CasesOpened = 0,
+        LastCaseOpen = 0,
+        MovementBoost = false,
+        MovementSpeed = 60,
         SelectedFamily = "SSG",
         LastClaim = 0,
         LastUnlock = 0,
@@ -310,7 +320,7 @@ return function(context)
             if part then
                 local center, visible = camera:WorldToViewportPoint(part.Position)
                 if visible and center.Z > 0 then
-                    local halfSize = math.clamp(state.HitboxSize, 1, 10) / 2
+                    local halfSize = math.clamp(state.HitboxSize, 1, 30) / 2
                     local rightEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.RightVector * halfSize)
                     local upEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.UpVector * halfSize)
                     local radius = math.max(
@@ -462,7 +472,7 @@ return function(context)
             if not hitboxDefaults[head] then
                 hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide, CanQuery = head.CanQuery}
             end
-            local size = math.clamp(state.HitboxSize, 1, 10)
+            local size = math.clamp(state.HitboxSize, 1, 30)
             head.Size = Vector3.new(size, size, size)
             head.Transparency = 0.5
             head.CanCollide = false
@@ -812,6 +822,58 @@ return function(context)
         return claimed
     end
 
+    local function ownedCases()
+        local cases = {}
+        local store = GachaService and GachaService.LocalGachaStore
+        local ok, data = store and pcall(store.data, store)
+        if not ok or type(data) ~= "table" then return cases end
+        for id, entry in pairs(data) do
+            local owned = type(entry) == "table" and tonumber(entry.Owned) or 0
+            if owned and owned > 0 and GachaConfig[id] then
+                cases[#cases + 1] = {Id = id, Owned = owned, Display = tostring(GachaConfig[id].Display or id)}
+            end
+        end
+        table.sort(cases, function(a, b) return a.Display < b.Display end)
+        return cases
+    end
+
+    local function openOwnedCases()
+        if not GachaService or type(GachaService.Gacha) ~= "function" then
+            state.LastAction = "Case service unavailable"
+            return 0
+        end
+        if os.clock() - state.LastCaseOpen < 0.75 then return 0 end
+        state.LastCaseOpen = os.clock()
+        local cases = ownedCases()
+        if #cases == 0 then
+            state.LastAction = "No owned cases ready"
+            return 0
+        end
+        local selected = cases[1]
+        local count = math.min(selected.Owned, math.clamp(state.CaseBatchSize, 1, 5))
+        local ok, result = pcall(GachaService.Gacha, selected.Id, count)
+        if not ok or type(result) ~= "table" or not result.Success then
+            local message = type(result) == "table" and (result.Message or result.Error) or result
+            state.LastAction = "Case open stopped: " .. tostring(message or "server rejected request")
+            return 0
+        end
+        state.CasesOpened += count
+        state.LastAction = string.format("Opened %d %s", count, selected.Display)
+        local finish = Remote and Remote:FindFirstChild("GachaService") and Remote.GachaService:FindFirstChild("GachaEnd")
+        if finish and finish:IsA("RemoteEvent") then pcall(finish.FireServer, finish) end
+        return count
+    end
+
+    local function updateMovement(deltaTime)
+        if not state.MovementBoost then return end
+        local _, humanoid, root = character()
+        if not humanoid or humanoid.Health <= 0 or not root then return end
+        local direction = humanoid.MoveDirection
+        if direction.Magnitude <= 0 then return end
+        local extraSpeed = math.clamp(tonumber(state.MovementSpeed) or 0, 0, 300)
+        root.CFrame = root.CFrame + direction.Unit * extraSpeed * math.min(deltaTime, 1 / 20)
+    end
+
     local function queue(name)
         if not MatchmakingService or type(MatchmakingService.Match) ~= "function" then notify("Matchmaking unavailable", COLORS.warning) return end
         local ok, result = pcall(MatchmakingService.Match, name)
@@ -838,7 +900,7 @@ return function(context)
     CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
     CombatStatusSection:AddToggle({Name = "Expand Enemy + Bot Heads", Description = "Forgiving-shot alternative to Silent Aim. Active-match only, including nested bot heads, with full restoration.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
-    CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
+    CombatStatusSection:AddSlider({Name = "Head Hitbox Size (Experimental)", Description = "Visual and physical test range only. Never enables Big Head by itself.", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
 
@@ -860,6 +922,11 @@ return function(context)
     UnlockSection:AddButton({Name = "Unlock Everything Earned", Callback = function() local n = unlockEarned() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
     UnlockSection:AddLabel("FE unlock-all is not faked: ownership stays server-authoritative.")
     local unlockLabel = UnlockSection:AddLabel("Unlocks: scanning...")
+
+    CaseSection:AddToggle({Name = "Auto Open Owned Cases", Description = "Uses the native case service and stops when ownership or inventory-space checks fail.", Flag = "sniper_arena_auto_open_cases", Default = false, Callback = function(v) state.AutoOpenCases = v == true end})
+    CaseSection:AddSlider({Name = "Cases Per Batch", Flag = "sniper_arena_case_batch", Min = 1, Max = 5, Step = 1, Default = 5, Callback = function(v) state.CaseBatchSize = math.clamp(tonumber(v) or 5, 1, 5) end})
+    CaseSection:AddButton({Name = "Open Next Owned Case Batch", Callback = function() local n = openOwnedCases() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
+    local caseLabel = CaseSection:AddLabel("Cases: scanning...")
 
     ClaimSection:AddToggle({Name = "Auto Claim Tasks", Flag = "sniper_arena_auto_tasks", Default = false, Callback = function(v) state.AutoTasks = v == true end})
     ClaimSection:AddToggle({Name = "Auto Claim Mail", Flag = "sniper_arena_auto_mail", Default = false, Callback = function(v) state.AutoMail = v == true end})
@@ -892,6 +959,9 @@ return function(context)
         if camera and not state.FovOverride then camera.FieldOfView = defaults.CameraFov end
     end})
     VisibilitySection:AddSlider({Name = "Camera FOV", Flag = "sniper_arena_camera_fov", Min = 50, Max = 120, Step = 1, Default = 80, Callback = function(v) state.CameraFov = tonumber(v) or 80 end})
+
+    MovementSection:AddToggle({Name = "Movement Boost", Description = "Adds adjustable movement each rendered frame. Server correction may limit extreme values.", Flag = "sniper_arena_movement_boost", Default = false, Callback = function(v) state.MovementBoost = v == true end})
+    MovementSection:AddSlider({Name = "Extra Speed", Flag = "sniper_arena_movement_speed", Min = 0, Max = 300, Step = 5, Default = 60, Suffix = " studs/s", Callback = function(v) state.MovementSpeed = math.clamp(tonumber(v) or 60, 0, 300) end})
 
     local queueNames = {}
     for name in pairs(MatchConfig.Queues or {}) do queueNames[#queueNames + 1] = name end
@@ -961,6 +1031,10 @@ return function(context)
         combatLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.Parent and state.CurrentTarget.Parent.Name or "none")
         ammoLabel.Text = string.format("Team %s | Health %s | Ping %sms", tostring(LocalPlayer:GetAttribute("Team") or "--"), tostring(LocalPlayer:GetAttribute("Health") or "--"), tostring(LocalPlayer:GetAttribute("Ping") or "--"))
         weaponModsLabel.Text = string.format("Modified weapon values: %d", state.ModifiedWeaponValues)
+        local cases = ownedCases()
+        local caseTotal = 0
+        for _, entry in ipairs(cases) do caseTotal += entry.Owned end
+        caseLabel.Text = string.format("Owned %d across %d case type(s) | Opened %d", caseTotal, #cases, state.CasesOpened)
         actionLabel.Text = "Last action: " .. state.LastAction
         pcall(function()
             gui:SetAttribute("SniperArenaModuleReady", true)
@@ -972,6 +1046,11 @@ return function(context)
             gui:SetAttribute("SniperArenaOwnedWeapons", count)
             gui:SetAttribute("SniperArenaBestOwnedFamily", bestOwnedPrimary() or "")
             gui:SetAttribute("SniperArenaAutoUnlock", state.AutoUnlock)
+            gui:SetAttribute("SniperArenaAutoOpenCases", state.AutoOpenCases)
+            gui:SetAttribute("SniperArenaOwnedCases", caseTotal)
+            gui:SetAttribute("SniperArenaCasesOpened", state.CasesOpened)
+            gui:SetAttribute("SniperArenaMovementBoost", state.MovementBoost)
+            gui:SetAttribute("SniperArenaMovementSpeed", state.MovementSpeed)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
@@ -1015,6 +1094,8 @@ return function(context)
         state.NoRecoil = false
         state.NoSpread = false
         state.FastReload = false
+        state.AutoOpenCases = false
+        state.MovementBoost = false
         releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
@@ -1052,6 +1133,7 @@ return function(context)
             if not state.Alive then return end
             updateHitboxes()
             updateAim(deltaTime)
+            updateMovement(deltaTime)
             updateFovCircle()
             updateEnvironment()
         end)
@@ -1059,17 +1141,22 @@ return function(context)
 
     track(LocalMouse.Move:Connect(tryTrigger))
 
-    local automationClock, statusClock, espClock, weaponClock = 0, 0, 0, 0
+    local automationClock, statusClock, espClock, weaponClock, caseClock = 0, 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
         weaponClock = weaponClock + deltaTime
         automationClock = automationClock + deltaTime
+        caseClock = caseClock + deltaTime
         if espClock >= 0.15 then espClock = 0 updateEsp() end
         tryTrigger()
         if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end
+        if caseClock >= 0.85 then
+            caseClock = 0
+            if state.AutoOpenCases then openOwnedCases() end
+        end
         if automationClock >= 5 then
             automationClock = 0
             if state.AutoUnlock then unlockEarned() end
