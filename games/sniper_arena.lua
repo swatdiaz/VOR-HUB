@@ -825,7 +825,8 @@ return function(context)
     local function ownedCases()
         local cases = {}
         local store = GachaService and GachaService.LocalGachaStore
-        local ok, data = store and pcall(store.data, store)
+        if not store then return cases end
+        local ok, data = pcall(store.data, store)
         if not ok or type(data) ~= "table" then return cases end
         for id, entry in pairs(data) do
             local owned = type(entry) == "table" and tonumber(entry.Owned) or 0
