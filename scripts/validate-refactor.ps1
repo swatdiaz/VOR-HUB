@@ -1230,6 +1230,9 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'Silently hatched' -and
     $dogRaceText -match 'RaceBodyVelocity' -and
     $dogRaceText -match 'dograce_race_speed_multiplier_v2' -and
+    $dogRaceText -match 'dograce_lag_proof_race' -and
+    $dogRaceText -match 'DogRaceRaceDeliveryRatio' -and
+    $dogRaceText -match 'RaceFallbackSteps' -and
     $dogRaceText -match 'DogRaceSilentHatchCount' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_hybrid_progress"' -and
     $dogRaceText -match 'updateHybrid' -and

@@ -171,6 +171,7 @@ return function(context)
         AutoDash = false,
         DashInterval = 1,
         SpeedMultiplier = 5,
+        LagProofRace = true,
         AutoRebirth = false,
         AutoEquipBest = false,
         AutoCraftPets = false,
@@ -244,6 +245,11 @@ return function(context)
         RaceBodyVelocity = nil,
         NativeRaceVelocityZ = nil,
         AppliedRaceVelocityZ = nil,
+        RaceLastPositionZ = nil,
+        RaceDeliveryRatio = 1,
+        RaceStallSeconds = 0,
+        RaceFallbackActive = false,
+        RaceFallbackSteps = 0,
         OwnsAutoTrain = false,
         OwnsAutoRace = false,
         OwnsContest = false,
@@ -611,9 +617,13 @@ return function(context)
         state.RaceBodyVelocity = nil
         state.NativeRaceVelocityZ = nil
         state.AppliedRaceVelocityZ = nil
+        state.RaceLastPositionZ = nil
+        state.RaceDeliveryRatio = 1
+        state.RaceStallSeconds = 0
+        state.RaceFallbackActive = false
     end
 
-    local function updateSpeedOverride()
+    local function updateSpeedOverride(deltaTime)
         local multiplier = parseMultiplier(state.SpeedMultiplier) or 1
         if multiplier <= 1 then
             clearSpeedOverride()
@@ -653,6 +663,41 @@ return function(context)
             state.NativeRaceVelocityZ = nativeZ
             state.AppliedRaceVelocityZ = appliedZ
             bodyVelocity.Velocity = Vector3.new(velocity.X, velocity.Y, appliedZ)
+            local frameTime = math.clamp(tonumber(deltaTime) or 1 / 60, 1 / 240, 0.1)
+            local positionZ = root.Position.Z
+            if isFiniteNumber(state.RaceLastPositionZ) then
+                local actualSpeed = math.abs(positionZ - state.RaceLastPositionZ) / frameTime
+                local requestedSpeed = math.abs(appliedZ)
+                state.RaceDeliveryRatio = requestedSpeed > 1
+                    and math.clamp(actualSpeed / requestedSpeed, 0, 2)
+                    or 1
+                if state.RaceDeliveryRatio < 0.35 then
+                    state.RaceStallSeconds = state.RaceStallSeconds + frameTime
+                else
+                    state.RaceStallSeconds = math.max(0, state.RaceStallSeconds - frameTime * 2)
+                end
+            end
+            state.RaceLastPositionZ = positionZ
+            if state.LagProofRace then
+                -- The native controller only updates BodyVelocity on its timer. Reasserting
+                -- assembly velocity covers dropped physics ticks; tiny local steps are the
+                -- last-resort path when measured displacement stays below the requested speed.
+                root.AssemblyLinearVelocity = Vector3.new(
+                    root.AssemblyLinearVelocity.X,
+                    root.AssemblyLinearVelocity.Y,
+                    appliedZ
+                )
+                if state.RaceStallSeconds >= 0.25 then
+                    local step = math.clamp(math.abs(appliedZ) * frameTime * 0.35, 2, 12)
+                    root.CFrame = root.CFrame + Vector3.new(0, 0, math.sign(appliedZ) * step)
+                    state.RaceFallbackActive = true
+                    state.RaceFallbackSteps = state.RaceFallbackSteps + 1
+                else
+                    state.RaceFallbackActive = false
+                end
+            else
+                state.RaceFallbackActive = false
+            end
             return
         end
         clearRaceSpeedOverride()
@@ -2929,6 +2974,19 @@ return function(context)
             end
         end,
     })
+    Equipment.LagProofRaceControl = MovementSection:AddToggle({
+        Name = "Lag-Proof Race Fallback",
+        Description = "Reasserts race velocity and uses checkpoint-safe micro-steps only after measured movement stalls for 0.25 seconds.",
+        Flag = "dograce_lag_proof_race",
+        Default = true,
+        Callback = function(enabled)
+            state.LagProofRace = enabled == true
+            if not state.LagProofRace then
+                state.RaceFallbackActive = false
+                state.RaceStallSeconds = 0
+            end
+        end,
+    })
     MovementSection:AddButton({Name = "Native Dash", Callback = dashNow})
     autoDashControl = MovementSection:AddToggle({
         Name = "Auto Dash",
@@ -3082,12 +3140,18 @@ return function(context)
             state.AutoOnlineRewards and "AUTO" or "OFF",
             state.AutoTasks and "AUTO" or "OFF",
             state.AutoAchievements and "AUTO" or "OFF")
+        local raceBodyVelocity = root and root:FindFirstChild("BodyVelocity")
+        local displayedSpeed = isFighting() and raceBodyVelocity
+            and math.abs(raceBodyVelocity.Velocity.Z)
+            or humanoid and humanoid.WalkSpeed or 0
         speedLabel.Text = string.format(
-            "%s speed: %.1f | %.3gx | Velocity: %.1f",
+            "%s speed: %.1f | %.3gx | Velocity: %.1f | Delivery: %.0f%% | Fallback %s",
             isFighting() and "Race" or "Walk",
-            humanoid and humanoid.WalkSpeed or 0,
+            displayedSpeed,
             state.SpeedMultiplier,
-            root and root.AssemblyLinearVelocity.Magnitude or 0
+            root and root.AssemblyLinearVelocity.Magnitude or 0,
+            state.RaceDeliveryRatio * 100,
+            state.RaceFallbackActive and "ACTIVE" or state.LagProofRace and "ARMED" or "OFF"
         )
         actionLabel.Text = "Last action: " .. state.LastAction
         local controllers = {
@@ -3127,6 +3191,10 @@ return function(context)
             gui:SetAttribute("DogRaceSelectedBird", state.SelectedBird)
             gui:SetAttribute("DogRaceSelectedShoe", state.SelectedShoe)
             gui:SetAttribute("DogRaceSpeedMultiplier", state.SpeedMultiplier)
+            gui:SetAttribute("DogRaceLagProofRace", state.LagProofRace)
+            gui:SetAttribute("DogRaceRaceDeliveryRatio", state.RaceDeliveryRatio)
+            gui:SetAttribute("DogRaceRaceFallbackActive", state.RaceFallbackActive)
+            gui:SetAttribute("DogRaceRaceFallbackSteps", state.RaceFallbackSteps)
             gui:SetAttribute("DogRaceFullProgression", state.FullProgression)
             gui:SetAttribute("DogRaceSmartBestEgg", state.SmartBestEgg)
             gui:SetAttribute("DogRaceHybridMode", state.HybridMode)
@@ -3235,7 +3303,7 @@ return function(context)
         if not state.Alive then
             return
         end
-        updateSpeedOverride()
+        updateSpeedOverride(deltaTime)
         Equipment.StatusAccumulator = Equipment.StatusAccumulator + deltaTime
         Equipment.AutomationAccumulator = Equipment.AutomationAccumulator + deltaTime
         local now = os.clock()
