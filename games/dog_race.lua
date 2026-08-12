@@ -190,6 +190,7 @@ return function(context)
         OwnsAutoRace = false,
         OwnsContest = false,
     }
+    local eggDropdownControl
 
     local function notify(message, color)
         Window:Notify("Dog Race", message, 4, color or COLORS.accentBright)
@@ -883,6 +884,52 @@ return function(context)
             compactNumber(price * count), tostring(config.Currency))
     end
 
+    local function bestAffordableWinsEgg(count)
+        local data = getData()
+        count = tonumber(count) or 1
+        if not data or storedPetCount(data) + count > maxPetStorage(data) then
+            return nil
+        end
+        if count == 3 and not (data.GamePasses and data.GamePasses.TripleHatch) then
+            return nil
+        end
+
+        local balance = currencyAmount(data, "Wins")
+        local bestId, bestPrice = nil, -math.huge
+        for eggId, config in pairs(EggsData) do
+            if config.Currency == "Wins" then
+                local area = eggArea(eggId)
+                local unlocked = not (area and data.Areas and data.Areas[area] == false)
+                local price = hatchPrice(data, eggId)
+                if unlocked and price and balance >= price * count and price > bestPrice then
+                    bestId, bestPrice = eggId, price
+                end
+            end
+        end
+        return bestId, bestPrice
+    end
+
+    local function retargetBestAffordableWinsEgg()
+        local eggId, price = bestAffordableWinsEgg(state.HatchCount)
+        if not eggId or eggId == state.SelectedEgg then
+            return eggId ~= nil
+        end
+
+        local dropdownValue = choiceForId(eggChoices, eggChoiceIds, eggId)
+        if eggDropdownControl and dropdownValue then
+            eggDropdownControl:Set(dropdownValue)
+        else
+            state.SelectedEgg = eggId
+            state.LastHatch = 0
+        end
+        state.LastAction = string.format(
+            "Auto hatch retargeted to best affordable egg: %s (%s Wins)",
+            eggId,
+            compactNumber((price or 0) * state.HatchCount)
+        )
+        return true
+    end
+
     local function hatchSelected(count, promptLockedPurchase)
         local eggId = state.SelectedEgg
         local config = EggsData[eggId]
@@ -1489,6 +1536,33 @@ return function(context)
     local speedInputControl
     local automationControls = {}
 
+    local function setFullProgressionMembers(enabled)
+        local controls = {
+            automationControls.Hybrid,
+            autoHatchControl,
+            automationControls.Rebirth,
+            automationControls.EquipBest,
+            automationControls.DailyChest,
+            automationControls.OnlineRewards,
+            automationControls.FreeEgg,
+            automationControls.Achievements,
+            automationControls.Tasks,
+            automationControls.Fruit,
+            automationControls.Trail,
+            automationControls.Upgrade,
+            automationControls.Dog,
+            automationControls.Partner,
+            automationControls.GearCrate,
+            automationControls.EquipGear,
+            automationControls.MergeGear,
+        }
+        for _, control in ipairs(controls) do
+            if control and (type(control.Get) ~= "function" or control:Get() ~= enabled) then
+                control:Set(enabled)
+            end
+        end
+    end
+
     autoRaceControl = RaceSection:AddToggle({
         Name = "Auto Race",
         Description = "Uses the game's native AutoController pathfinding and contest flow.",
@@ -1664,29 +1738,9 @@ return function(context)
         Default = false,
         Callback = function(enabled)
             state.FullProgression = enabled == true
-            local controls = {
-                automationControls.Hybrid,
-                autoHatchControl,
-                automationControls.Rebirth,
-                automationControls.EquipBest,
-                automationControls.DailyChest,
-                automationControls.OnlineRewards,
-                automationControls.FreeEgg,
-                automationControls.Achievements,
-                automationControls.Tasks,
-                automationControls.Fruit,
-                automationControls.Trail,
-                automationControls.Upgrade,
-                automationControls.Dog,
-                automationControls.Partner,
-                automationControls.GearCrate,
-                automationControls.EquipGear,
-                automationControls.MergeGear,
-            }
-            for _, control in ipairs(controls) do
-                if control then
-                    control:Set(enabled == true)
-                end
+            setFullProgressionMembers(enabled == true)
+            if enabled then
+                retargetBestAffordableWinsEgg()
             end
             state.LastAction = enabled and "Full progression armed; locked systems will wait"
                 or "Full progression stopped"
@@ -1699,7 +1753,7 @@ return function(context)
         if autoDashControl then autoDashControl:Set(false) end
     end})
 
-    EggHatchSection:AddDropdown({
+    eggDropdownControl = EggHatchSection:AddDropdown({
         Name = "Egg",
         Description = "Every live native egg, including event and Robux eggs.",
         Flag = "dograce_selected_egg",
@@ -2250,6 +2304,12 @@ return function(context)
         if automationAccumulator >= 0.5 then
             automationAccumulator = 0
             local data = getData()
+            if state.FullProgression then
+                -- Profiles and individual toggles can be applied in any order. The master
+                -- switch owns its children and repairs any drift instead of silently lying.
+                setFullProgressionMembers(true)
+                retargetBestAffordableWinsEgg()
+            end
             updateHybrid(now)
             if state.AutoHatch then
                 local fast = data and data.GamePasses and data.GamePasses.FastHatch
