@@ -383,6 +383,7 @@ $raidRangeSafety = (
     $bloxText -match 'RaidHitMargin = 0\.5' -and
     $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
+    $bloxText -match 'RaidRecoveryHeight = 250' -and
     $bloxText -match 'state\.RaidFarmOffset = function\(\)' -and
     $bloxText -match 'allowedHorizontal = math\.sqrt\(math\.max\(0, maximum \* maximum - y \* y\)\)' -and
     $bloxText -match 'state\.PositionAnchorY = livePosition\.Y' -and
@@ -393,7 +394,7 @@ $raidRangeSafety = (
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
-    $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?RaidRuntime\.VoidKillStep\(nil\).*?retreatHeight = math\.max\(65, safeHeight \+ 25\)' -and
+    $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?state\.RaidVoidKill and island\.Index >= 5.*?RaidRuntime\.VoidKillStep\(island\).*?retreatHeight = math\.max\(DoubleAttackEngine\.RaidRecoveryHeight, safeHeight \+ 100\).*?state\.FarmHoldY = retreatCFrame\.Position\.Y' -and
     $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
     $bloxText -match 'local holdCFrame = island\.Part\.CFrame \+ Vector3\.new\(raidX, safeHeight, raidZ\)' -and
     $bloxText -match '(?s)if state\.RaidVoidActive then.*?state\.ActiveFarmTarget = nil.*?state\.RaidTargetName = nil.*?moveTo\(holdCFrame\).*?cancelMove\(false\)' -and

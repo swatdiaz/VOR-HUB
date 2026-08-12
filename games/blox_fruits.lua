@@ -151,6 +151,7 @@ return function(context)
             RaidHitMargin = 0.5,
             RaidMaxHitHeight = 37.5,
             RaidRecoveryPercent = 70,
+            RaidRecoveryHeight = 250,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
         -- both its regular 0.3-second gate and its fifth-hit 1-second gate.
@@ -4015,12 +4016,18 @@ return function(context)
             local emergencyRecovery = currentHealth <= DoubleAttackEngine.RaidRecoveryPercent
             state.RaidSafeModeActive = safeModeRecovery or emergencyRecovery
             if state.RaidSafeModeActive then
-                RaidRuntime.VoidKillStep(nil)
+                if state.RaidVoidKill and island.Index >= 5 then
+                    RaidRuntime.VoidKillStep(island)
+                else
+                    RaidRuntime.VoidKillStep(nil)
+                end
                 state.ActiveFarmTarget = nil
                 state.ActiveFarmVerticalLock = false
                 state.RaidTargetName = nil
-                local retreatHeight = math.max(65, safeHeight + 25)
-                moveTo(island.Part.CFrame + Vector3.new(0, retreatHeight, 0))
+                local retreatHeight = math.max(DoubleAttackEngine.RaidRecoveryHeight, safeHeight + 100)
+                local retreatCFrame = island.Part.CFrame + Vector3.new(raidX, retreatHeight, raidZ)
+                state.FarmHoldY = retreatCFrame.Position.Y
+                moveTo(retreatCFrame)
                 raidLabel.Text = string.format(
                     "Dungeon / Raid: %s recovery at %.0f%% health",
                     safeModeRecovery and "Safe mode" or "Emergency",
