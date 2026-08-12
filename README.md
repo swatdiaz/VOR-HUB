@@ -15,7 +15,7 @@ games do not require users to replace their loadstring.
 ## Current immutable loader
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/5c9cdc307cd8a5d1ec0c03607381384b9b9f2cba/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/53b272d1e5f18d12344ca13d7da2ee31f049ef4b/loader.lua"))()
 ```
 
 Use this only when you intentionally want the current release frozen forever.
@@ -31,7 +31,7 @@ admin permission can update the original VOR Hub repository.
 - `loader.lua` - small immutable game router; it compiles only the detected game module
 - `core/` - shared luxury UI, settings, profiles, access gate, and utilities
 - `games/` - isolated Grow a Garden 2, Capybaras VS Plants, Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Sniper Arena, Iron Man: Reimagined, Dog Race, Dragon Ball Legendary Powers, Blox Fruits, and Dungeon builders
-- Sniper Arena includes native shot-path silent aim, cursor aimbot, auto-fire trigger assist, adjustable enemy-head hitboxes, recoil/spread/reload controls, optional minimal enemy ESP, server-checked sniper unlock progression, best-owned loadouts, ready reward claims, and matchmaking controls.
+- Sniper Arena includes native shot-path silent aim, cursor aimbot, auto-fire trigger assist, adjustable enemy-head hitboxes, recoil/spread/reload controls, optional minimal enemy ESP, server-checked sniper unlock progression, best-owned loadouts, ready reward claims, matchmaking controls, and universe-wide profiles shared by every sub-place.
 - Dog Race includes guided AFK progression, smart/manual egg targeting, fruit/trail/bone shops, birds, race-earned bone shoes, dog and partner unlocks, race/training automation, movement, rewards, and live currency/rebirth/Robux gates.
 - `VOR_HUB.lua` - compatibility bootstrap pinned to the audited loader
 - `scripts/validate-refactor.ps1` - Luau/register/flag/controller validation
