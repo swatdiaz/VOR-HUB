@@ -67,6 +67,9 @@ return function(context)
         ItemsDataHelper = require(ReplicatedFirst.DataHelper.ItemsDataHelper)
         Equipment.BirdsDataHelper = require(ReplicatedFirst.DataHelper.BirdsDataHelper)
         Equipment.ShoesDataHelper = require(ReplicatedFirst.DataHelper.ShoesDataHelper)
+        Equipment.HorsesDataHelper = require(ReplicatedFirst.DataHelper.HorsesDataHelper)
+        Equipment.PrincessesDataHelper = require(ReplicatedFirst.DataHelper.PrincessesDataHelper)
+        Equipment.FruitsDataHelper = require(ReplicatedFirst.DataHelper.FruitsDataHelper)
         EggsData = require(ReplicatedFirst.Data.EggsData)
         FruitsData = require(ReplicatedFirst.Data.FruitsData)
         TrailsData = require(ReplicatedFirst.Data.TrailsData)
@@ -148,7 +151,7 @@ return function(context)
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🥚 Smart or manual eggs",
-        Content = "Best Affordable Egg ON uses a controlled 10% Wins budget for the strongest affordable unlocked egg while protecting 90% of your highest balance for the next bird. Turn it OFF to keep hatching the exact selected egg.",
+        Content = "Best Affordable Egg ON selects the most expensive unlocked egg your current Wins can buy. Full Progression hatches it once per training cycle instead of draining Wins nonstop. Turn it OFF to keep the exact selected egg.",
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🦴 Bones, birds, and shoes",
@@ -199,6 +202,8 @@ return function(context)
         AutoMergeGear = false,
         AutoBird = false,
         AutoShoe = false,
+        AutoWheel = false,
+        WheelSpinning = false,
         SelectedCrate = "Crate_1",
         SelectedBird = "Bird_101",
         SelectedShoe = "Shoes_101",
@@ -212,6 +217,8 @@ return function(context)
         SelectedDog = "Dog_101",
         SelectedPartner = "Partner_1",
         LastHatch = 0,
+        LastHybridHatchPhase = -1,
+        LastHybridFruitPhase = -1,
         LastFruit = 0,
         LastClaimSweep = 0,
         LastShopSweep = 0,
@@ -223,6 +230,7 @@ return function(context)
         LastEquipBest = 0,
         LastPetCraft = 0,
         LastPotionSweep = 0,
+        LastWheelSpin = 0,
         LastDailyChest = 0,
         LastAction = "Ready",
         SpeedHumanoid = nil,
@@ -232,6 +240,20 @@ return function(context)
         OwnsAutoRace = false,
         OwnsContest = false,
     }
+    if EggHatchGuiController and type(EggHatchGuiController.ShowHatchResult) == "function" then
+        Equipment.OriginalShowHatchResult = EggHatchGuiController.ShowHatchResult
+        EggHatchGuiController.ShowHatchResult = function(controller, eggId, pets)
+            if state.Alive and state.AutoHatch then
+                state.LastAction = string.format(
+                    "Silently hatched %d pet(s) from %s",
+                    type(pets) == "table" and #pets or 0,
+                    tostring(eggId)
+                )
+                return
+            end
+            return Equipment.OriginalShowHatchResult(controller, eggId, pets)
+        end
+    end
     local eggDropdownControl
 
     local function notify(message, color)
@@ -1088,15 +1110,6 @@ return function(context)
         end
         local price = hatchPrice(data, eggId) or 0
         local balance = currencyAmount(data, config.Currency)
-        if state.FullProgression and state.AutoBird and config.Currency == "Wins" then
-            local spendable, savingsFloor = Equipment.eggSpendableWins(data)
-            if spendable < price * count then
-                return false, string.format(
-                    "Egg budget regenerating; %s Wins protected for bird savings",
-                    compactNumber(savingsFloor)
-                )
-            end
-        end
         if balance < price * count then
             return false, string.format("Need %s %s; have %s", compactNumber(price * count),
                 tostring(config.Currency), compactNumber(balance))
@@ -1116,9 +1129,6 @@ return function(context)
         end
 
         local balance = currencyAmount(data, "Wins")
-        if state.FullProgression and state.AutoBird then
-            balance = Equipment.eggSpendableWins(data)
-        end
         local bestId, bestPrice = nil, -math.huge
         for eggId, config in pairs(EggsData) do
             if config.Currency == "Wins" then
@@ -1536,6 +1546,159 @@ return function(context)
         state.LastAction = ok and ("Unequipped partner: " .. state.SelectedPartner)
             or ("Partner unequip failed: " .. tostring(result))
         return ok
+    end
+
+    function Equipment.bestDogStep()
+        local data = getData()
+        if not data or not Equipment.HorsesDataHelper then
+            return false
+        end
+        local bestOwned, bestOwnedIndex, buyId, buyIndex = nil, -math.huge, nil, -math.huge
+        for dogId, config in pairs(HorsesData) do
+            if string.sub(dogId, 1, 4) == "Dog_" then
+                local okIndex, index = pcall(Equipment.HorsesDataHelper.GetIndex, dogId)
+                index = okIndex and tonumber(index) or 0
+                if data.Horses and data.Horses[dogId] then
+                    if index > bestOwnedIndex then
+                        bestOwned, bestOwnedIndex = dogId, index
+                    end
+                elseif config.UnlockCurrency ~= "Robux"
+                    and not (config.LocatedArea and data.Areas and data.Areas[config.LocatedArea] == false)
+                    and currencyAmount(data, config.UnlockCurrency) >= (tonumber(config.UnlockCount) or math.huge)
+                    and index > buyIndex then
+                    buyId, buyIndex = dogId, index
+                end
+            end
+        end
+        if bestOwned and selectedHorseId(data) ~= bestOwned then
+            state.SelectedDog = bestOwned
+            return equipSelectedDog()
+        end
+        if buyId then
+            state.SelectedDog = buyId
+            return unlockSelectedDog()
+        end
+        return false
+    end
+
+    function Equipment.bestPartnerStep()
+        local data = getData()
+        if not data or not Equipment.PrincessesDataHelper then
+            return false
+        end
+        local bestOwned, bestOwnedIndex, buyId, buyIndex = nil, -math.huge, nil, -math.huge
+        local equipped
+        for partnerId, partner in pairs(data.Princesses or {}) do
+            if partner.Equipped then
+                equipped = partnerId
+            end
+        end
+        for partnerId, config in pairs(PrincessesData) do
+            local okIndex, index = pcall(Equipment.PrincessesDataHelper.GetIndex, partnerId)
+            index = okIndex and tonumber(index) or 0
+            if data.Princesses and data.Princesses[partnerId] then
+                if index > bestOwnedIndex then
+                    bestOwned, bestOwnedIndex = partnerId, index
+                end
+            elseif config.UnlockType == "Wins"
+                and (tonumber(data.Wins) or 0) >= (tonumber(config.UnlockValue) or math.huge)
+                and index > buyIndex then
+                buyId, buyIndex = partnerId, index
+            end
+        end
+        if bestOwned and equipped ~= bestOwned then
+            state.SelectedPartner = bestOwned
+            return equipSelectedPartner()
+        end
+        if buyId then
+            state.SelectedPartner = buyId
+            return unlockSelectedPartner()
+        end
+        return false
+    end
+
+    function Equipment.bestFruitStep()
+        local data = getData()
+        if not data then
+            return false
+        end
+        local bestId, bestPrice = nil, -math.huge
+        for fruitId, config in pairs(FruitsData) do
+            local price = tonumber(config.Price) or math.huge
+            if config.Currency ~= "Robux"
+                and (tonumber(data.Rebirths) or 0) >= (tonumber(config.UnlockRebirthCount) or 0)
+                and currencyAmount(data, config.Currency) >= price
+                and price > bestPrice then
+                bestId, bestPrice = fruitId, price
+            end
+        end
+        if bestId then
+            state.SelectedFruit = bestId
+            return buySelectedFruit()
+        end
+        return false
+    end
+
+    function Equipment.bestUpgradeStep()
+        local data = getData()
+        if not data or not UpgradesDataHelper then
+            return false
+        end
+        local bones = tonumber(data.Diamonds) or 0
+        local shoeReserve = Equipment.nextShoeBoneReserve(data)
+        if shoeReserve > 0 and bones >= shoeReserve then
+            return false
+        end
+        local budget = shoeReserve > 0 and math.max(1, math.floor(bones * 0.2)) or bones
+        local bestId, bestPrice = nil, math.huge
+        for upgradeId, config in pairs(UpgradesData) do
+            local level = tonumber(data.Upgrades and data.Upgrades[upgradeId]) or 0
+            if level < (tonumber(config.MaxLevel) or 0) then
+                local ok, price = pcall(UpgradesDataHelper.GetPrice, upgradeId, level + 1)
+                price = ok and tonumber(price) or math.huge
+                if price <= budget and price < bestPrice then
+                    bestId, bestPrice = upgradeId, price
+                end
+            end
+        end
+        if bestId then
+            state.SelectedUpgrade = bestId
+            return buySelectedUpgrade()
+        end
+        return false
+    end
+
+    function Equipment.spinFreeWheel()
+        local data = getData()
+        local cooldown = tonumber(Constants and Constants.SPINNING_WHEEL_TIME) or 86400
+        if not data or state.WheelSpinning
+            or os.time() - (tonumber(data.SpinningWheelLastCheckTime) or os.time()) <= cooldown then
+            return false
+        end
+        local service = getService("SpinningWheelService")
+        if not service or type(service.StartSpin) ~= "function" then
+            return false
+        end
+        local ok, promise = pcall(service.StartSpin, service)
+        if not ok then
+            return false
+        end
+        state.WheelSpinning = true
+        state.LastAction = "Started free wheel spin"
+        if promise and type(promise.andThen) == "function" then
+            promise:andThen(function(result)
+                state.WheelSpinning = false
+                state.LastAction = result and result.resultIndex ~= 0
+                    and ("Wheel reward: " .. tostring(result.resultText))
+                    or "Free wheel spin rejected"
+            end):catch(function(message)
+                state.WheelSpinning = false
+                state.LastAction = "Wheel error: " .. tostring(message)
+            end)
+        else
+            state.WheelSpinning = false
+        end
+        return true
     end
 
     local function claimAvailableOnlineRewards()
@@ -2051,6 +2214,7 @@ return function(context)
             automationControls.FreeEgg,
             automationControls.Achievements,
             automationControls.Tasks,
+            automationControls.Wheel,
             automationControls.Fruit,
             automationControls.Trail,
             automationControls.Upgrade,
@@ -2248,14 +2412,27 @@ return function(context)
         Default = false,
         Callback = function(enabled) state.AutoTasks = enabled == true end,
     })
+    automationControls.Wheel = ClaimAutoSection:AddToggle({
+        Name = "Auto Free Wheel",
+        Description = "Uses only matured free spins. It never opens the Robux spin purchase.",
+        Flag = "dograce_auto_wheel",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoWheel = enabled == true
+            if state.AutoWheel then
+                Equipment.spinFreeWheel()
+            end
+        end,
+    })
     ClaimAutoSection:AddButton({Name = "Claim Online Gifts Now", Callback = claimAvailableOnlineRewards})
     ClaimAutoSection:AddButton({Name = "Claim Free Egg Now", Callback = claimFreeOnlineEgg})
     ClaimAutoSection:AddButton({Name = "Claim Achievements Now", Callback = claimAvailableAchievements})
     ClaimAutoSection:AddButton({Name = "Claim Task Rewards Now", Callback = claimAvailableTasks})
+    ClaimAutoSection:AddButton({Name = "Use Free Wheel Spin Now", Callback = Equipment.spinFreeWheel})
 
     automationControls.SmartBestEgg = FullAutoSection:AddToggle({
         Name = "Best Affordable Egg",
-        Description = "Targets the strongest egg within a controlled 10% budget while 90% of your highest Wins balance stays protected for the next bird.",
+        Description = "Targets the most expensive unlocked egg your current Wins can buy. Full Progression hatches once per training cycle instead of chain-spending.",
         Flag = "dograce_smart_best_egg",
         Default = true,
         Callback = function(enabled)
@@ -2838,6 +3015,8 @@ return function(context)
             gui:SetAttribute("DogRaceFreeEggReady", freeEggReady == true)
             gui:SetAttribute("DogRaceAutoAchievements", state.AutoAchievements)
             gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
+            gui:SetAttribute("DogRaceAutoWheel", state.AutoWheel)
+            gui:SetAttribute("DogRaceSilentHatch", true)
             gui:SetAttribute("DogRaceAutoCraftPets", state.AutoCraftPets)
             gui:SetAttribute("DogRaceAutoPotions", state.AutoPotions)
             gui:SetAttribute("DogRacePetCount", petCount)
@@ -2898,6 +3077,11 @@ return function(context)
         state.AutoMergeGear = false
         state.AutoBird = false
         state.AutoShoe = false
+        state.AutoWheel = false
+        state.WheelSpinning = false
+        if Equipment.OriginalShowHatchResult and EggHatchGuiController then
+            EggHatchGuiController.ShowHatchResult = Equipment.OriginalShowHatchResult
+        end
         if state.HybridMode then
             stopHybrid()
         end
@@ -2952,9 +3136,16 @@ return function(context)
             if state.AutoHatch then
                 local fast = data and data.GamePasses and data.GamePasses.FastHatch
                 local delay = fast and 1 or 5
-                if now - state.LastHatch >= delay then
+                local cycleReady = not (state.FullProgression and state.HybridMode)
+                    or (state.HybridPhase == "Training"
+                        and state.LastHybridHatchPhase ~= state.HybridPhaseStarted)
+                if cycleReady and now - state.LastHatch >= delay then
                     state.LastHatch = now
-                    if not hatchSelected(state.HatchCount, false) then
+                    if hatchSelected(state.HatchCount, false) then
+                        if state.FullProgression and state.HybridMode then
+                            state.LastHybridHatchPhase = state.HybridPhaseStarted
+                        end
+                    else
                         state.LastAction = "Auto hatch waiting: " .. state.LastAction
                     end
                 end
@@ -3010,13 +3201,25 @@ return function(context)
                 if state.AutoTasks then
                     claimAvailableTasks()
                 end
+                if state.AutoWheel then
+                    Equipment.spinFreeWheel()
+                end
             end
             if now - state.LastShopSweep >= 2 then
                 state.LastShopSweep = now
                 if state.AutoFruit then
-                    local config = FruitsData[state.SelectedFruit]
-                    if config and config.Currency ~= "Robux" then
-                        buySelectedFruit()
+                    if state.FullProgression then
+                        if not state.HybridMode or (state.HybridPhase == "Training"
+                            and state.LastHybridFruitPhase ~= state.HybridPhaseStarted) then
+                            if Equipment.bestFruitStep() and state.HybridMode then
+                                state.LastHybridFruitPhase = state.HybridPhaseStarted
+                            end
+                        end
+                    else
+                        local config = FruitsData[state.SelectedFruit]
+                        if config and config.Currency ~= "Robux" then
+                            buySelectedFruit()
+                        end
                     end
                 end
                 if state.AutoTrail then
@@ -3035,31 +3238,43 @@ return function(context)
                     end
                 end
                 if state.AutoUpgrade then
-                    buySelectedUpgrade()
+                    if state.FullProgression then
+                        Equipment.bestUpgradeStep()
+                    else
+                        buySelectedUpgrade()
+                    end
                 end
                 if state.AutoDog then
-                    local horse = data and data.Horses and data.Horses[state.SelectedDog]
-                    if horse then
-                        if horse.Equipped ~= true then
-                            equipSelectedDog()
-                        end
+                    if state.FullProgression then
+                        Equipment.bestDogStep()
                     else
-                        local config = HorsesData[state.SelectedDog]
-                        if config and config.UnlockCurrency ~= "Robux" then
-                            unlockSelectedDog()
+                        local horse = data and data.Horses and data.Horses[state.SelectedDog]
+                        if horse then
+                            if horse.Equipped ~= true then
+                                equipSelectedDog()
+                            end
+                        else
+                            local config = HorsesData[state.SelectedDog]
+                            if config and config.UnlockCurrency ~= "Robux" then
+                                unlockSelectedDog()
+                            end
                         end
                     end
                 end
                 if state.AutoPartner then
-                    local partner = data and data.Princesses and data.Princesses[state.SelectedPartner]
-                    if partner then
-                        if partner.Equipped ~= true then
-                            equipSelectedPartner()
-                        end
+                    if state.FullProgression then
+                        Equipment.bestPartnerStep()
                     else
-                        local config = PrincessesData[state.SelectedPartner]
-                        if config and config.UnlockType ~= "Robux" then
-                            unlockSelectedPartner()
+                        local partner = data and data.Princesses and data.Princesses[state.SelectedPartner]
+                        if partner then
+                            if partner.Equipped ~= true then
+                                equipSelectedPartner()
+                            end
+                        else
+                            local config = PrincessesData[state.SelectedPartner]
+                            if config and config.UnlockType ~= "Robux" then
+                                unlockSelectedPartner()
+                            end
                         end
                     end
                 end

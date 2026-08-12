@@ -1224,9 +1224,10 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'Flag\s*=\s*"dograce_smart_best_egg"' -and
     $dogRaceText -match 'retargetBestAffordableWinsEgg' -and
     $dogRaceText -match 'nextBirdWinsReserve' -and
-    $dogRaceText -match 'eggSpendableWins' -and
-    $dogRaceText -match 'BirdSavingsHighWater' -and
-    $dogRaceText -match 'Egg budget regenerating' -and
+    $dogRaceText -match 'LastHybridHatchPhase' -and
+    $dogRaceText -match 'most expensive unlocked egg' -and
+    $dogRaceText -match 'OriginalShowHatchResult' -and
+    $dogRaceText -match 'Silently hatched' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_hybrid_progress"' -and
     $dogRaceText -match 'updateHybrid' -and
     $dogRaceText -match 'fightService\.EndContest:Connect' -and
@@ -1244,6 +1245,12 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'UsePotion' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_potions"' -and
     $dogRaceText -match 'DogRaceAutoPotions' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_wheel"' -and
+    $dogRaceText -match 'SpinningWheelService' -and
+    $dogRaceText -match 'bestDogStep' -and
+    $dogRaceText -match 'bestPartnerStep' -and
+    $dogRaceText -match 'bestFruitStep' -and
+    $dogRaceText -match 'bestUpgradeStep' -and
     $dogRaceText -match 'ItemCrateService.*BuyCrateWithDiamonds' -and
     $dogRaceText -match '(?s)ItemService.*?EquipItem' -and
     $dogRaceText -match '(?s)ItemService.*?MergeItems' -and
