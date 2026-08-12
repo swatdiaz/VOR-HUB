@@ -148,7 +148,7 @@ return function(context)
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🥚 Smart or manual eggs",
-        Content = "Best Affordable Egg ON retargets the highest affordable unlocked Wins egg. Turn it OFF to keep hatching the exact egg selected on the Eggs page while Full Progression continues.",
+        Content = "Best Affordable Egg ON uses a controlled 10% Wins budget for the strongest affordable unlocked egg while protecting 90% of your highest balance for the next bird. Turn it OFF to keep hatching the exact selected egg.",
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🦴 Bones, birds, and shoes",
@@ -174,6 +174,8 @@ return function(context)
         AutoPotions = false,
         PotionUsing = false,
         PotionRunId = 0,
+        BirdSavingsTarget = nil,
+        BirdSavingsHighWater = 0,
         AutoDailyChest = false,
         FullProgression = false,
         SmartBestEgg = true,
@@ -1012,27 +1014,52 @@ return function(context)
         end
     end
 
-    function Equipment.nextBirdWinsReserve(data)
+    function Equipment.nextBirdWinsTarget(data)
         if not data or not Equipment.BirdsDataHelper then
-            return 0
+            return nil, 0
         end
         if GameDataUtil and type(GameDataUtil.IsBirdSystemLocked) == "function" then
             local ok, locked = pcall(GameDataUtil.IsBirdSystemLocked, data)
             if ok and locked then
-                return 0
+                return nil, 0
             end
         end
-        local reserve = math.huge
+        local targetId, reserve = nil, math.huge
         for birdId in pairs(Equipment.BirdsData) do
             if not (data.Birds and data.Birds[birdId]) then
                 local okCurrency, currency = pcall(Equipment.BirdsDataHelper.GetUnlockCurrency, birdId)
                 local okPrice, price = pcall(Equipment.BirdsDataHelper.GetUnlockCount, birdId)
-                if okCurrency and currency == "Wins" and okPrice and tonumber(price) then
-                    reserve = math.min(reserve, tonumber(price))
+                if okCurrency and currency == "Wins" and okPrice and tonumber(price)
+                    and tonumber(price) < reserve then
+                    targetId, reserve = birdId, tonumber(price)
                 end
             end
         end
-        return reserve < math.huge and reserve or 0
+        return targetId, reserve < math.huge and reserve or 0
+    end
+
+    function Equipment.nextBirdWinsReserve(data)
+        local _, reserve = Equipment.nextBirdWinsTarget(data)
+        return reserve
+    end
+
+    function Equipment.eggSpendableWins(data)
+        local balance = currencyAmount(data, "Wins")
+        if not state.FullProgression or not state.AutoBird then
+            return balance, 0
+        end
+        local targetId, targetPrice = Equipment.nextBirdWinsTarget(data)
+        if not targetId or targetPrice <= 0 then
+            return balance, 0
+        end
+        if state.BirdSavingsTarget ~= targetId then
+            state.BirdSavingsTarget = targetId
+            state.BirdSavingsHighWater = balance
+        else
+            state.BirdSavingsHighWater = math.max(state.BirdSavingsHighWater, balance)
+        end
+        local savingsFloor = math.min(targetPrice, math.floor(state.BirdSavingsHighWater * 0.9))
+        return math.max(0, balance - savingsFloor), savingsFloor
     end
 
     local function eggAccess(count)
@@ -1062,9 +1089,12 @@ return function(context)
         local price = hatchPrice(data, eggId) or 0
         local balance = currencyAmount(data, config.Currency)
         if state.FullProgression and state.AutoBird and config.Currency == "Wins" then
-            local reserve = Equipment.nextBirdWinsReserve(data)
-            if balance - price * count < reserve then
-                return false, string.format("Saving %s Wins for the next bird", compactNumber(reserve))
+            local spendable, savingsFloor = Equipment.eggSpendableWins(data)
+            if spendable < price * count then
+                return false, string.format(
+                    "Egg budget regenerating; %s Wins protected for bird savings",
+                    compactNumber(savingsFloor)
+                )
             end
         end
         if balance < price * count then
@@ -1087,7 +1117,7 @@ return function(context)
 
         local balance = currencyAmount(data, "Wins")
         if state.FullProgression and state.AutoBird then
-            balance = math.max(0, balance - Equipment.nextBirdWinsReserve(data))
+            balance = Equipment.eggSpendableWins(data)
         end
         local bestId, bestPrice = nil, -math.huge
         for eggId, config in pairs(EggsData) do
@@ -2225,7 +2255,7 @@ return function(context)
 
     automationControls.SmartBestEgg = FullAutoSection:AddToggle({
         Name = "Best Affordable Egg",
-        Description = "With Full Progression, automatically targets the highest affordable unlocked Wins egg. Turn this off to keep hatching your manually selected egg.",
+        Description = "Targets the strongest egg within a controlled 10% budget while 90% of your highest Wins balance stays protected for the next bird.",
         Flag = "dograce_smart_best_egg",
         Default = true,
         Callback = function(enabled)

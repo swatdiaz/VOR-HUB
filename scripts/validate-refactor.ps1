@@ -1224,6 +1224,9 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'Flag\s*=\s*"dograce_smart_best_egg"' -and
     $dogRaceText -match 'retargetBestAffordableWinsEgg' -and
     $dogRaceText -match 'nextBirdWinsReserve' -and
+    $dogRaceText -match 'eggSpendableWins' -and
+    $dogRaceText -match 'BirdSavingsHighWater' -and
+    $dogRaceText -match 'Egg budget regenerating' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_hybrid_progress"' -and
     $dogRaceText -match 'updateHybrid' -and
     $dogRaceText -match 'fightService\.EndContest:Connect' -and
