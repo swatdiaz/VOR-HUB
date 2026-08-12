@@ -1087,14 +1087,15 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'OnlineRewardClaim' -and
     $sniperArenaText -match 'MatchmakingService\.Match' -and
     $sniperArenaText -match 'mode\s*==\s*"Arcade"' -and
+    $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*2,\s*silentCameraGetter' -and
     $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*4,\s*silentTargetResolver' -and
-    $sniperArenaText -match 'return part\.Position \+ part\.AssemblyLinearVelocity \* state\.SilentAimPrediction, part' -and
-    $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Camera\.Value \+ 50' -and
+    $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
+    $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
-    $sniperArenaText -match 'HealthFill' -and
+    $sniperArenaText -notmatch 'VORSniperLabel' -and
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -match 'GetTagged\("Boss"\)' -and
     $sniperArenaText -match 'model:IsDescendantOf\(tempRoot\)' -and

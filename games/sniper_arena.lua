@@ -97,9 +97,6 @@ return function(context)
         WallCheck = true,
         ShowFov = true,
         EnemyEsp = false,
-        EspNames = true,
-        EspDistance = true,
-        EspHealth = true,
         EspMaxDistance = 2000,
         EspColor = Color3.fromRGB(72, 205, 255),
         EspAccent = Color3.fromRGB(155, 103, 255),
@@ -255,29 +252,53 @@ return function(context)
         camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
     end
 
-    local originalLocalShoot, originalTargetResolver, silentTargetResolver
+    local originalLocalShoot, originalCameraGetter, originalTargetResolver, silentCameraGetter, silentTargetResolver
     local silentAimHooked = false
     if ClientShootableComponent and type(ClientShootableComponent.LocalShoot) == "function"
         and type(debug) == "table" and type(debug.getupvalues) == "function" and type(debug.setupvalue) == "function" then
         originalLocalShoot = ClientShootableComponent.LocalShoot
         local readOk, shotUpvalues = pcall(debug.getupvalues, originalLocalShoot)
+        originalCameraGetter = readOk and shotUpvalues[2] or nil
         originalTargetResolver = readOk and shotUpvalues[4] or nil
-        if type(originalTargetResolver) == "function" then
-            silentTargetResolver = function(...)
-                local originalResults = table.pack(originalTargetResolver(...))
+        if type(originalCameraGetter) == "function" and type(originalTargetResolver) == "function" then
+            local cachedTarget, cachedAt = nil, -math.huge
+            local function resolveSilentTarget()
+                local now = os.clock()
+                if now - cachedAt <= 0.04 then return cachedTarget end
+                cachedAt, cachedTarget = now, nil
                 if state.Alive and state.SilentAim and math.random(1, 100) <= state.SilentAimChance then
-                    local part = acquireTarget()
-                    if part then
-                        state.CurrentTarget = part
-                        return part.Position + part.AssemblyLinearVelocity * state.SilentAimPrediction, part
-                    end
+                    cachedTarget = acquireTarget()
+                end
+                return cachedTarget
+            end
+            local function predictedPosition(part)
+                return part.Position + part.AssemblyLinearVelocity * state.SilentAimPrediction
+            end
+            silentCameraGetter = function(...)
+                local originalResults = table.pack(originalCameraGetter(...))
+                local part = resolveSilentTarget()
+                local cameraFrame = originalResults[1]
+                if part and typeof(cameraFrame) == "CFrame" then
+                    state.CurrentTarget = part
+                    originalResults[1] = CFrame.lookAt(cameraFrame.Position, predictedPosition(part))
                 end
                 return table.unpack(originalResults, 1, originalResults.n)
             end
-            local installed = pcall(debug.setupvalue, originalLocalShoot, 4, silentTargetResolver)
+            silentTargetResolver = function(...)
+                local originalResults = table.pack(originalTargetResolver(...))
+                local part = resolveSilentTarget()
+                if part then
+                    state.CurrentTarget = part
+                    return predictedPosition(part), part
+                end
+                return table.unpack(originalResults, 1, originalResults.n)
+            end
+            local cameraInstalled = pcall(debug.setupvalue, originalLocalShoot, 2, silentCameraGetter)
+            local targetInstalled = pcall(debug.setupvalue, originalLocalShoot, 4, silentTargetResolver)
+            local installed = cameraInstalled and targetInstalled
             if installed then
                 local verifyOk, verifyUpvalues = pcall(debug.getupvalues, originalLocalShoot)
-                silentAimHooked = verifyOk and verifyUpvalues[4] == silentTargetResolver
+                silentAimHooked = verifyOk and verifyUpvalues[2] == silentCameraGetter and verifyUpvalues[4] == silentTargetResolver
             end
         end
     end
@@ -334,73 +355,12 @@ return function(context)
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                         highlight.Adornee = model
                         highlight.Parent = model
-                        local billboard = Instance.new("BillboardGui")
-                        billboard.Name = "VORSniperLabel"
-                        billboard.AlwaysOnTop = true
-                        billboard.Size = UDim2.fromOffset(250, 52)
-                        billboard.StudsOffset = Vector3.new(2.7, 1.15, 0)
-                        billboard.Adornee = root
-                        billboard.Parent = model
-                        local panel = Instance.new("Frame")
-                        panel.BackgroundColor3 = Color3.fromRGB(8, 12, 22)
-                        panel.BackgroundTransparency = 0.16
-                        panel.BorderSizePixel = 0
-                        panel.Size = UDim2.fromScale(1, 1)
-                        panel.Parent = billboard
-                        local panelCorner = Instance.new("UICorner")
-                        panelCorner.CornerRadius = UDim.new(0, 8)
-                        panelCorner.Parent = panel
-                        local panelStroke = Instance.new("UIStroke")
-                        panelStroke.Color = state.EspColor
-                        panelStroke.Thickness = 1.25
-                        panelStroke.Transparency = 0.12
-                        panelStroke.Parent = panel
-                        local label = Instance.new("TextLabel")
-                        label.BackgroundTransparency = 1
-                        label.Position = UDim2.fromOffset(10, 4)
-                        label.Size = UDim2.new(1, -20, 0, 30)
-                        label.Font = Enum.Font.GothamMedium
-                        label.TextColor3 = Color3.fromRGB(235, 245, 255)
-                        label.TextStrokeTransparency = 1
-                        label.TextSize = 14
-                        label.TextXAlignment = Enum.TextXAlignment.Left
-                        label.Parent = panel
-                        local healthBack = Instance.new("Frame")
-                        healthBack.BackgroundColor3 = Color3.fromRGB(28, 34, 48)
-                        healthBack.BorderSizePixel = 0
-                        healthBack.Position = UDim2.new(0, 10, 1, -12)
-                        healthBack.Size = UDim2.new(1, -20, 0, 4)
-                        healthBack.Parent = panel
-                        local healthBackCorner = Instance.new("UICorner")
-                        healthBackCorner.CornerRadius = UDim.new(1, 0)
-                        healthBackCorner.Parent = healthBack
-                        local healthFill = Instance.new("Frame")
-                        healthFill.BackgroundColor3 = state.EspColor
-                        healthFill.BorderSizePixel = 0
-                        healthFill.Size = UDim2.fromScale(1, 1)
-                        healthFill.Parent = healthBack
-                        local healthFillCorner = Instance.new("UICorner")
-                        healthFillCorner.CornerRadius = UDim.new(1, 0)
-                        healthFillCorner.Parent = healthFill
-                        entry = {Highlight = highlight, Billboard = billboard, Label = label, Stroke = panelStroke, HealthBack = healthBack, HealthFill = healthFill}
+                        entry = {Highlight = highlight}
                         highlights[model] = entry
                     end
                     entry.Highlight.FillColor = state.EspColor
                     entry.Highlight.OutlineColor = state.EspAccent
                     entry.Highlight.FillTransparency = state.EspFillTransparency
-                    entry.Stroke.Color = state.EspColor
-                    local parts = {}
-                    local health = modelHealth(model, humanoid)
-                    local maxHealth = tonumber(model:GetAttribute("MaxHealth")) or humanoid.MaxHealth
-                    if state.EspNames then parts[#parts + 1] = hostile.Name end
-                    parts[#parts + 1] = hostile.Kind
-                    if state.EspHealth then parts[#parts + 1] = string.format("%d HP", math.max(0, math.floor(health))) end
-                    if state.EspDistance then parts[#parts + 1] = string.format("%dm", math.floor(distance)) end
-                    entry.Label.Text = table.concat(parts, "  /  ")
-                    local healthRatio = math.clamp(health / math.max(1, maxHealth), 0, 1)
-                    entry.HealthBack.Visible = state.EspHealth
-                    entry.HealthFill.Size = UDim2.fromScale(healthRatio, 1)
-                    entry.HealthFill.BackgroundColor3 = Color3.fromHSV(healthRatio * 0.34, 0.72, 1)
                 else clearEsp(model) end
             else clearEsp(model) end
         end
@@ -581,9 +541,6 @@ return function(context)
     local actionLabel = CoachSection:AddLabel("Last action: Ready")
 
     EspSection:AddToggle({Name = "Enemy ESP", Flag = "sniper_arena_esp", Default = false, Callback = function(v) state.EnemyEsp = v == true if not state.EnemyEsp then for p in pairs(highlights) do clearEsp(p) end end end})
-    EspSection:AddToggle({Name = "Names", Flag = "sniper_arena_esp_names", Default = true, Callback = function(v) state.EspNames = v == true end})
-    EspSection:AddToggle({Name = "Health", Flag = "sniper_arena_esp_health", Default = true, Callback = function(v) state.EspHealth = v == true end})
-    EspSection:AddToggle({Name = "Distance", Flag = "sniper_arena_esp_distance", Default = true, Callback = function(v) state.EspDistance = v == true end})
     EspSection:AddColorPicker({Name = "Outline Color", Flag = "sniper_arena_esp_color", Default = state.EspColor, Callback = function(v) if typeof(v) == "Color3" then state.EspColor = v end end})
     EspSection:AddColorPicker({Name = "Body Accent", Flag = "sniper_arena_esp_accent", Default = state.EspAccent, Callback = function(v) if typeof(v) == "Color3" then state.EspAccent = v end end})
     EspSection:AddSlider({Name = "Body Fill", Flag = "sniper_arena_esp_fill", Min = 0, Max = 100, Step = 1, Default = 22, Suffix = "%", Callback = function(v) state.EspFillTransparency = 1 - math.clamp(tonumber(v) or 22, 0, 100) / 100 end})
@@ -621,7 +578,6 @@ return function(context)
     local careerLabel = WorldStatusSection:AddLabel("Career: scanning...")
 
     track(UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
         if input.UserInputType == Enum.UserInputType.MouseButton2 then state.IsAiming = true end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then state.IsFiring = true end
     end))
@@ -703,9 +659,12 @@ return function(context)
             pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
             renderStepBound = false
         end
-        if originalLocalShoot and silentTargetResolver and originalTargetResolver and type(debug) == "table"
+        if originalLocalShoot and silentCameraGetter and originalCameraGetter and silentTargetResolver and originalTargetResolver and type(debug) == "table"
             and type(debug.getupvalues) == "function" and type(debug.setupvalue) == "function" then
             local readOk, shotUpvalues = pcall(debug.getupvalues, originalLocalShoot)
+            if readOk and shotUpvalues[2] == silentCameraGetter then
+                pcall(debug.setupvalue, originalLocalShoot, 2, originalCameraGetter)
+            end
             if readOk and shotUpvalues[4] == silentTargetResolver then
                 pcall(debug.setupvalue, originalLocalShoot, 4, originalTargetResolver)
             end
@@ -726,7 +685,7 @@ return function(context)
     end)) end
 
     renderStepBound = pcall(function()
-        RunService:BindToRenderStep(renderStepName, Enum.RenderPriority.Camera.Value + 50, function(deltaTime)
+        RunService:BindToRenderStep(renderStepName, Enum.RenderPriority.Last.Value - 1, function(deltaTime)
             if not state.Alive then return end
             updateAim(deltaTime)
             updateFovCircle()
