@@ -1095,6 +1095,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_smoothness"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_radius"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"[^\r\n]*Persist\s*=\s*false' -and
     $sniperArenaText -match 'moveMouseRelative' -and
     $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
