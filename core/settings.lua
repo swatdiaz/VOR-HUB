@@ -9,6 +9,17 @@ return function(runtime)
     local universeId = tonumber(runtime.UniverseId) or game.GameId
 
     local supportedGames = {
+        SniperArena = {
+            Key = "SniperArena",
+            DisplayName = "[NEW SECRET] Sniper Arena",
+            UniverseId = 9534705677,
+            RootPlaceId = 122446657157717,
+            PlaceIds = {
+                [122446657157717] = true,
+                [126042865144779] = true,
+            },
+            Module = "games/sniper_arena.lua",
+        },
         GrowAGarden2 = {
             Key = "GrowAGarden2",
             DisplayName = "Grow a Garden 2",

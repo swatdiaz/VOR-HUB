@@ -22,6 +22,7 @@ $required = @(
     "games/mine_a_mountain.lua",
     "games/bee_swarm_simulator.lua",
     "games/gunfight_arena.lua",
+    "games/sniper_arena.lua",
     "games/iron_man_reimagined.lua",
     "games/dog_race.lua",
     "games/dragon_ball_legendary_powers.lua",
@@ -1067,6 +1068,60 @@ if (-not ($gunfightRouting -and $gunfightNativeBehavior)) {
     throw "Gunfight Arena routing/native adapter contract failed"
 }
 
+$sniperArenaText = Get-Content -LiteralPath (Join-Path $repo "games/sniper_arena.lua") -Raw
+$sniperArenaRouting = (
+    $settingsText -match 'Key\s*=\s*"SniperArena"' -and
+    $settingsText -match 'UniverseId\s*=\s*9534705677' -and
+    $settingsText -match 'RootPlaceId\s*=\s*122446657157717' -and
+    $settingsText -match '\[126042865144779\]\s*=\s*true' -and
+    $settingsText -match 'Module\s*=\s*"games/sniper_arena\.lua"'
+)
+$sniperArenaNativeBehavior = (
+    $sniperArenaText -match '__VORSniperArenaCleanup' -and
+    $sniperArenaText -match 'WeaponService' -and
+    $sniperArenaText -match 'StatusService\.GetStatus,\s*"Killed"' -and
+    $sniperArenaText -match 'KilledUnlock' -and
+    $sniperArenaText -match 'LoadoutService\.SetSlot' -and
+    $sniperArenaText -match 'QuestService' -and
+    $sniperArenaText -match 'MailboxService' -and
+    $sniperArenaText -match 'OnlineRewardClaim' -and
+    $sniperArenaText -match 'MatchmakingService\.Match' -and
+    $sniperArenaText -match 'mode\s*==\s*"Arcade"' -and
+    $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*2,\s*silentCameraGetter' -and
+    $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*4,\s*silentTargetResolver' -and
+    $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
+    $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_smoothness"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_radius"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"[^\r\n]*Persist\s*=\s*false' -and
+    $sniperArenaText -match 'moveMouseRelative' -and
+    $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
+    $sniperArenaText -match 'isHostileTarget\(LocalMouse\.Target\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
+    $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
+    $sniperArenaText -match 'restoreHitboxes\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_spread"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fast_reload"' -and
+    $sniperArenaText -match 'valueObject\.Value = replacement' -and
+    $sniperArenaText -match 'restoreWeaponValues\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
+    $sniperArenaText -match 'hostile\.Kind == "BOT" and "BOT"' -and
+    $sniperArenaText -match 'HighlightHolder' -and
+    $sniperArenaText -notmatch 'GetTagged\("Boss"\)' -and
+    $sniperArenaText -match 'model:IsDescendantOf\(tempRoot\)' -and
+    $sniperArenaText -match 'SniperArenaModuleReady'
+)
+if (-not ($sniperArenaRouting -and $sniperArenaNativeBehavior)) {
+    throw "Sniper Arena routing/native adapter contract failed"
+}
+
 $dragonBallText = Get-Content -LiteralPath (Join-Path $repo "games/dragon_ball_legendary_powers.lua") -Raw
 $dragonBallRouting = (
     $settingsText -match 'Key\s*=\s*"DragonBallLegendaryPowers"' -and
@@ -1284,12 +1339,13 @@ if (-not ($dogRaceRouting -and $dogRaceNativeBehavior)) {
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (15/15)"
+Write-Host "Game builder contract: PASS (16/16)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
+Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, auto-fire trigger, enemy-head hitbox, recoil/spread/reload controls, optional ESP, server-checked unlocks, loadouts, claims, queues)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
