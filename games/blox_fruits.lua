@@ -150,7 +150,7 @@ return function(context)
             FruitCadence = 0.075,
             RaidHitMargin = 0.5,
             RaidMaxHitHeight = 37.5,
-            RaidRecoveryPercent = 70,
+            RaidRecoveryPercent = 25,
             -- High enough to break NPC melee pressure without leaving the
             -- raid's streaming radius and unloading every remaining target.
             RaidRecoveryHeight = 500,

@@ -382,8 +382,8 @@ if (-not $raidPurchaseGuards) {
 $raidRangeSafety = (
     $bloxText -match 'RaidHitMargin = 0\.5' -and
     $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
-    $bloxText -match 'RaidRecoveryPercent = 70' -and
     $bloxText -match 'RaidRecoveryHeight = 500' -and
+    $bloxText -match 'RaidRecoveryPercent = 25' -and
     $bloxText -match 'RaidTweenSpeed = 150' -and
     $bloxText -match 'Flag\s*=\s*"blox_safe_tween"' -and
     $bloxText -match '(?s)Name\s*=\s*"Tween Speed".*?Max\s*=\s*300.*?Default\s*=\s*250' -and
