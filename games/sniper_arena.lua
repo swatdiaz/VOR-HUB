@@ -70,7 +70,7 @@ return function(context)
         Content = "VOR uses the game's owned weapon store, kill-gated unlock service, loadouts, tasks, mailbox, queues, and match state. Locked inventory is never presented as owned.",
     })
     local guide = HomePage:AddSection("Quick Start", "Right")
-    guide:AddParagraph({Title = "Combat", Content = "Enable Aim Assist and Enemy ESP. While Aiming is the safest activation mode; Always is the aggressive option."})
+    guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Aim Assist visibly tracks targets; both share the radius, target-part, team, and wall checks."})
     guide:AddParagraph({Title = "Progress", Content = "Use Auto Unlock Earned Snipers and Auto Claim. The server still enforces kill requirements and reward readiness."})
     guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("Combat") end})
     guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("Progress") end})
@@ -137,7 +137,7 @@ return function(context)
 
     local function sameTeam(player)
         local mode = serverMode()
-        if string.find(mode, "FFA", 1, true) then return false end
+        if mode == "Arcade" or string.find(mode, "FFA", 1, true) then return false end
         local mine, theirs = LocalPlayer:GetAttribute("Team"), player:GetAttribute("Team")
         if mine ~= nil and theirs ~= nil then return mine == theirs end
         return LocalPlayer.Team ~= nil and LocalPlayer.Team == player.Team

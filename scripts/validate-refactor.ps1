@@ -1086,6 +1086,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'MailboxService' -and
     $sniperArenaText -match 'OnlineRewardClaim' -and
     $sniperArenaText -match 'MatchmakingService\.Match' -and
+    $sniperArenaText -match 'mode\s*==\s*"Arcade"' -and
     $sniperArenaText -match 'ClientShootableComponent\.LocalShoot\s*=\s*silentAimWrapper' -and
     $sniperArenaText -match 'CFrame\.lookAt\(ray\.Position,\s*aimPosition\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
