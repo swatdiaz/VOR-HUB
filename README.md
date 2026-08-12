@@ -31,7 +31,7 @@ admin permission can update the original VOR Hub repository.
 - `loader.lua` - small immutable game router; it compiles only the detected game module
 - `core/` - shared luxury UI, settings, profiles, access gate, and utilities
 - `games/` - isolated Grow a Garden 2, Capybaras VS Plants, Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Iron Man: Reimagined, Dog Race, Dragon Ball Legendary Powers, Blox Fruits, and Dungeon builders
-- Dog Race includes native egg hatching, fruit/trail/bone shops, dog and partner unlocks, race/training automation, movement, rewards, and live currency/rebirth/Robux gates.
+- Dog Race includes guided AFK progression, smart/manual egg targeting, fruit/trail/bone shops, birds, race-earned bone shoes, dog and partner unlocks, race/training automation, movement, rewards, and live currency/rebirth/Robux gates.
 - `VOR_HUB.lua` - compatibility bootstrap pinned to the audited loader
 - `scripts/validate-refactor.ps1` - Luau/register/flag/controller validation
 - `update-github.ps1` - validates, creates the module and loader commits, updates the bootstrap, then pushes

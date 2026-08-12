@@ -51,6 +51,7 @@ return function(context)
     local PrincessesData = {}
     local UpgradesData = {}
     local CratesData = {}
+    local Equipment = {BirdsData = {}, ShoesData = {}}
     pcall(function()
         Knit = require(ReplicatedStorage.Packages.Knit)
         Constants = require(ReplicatedStorage.Modules.Constants)
@@ -64,6 +65,8 @@ return function(context)
         QuestsDataHelper = require(ReplicatedFirst.DataHelper.QuestsDataHelper)
         CratesDataHelper = require(ReplicatedFirst.DataHelper.CratesDataHelper)
         ItemsDataHelper = require(ReplicatedFirst.DataHelper.ItemsDataHelper)
+        Equipment.BirdsDataHelper = require(ReplicatedFirst.DataHelper.BirdsDataHelper)
+        Equipment.ShoesDataHelper = require(ReplicatedFirst.DataHelper.ShoesDataHelper)
         EggsData = require(ReplicatedFirst.Data.EggsData)
         FruitsData = require(ReplicatedFirst.Data.FruitsData)
         TrailsData = require(ReplicatedFirst.Data.TrailsData)
@@ -71,6 +74,8 @@ return function(context)
         PrincessesData = require(ReplicatedFirst.Data.PrincessesData)
         UpgradesData = require(ReplicatedFirst.Data.UpgradesData)
         CratesData = require(ReplicatedFirst.Data.CratesData)
+        Equipment.BirdsData = require(ReplicatedFirst.Data.BirdsData)
+        Equipment.ShoesData = require(ReplicatedFirst.Data.ShoesData)
     end)
 
     local function getController(name)
@@ -100,15 +105,16 @@ return function(context)
     local OnlineRewardGuiController = getController("OnlineRewardGuiController")
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-    local RacePage = addHomeCategory("Race", 1, CATEGORY_DECALS.Combat or CATEGORY_DECALS.Movement)
-    local TrainingPage = addHomeCategory("Training", 2, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local ProgressionPage = addHomeCategory("Progression", 3, CATEGORY_DECALS.Progress)
-    local AutomationPage = addHomeCategory("Full Auto", 4, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local EggsPage = addHomeCategory("Eggs", 5, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local ShopsPage = addHomeCategory("Shops", 6, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
-    local UnlocksPage = addHomeCategory("Unlocks", 7, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
-    local MovementPage = addHomeCategory("Movement", 8, CATEGORY_DECALS.Movement or CATEGORY_DECALS.Player)
-    local StatusPage = addHomeCategory("Status", 9, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
+    local RacePage = addHomeCategory("🏁 Race", 1, CATEGORY_DECALS.Combat or CATEGORY_DECALS.Movement)
+    local TrainingPage = addHomeCategory("⚡ Training", 2, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local ProgressionPage = addHomeCategory("📈 Progression", 3, CATEGORY_DECALS.Progress)
+    local AutomationPage = addHomeCategory("🤖 Full Auto", 4, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local EggsPage = addHomeCategory("🥚 Eggs", 5, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local ShopsPage = addHomeCategory("🛒 Shops", 6, CATEGORY_DECALS.Progress or CATEGORY_DECALS.Player)
+    local UnlocksPage = addHomeCategory("🐕 Unlocks", 7, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
+    Equipment.Page = addHomeCategory("🐦 Equipment", 8, CATEGORY_DECALS.Player or CATEGORY_DECALS.Shop)
+    local MovementPage = addHomeCategory("🚀 Movement", 9, CATEGORY_DECALS.Movement or CATEGORY_DECALS.Player)
+    local StatusPage = addHomeCategory("📊 Status", 10, CATEGORY_DECALS.Player or CATEGORY_DECALS.Progress)
 
     local RaceSection = RacePage:AddSection("Native Race", "Left")
     local RaceUtilitySection = RacePage:AddSection("Race Utility", "Right")
@@ -127,10 +133,32 @@ return function(context)
     local GearSection = ShopsPage:AddSection("Gear Crates", "Right")
     local DogSection = UnlocksPage:AddSection("Dogs", "Left")
     local PartnerSection = UnlocksPage:AddSection("Partners", "Right")
+    Equipment.BirdSection = Equipment.Page:AddSection("Birds", "Left")
+    Equipment.ShoeSection = Equipment.Page:AddSection("Shoes", "Right")
     local MovementSection = MovementPage:AddSection("Movement", "Left")
     local MovementStatusSection = MovementPage:AddSection("Runtime", "Right")
     local PlayerStatusSection = StatusPage:AddSection("Player Data", "Left")
     local AdapterStatusSection = StatusPage:AddSection("Adapter", "Right")
+
+    Equipment.HomeGuideSection = HomePage:AddSection("🧭 Dog Race Instructions", "Right")
+    Equipment.HomeGuideSection:AddParagraph({
+        Title = "🤖 AFK everything",
+        Content = "Open Full Auto and enable FULL PROGRESSION. It trains between native races, hatches, claims rewards and tasks, buys eligible upgrades, and waits instead of disabling itself when a currency is short.",
+    })
+    Equipment.HomeGuideSection:AddParagraph({
+        Title = "🥚 Smart or manual eggs",
+        Content = "Best Affordable Egg ON retargets the highest affordable unlocked Wins egg. Turn it OFF to keep hatching the exact egg selected on the Eggs page while Full Progression continues.",
+    })
+    Equipment.HomeGuideSection:AddParagraph({
+        Title = "🦴 Bones, birds, and shoes",
+        Content = "Bones are the game's Diamonds currency and are awarded by native races. Full Progression keeps racing for them, then buys and equips eligible bone shoes. Birds are bought with Wins and improve top speed.",
+    })
+    Equipment.HomeGuideSection:AddButton({Name = "🤖 Open Full Auto", Persist = false, Callback = function()
+        selectHomeCategory("🤖 Full Auto")
+    end})
+    Equipment.HomeGuideSection:AddButton({Name = "🐦 Open Birds & Shoes", Persist = false, Callback = function()
+        selectHomeCategory("🐦 Equipment")
+    end})
 
     local state = {
         Alive = true,
@@ -162,7 +190,11 @@ return function(context)
         AutoGearCrate = false,
         AutoEquipGear = false,
         AutoMergeGear = false,
+        AutoBird = false,
+        AutoShoe = false,
         SelectedCrate = "Crate_1",
+        SelectedBird = "Bird_101",
+        SelectedShoe = "Shoes_101",
         GearBoneReserve = 5,
         AutoHatch = false,
         HatchCount = 1,
@@ -715,6 +747,23 @@ return function(context)
             compactNumber(config.Price), tostring(config.Currency or "Bones"))
     end)
 
+    Equipment.BirdChoices, Equipment.BirdChoiceIds = buildChoices(Equipment.BirdsData, function(id, config)
+        local boost = 0
+        pcall(function() boost = Equipment.BirdsDataHelper.GetBoostValue(id) end)
+        return string.format("%s [%s] - %s %s | +%s%% top speed",
+            tostring(config.DisplayName or config.Name or id), id,
+            compactNumber(config.UnlockCount), tostring(config.UnlockCurrency),
+            tostring(boost))
+    end)
+    Equipment.ShoeChoices, Equipment.ShoeChoiceIds = buildChoices(Equipment.ShoesData, function(id, config)
+        local boost = 0
+        pcall(function() boost = Equipment.ShoesDataHelper.GetAccBoost(id) end)
+        return string.format("%s [%s] - %s %s | +%s%% acceleration",
+            tostring(config.Name or config.DisplayName or id), id,
+            compactNumber(config.UnlockCount), tostring(config.Currency),
+            tostring(boost))
+    end)
+
     local function choiceForId(values, ids, targetId)
         for _, value in ipairs(values) do
             if ids[value] == targetId then
@@ -785,6 +834,8 @@ return function(context)
         end
         if currency == "Wins" then
             return tonumber(data.Wins) or 0
+        elseif currency == "Diamond" or currency == "Diamonds" then
+            return tonumber(data.Diamonds) or 0
         elseif currency == "JurassicToken" then
             return tonumber(data.JurassicTokens) or 0
         elseif currency == "TowerTokens" then
@@ -851,6 +902,29 @@ return function(context)
         return math.huge
     end
 
+    function Equipment.nextBirdWinsReserve(data)
+        if not data or not Equipment.BirdsDataHelper then
+            return 0
+        end
+        if GameDataUtil and type(GameDataUtil.IsBirdSystemLocked) == "function" then
+            local ok, locked = pcall(GameDataUtil.IsBirdSystemLocked, data)
+            if ok and locked then
+                return 0
+            end
+        end
+        local reserve = math.huge
+        for birdId in pairs(Equipment.BirdsData) do
+            if not (data.Birds and data.Birds[birdId]) then
+                local okCurrency, currency = pcall(Equipment.BirdsDataHelper.GetUnlockCurrency, birdId)
+                local okPrice, price = pcall(Equipment.BirdsDataHelper.GetUnlockCount, birdId)
+                if okCurrency and currency == "Wins" and okPrice and tonumber(price) then
+                    reserve = math.min(reserve, tonumber(price))
+                end
+            end
+        end
+        return reserve < math.huge and reserve or 0
+    end
+
     local function eggAccess(count)
         local data = getData()
         local eggId = state.SelectedEgg
@@ -896,6 +970,9 @@ return function(context)
         end
 
         local balance = currencyAmount(data, "Wins")
+        if state.FullProgression and state.AutoBird then
+            balance = math.max(0, balance - Equipment.nextBirdWinsReserve(data))
+        end
         local bestId, bestPrice = nil, -math.huge
         for eggId, config in pairs(EggsData) do
             if config.Currency == "Wins" then
@@ -1008,6 +1085,12 @@ return function(context)
         end
         local balance = currencyAmount(data, config.Currency)
         local price = tonumber(config.Price) or 0
+        if state.FullProgression and config.Currency == "Wins" then
+            local reserve = Equipment.nextBirdWinsReserve(data)
+            if balance - price < reserve then
+                return false, string.format("Saving %s Wins for the next bird", compactNumber(reserve))
+            end
+        end
         if balance < price then
             return false, string.format("Need %s %s; have %s", compactNumber(price),
                 tostring(config.Currency), compactNumber(balance))
@@ -1113,6 +1196,29 @@ return function(context)
         return ok
     end
 
+    function Equipment.nextShoeBoneReserve(data)
+        if not data or not Equipment.ShoesDataHelper then
+            return 0
+        end
+        if GameDataUtil and type(GameDataUtil.IsShoeSystemLocked) == "function" then
+            local ok, locked = pcall(GameDataUtil.IsShoeSystemLocked, data)
+            if ok and locked then
+                return 0
+            end
+        end
+        local reserve = math.huge
+        for shoeId in pairs(Equipment.ShoesData) do
+            if not (data.Shoes and data.Shoes[shoeId]) then
+                local okCurrency, currency = pcall(Equipment.ShoesDataHelper.GetCurrency, shoeId)
+                local okPrice, price = pcall(Equipment.ShoesDataHelper.GetUnlockCount, shoeId)
+                if okCurrency and currency == "Diamond" and okPrice and tonumber(price) then
+                    reserve = math.min(reserve, tonumber(price))
+                end
+            end
+        end
+        return reserve < math.huge and reserve or 0
+    end
+
     local function upgradeAccess()
         local data = getData()
         local config = UpgradesData[state.SelectedUpgrade]
@@ -1127,9 +1233,10 @@ return function(context)
         local ok, price = pcall(UpgradesDataHelper.GetPrice, state.SelectedUpgrade, level + 1)
         price = ok and tonumber(price) or math.huge
         local bones = tonumber(data.Diamonds) or 0
-        if bones < price then
-            return false, string.format("Need %s bones; have %s | level %d/%d",
-                compactNumber(price), compactNumber(bones), level, maxLevel)
+        local reserve = state.FullProgression and Equipment.nextShoeBoneReserve(data) or 0
+        if bones < price + reserve then
+            return false, string.format("Need %s bones plus %s shoe reserve; have %s | level %d/%d",
+                compactNumber(price), compactNumber(reserve), compactNumber(bones), level, maxLevel)
         end
         return true, string.format("Ready: %s bones | level %d -> %d/%d",
             compactNumber(price), level, level + 1, maxLevel)
@@ -1410,12 +1517,15 @@ return function(context)
         end
         local bones = tonumber(data.Diamonds) or 0
         price = okPrice and tonumber(price) or math.huge
-        if bones < price + state.GearBoneReserve then
+        local reserve = state.FullProgression
+            and math.max(state.GearBoneReserve, Equipment.nextShoeBoneReserve(data))
+            or state.GearBoneReserve
+        if bones < price + reserve then
             return false, string.format("Need %s bones plus %s reserve; have %s",
-                compactNumber(price), compactNumber(state.GearBoneReserve), compactNumber(bones))
+                compactNumber(price), compactNumber(reserve), compactNumber(bones))
         end
         return true, string.format("Ready: %s bones (%s reserved)",
-            compactNumber(price), compactNumber(state.GearBoneReserve))
+            compactNumber(price), compactNumber(reserve))
     end
 
     local function buySelectedCrate(promptRobux)
@@ -1502,6 +1612,209 @@ return function(context)
         return count
     end
 
+    function Equipment.birdBoost(birdId)
+        if not Equipment.BirdsDataHelper then
+            return 0
+        end
+        local ok, value = pcall(Equipment.BirdsDataHelper.GetBoostValue, birdId)
+        return ok and tonumber(value) or 0
+    end
+
+    function Equipment.birdAccess(birdId, requireOwned)
+        local data = getData()
+        local config = Equipment.BirdsData[birdId]
+        if not data or not config or not Equipment.BirdsDataHelper then
+            return false, "Bird data unavailable"
+        end
+        local locked = false
+        if GameDataUtil and type(GameDataUtil.IsBirdSystemLocked) == "function" then
+            local ok, value = pcall(GameDataUtil.IsBirdSystemLocked, data)
+            locked = ok and value == true
+        end
+        if locked then
+            return false, "Bird system is still locked"
+        end
+        local owned = data.Birds and data.Birds[birdId] ~= nil
+        if requireOwned then
+            return owned, owned and "Owned; ready to equip" or "Buy this bird first"
+        end
+        if owned then
+            return false, "Bird already owned"
+        end
+        local currency = Equipment.BirdsDataHelper.GetUnlockCurrency(birdId)
+        local price = tonumber(Equipment.BirdsDataHelper.GetUnlockCount(birdId)) or math.huge
+        if currency == "Robux" then
+            return false, string.format("Robux bird: %s R$ (prompt only)", compactNumber(price))
+        end
+        local balance = currencyAmount(data, currency)
+        if balance < price then
+            return false, string.format("Need %s %s; have %s", compactNumber(price),
+                tostring(currency), compactNumber(balance))
+        end
+        return true, string.format("Ready: +%s%% top speed for %s %s",
+            tostring(Equipment.birdBoost(birdId)), compactNumber(price), tostring(currency))
+    end
+
+    function Equipment.buySelectedBird()
+        local allowed, reason = Equipment.birdAccess(state.SelectedBird, false)
+        if not allowed then
+            state.LastAction = reason
+            return false
+        end
+        local ok, result = fireServiceRemote("BirdService", "BuyBirdEvent", state.SelectedBird)
+        state.LastAction = ok and ("Bought bird: " .. state.SelectedBird)
+            or ("Bird purchase failed: " .. tostring(result))
+        return ok
+    end
+
+    function Equipment.equipSelectedBird()
+        local allowed, reason = Equipment.birdAccess(state.SelectedBird, true)
+        if not allowed then
+            state.LastAction = reason
+            return false
+        end
+        local ok, result = fireServiceRemote("BirdService", "EquipBirdEvent", state.SelectedBird)
+        state.LastAction = ok and ("Equipped bird: " .. state.SelectedBird)
+            or ("Bird equip failed: " .. tostring(result))
+        return ok
+    end
+
+    function Equipment.bestBirdStep()
+        local data = getData()
+        if not data then
+            return false
+        end
+        local bestOwnedId, bestOwnedBoost = nil, -math.huge
+        for birdId in pairs(data.Birds or {}) do
+            local boost = Equipment.birdBoost(birdId)
+            if boost > bestOwnedBoost then
+                bestOwnedId, bestOwnedBoost = birdId, boost
+            end
+        end
+        local candidateId, candidateBoost = nil, bestOwnedBoost
+        for birdId in pairs(Equipment.BirdsData) do
+            local ready = Equipment.birdAccess(birdId, false)
+            local boost = Equipment.birdBoost(birdId)
+            if ready and boost > candidateBoost then
+                candidateId, candidateBoost = birdId, boost
+            end
+        end
+        if candidateId then
+            state.SelectedBird = candidateId
+            if Equipment.BirdDropdown then
+                Equipment.BirdDropdown:Set(choiceForId(Equipment.BirdChoices, Equipment.BirdChoiceIds, candidateId), true)
+            end
+            return Equipment.buySelectedBird()
+        end
+        if bestOwnedId and not (data.Birds[bestOwnedId] and data.Birds[bestOwnedId].Equipped) then
+            state.SelectedBird = bestOwnedId
+            return Equipment.equipSelectedBird()
+        end
+        state.LastAction = "Birds: waiting for the next top-speed upgrade"
+        return false
+    end
+
+    function Equipment.shoeAccBoost(shoeId)
+        if not Equipment.ShoesDataHelper then
+            return 0
+        end
+        local ok, value = pcall(Equipment.ShoesDataHelper.GetAccBoost, shoeId)
+        return ok and tonumber(value) or 0
+    end
+
+    function Equipment.shoeAccess(shoeId, requireOwned)
+        local data = getData()
+        local config = Equipment.ShoesData[shoeId]
+        if not data or not config or not Equipment.ShoesDataHelper then
+            return false, "Shoe data unavailable"
+        end
+        local locked = false
+        if GameDataUtil and type(GameDataUtil.IsShoeSystemLocked) == "function" then
+            local ok, value = pcall(GameDataUtil.IsShoeSystemLocked, data)
+            locked = ok and value == true
+        end
+        if locked then
+            return false, "Shoe system is still locked"
+        end
+        local owned = data.Shoes and data.Shoes[shoeId] ~= nil
+        if requireOwned then
+            return owned, owned and "Owned; ready to equip" or "Buy these shoes first"
+        end
+        if owned then
+            return false, "Shoes already owned"
+        end
+        local currency = Equipment.ShoesDataHelper.GetCurrency(shoeId)
+        local price = tonumber(Equipment.ShoesDataHelper.GetUnlockCount(shoeId)) or math.huge
+        if currency == "Robux" then
+            return false, string.format("Robux shoes: %s R$ (prompt only)", compactNumber(price))
+        end
+        local balance = currencyAmount(data, currency)
+        if balance < price then
+            return false, string.format("Need %s bones; have %s", compactNumber(price), compactNumber(balance))
+        end
+        return true, string.format("Ready: +%s%% acceleration for %s bones",
+            tostring(Equipment.shoeAccBoost(shoeId)), compactNumber(price))
+    end
+
+    function Equipment.buySelectedShoe()
+        local allowed, reason = Equipment.shoeAccess(state.SelectedShoe, false)
+        if not allowed then
+            state.LastAction = reason
+            return false
+        end
+        local ok, result = fireServiceRemote("ShoeService", "BuyShoeEvent", state.SelectedShoe)
+        state.LastAction = ok and ("Bought shoes: " .. state.SelectedShoe)
+            or ("Shoe purchase failed: " .. tostring(result))
+        return ok
+    end
+
+    function Equipment.equipSelectedShoe()
+        local allowed, reason = Equipment.shoeAccess(state.SelectedShoe, true)
+        if not allowed then
+            state.LastAction = reason
+            return false
+        end
+        local ok, result = fireServiceRemote("ShoeService", "EquipShoeEvent", state.SelectedShoe)
+        state.LastAction = ok and ("Equipped shoes: " .. state.SelectedShoe)
+            or ("Shoe equip failed: " .. tostring(result))
+        return ok
+    end
+
+    function Equipment.bestShoeStep()
+        local data = getData()
+        if not data then
+            return false
+        end
+        local bestOwnedId, bestOwnedBoost = nil, -math.huge
+        for shoeId in pairs(data.Shoes or {}) do
+            local boost = Equipment.shoeAccBoost(shoeId)
+            if boost > bestOwnedBoost then
+                bestOwnedId, bestOwnedBoost = shoeId, boost
+            end
+        end
+        local candidateId, candidateBoost = nil, bestOwnedBoost
+        for shoeId in pairs(Equipment.ShoesData) do
+            local ready = Equipment.shoeAccess(shoeId, false)
+            local boost = Equipment.shoeAccBoost(shoeId)
+            if ready and boost > candidateBoost then
+                candidateId, candidateBoost = shoeId, boost
+            end
+        end
+        if candidateId then
+            state.SelectedShoe = candidateId
+            if Equipment.ShoeDropdown then
+                Equipment.ShoeDropdown:Set(choiceForId(Equipment.ShoeChoices, Equipment.ShoeChoiceIds, candidateId), true)
+            end
+            return Equipment.buySelectedShoe()
+        end
+        if bestOwnedId and not (data.Shoes[bestOwnedId] and data.Shoes[bestOwnedId].Equipped) then
+            state.SelectedShoe = bestOwnedId
+            return Equipment.equipSelectedShoe()
+        end
+        state.LastAction = "Shoes: racing for bones toward the next upgrade"
+        return false
+    end
+
     local raceModeLabel = RaceUtilitySection:AddLabel("Race mode: scanning...")
     local treadmillLabel = TrainingStatusSection:AddLabel("Treadmill: scanning...")
     local strengthLabel = PlayerStatusSection:AddLabel("Power: --")
@@ -1522,6 +1835,9 @@ return function(context)
     local partnerAccessLabel = PartnerSection:AddLabel("Partner: scanning...")
     local crateAccessLabel = GearSection:AddLabel("Gear crate: scanning...")
     local gearInventoryLabel = GearSection:AddLabel("Dog gear: scanning...")
+    Equipment.BirdAccessLabel = Equipment.BirdSection:AddLabel("Bird: scanning...")
+    Equipment.ShoeAccessLabel = Equipment.ShoeSection:AddLabel("Shoes: scanning...")
+    Equipment.ShoeSection:AddLabel("Bones come from native race rewards. The game calls them Diamonds internally.")
     local fullAutoLabel = FullAutoSection:AddLabel("Full progression: OFF")
     local hybridLabel = HybridSection:AddLabel("Hybrid: idle")
     local claimsLabel = ClaimAutoSection:AddLabel("Claims: scanning...")
@@ -1556,6 +1872,8 @@ return function(context)
             automationControls.GearCrate,
             automationControls.EquipGear,
             automationControls.MergeGear,
+            automationControls.Bird,
+            automationControls.Shoe,
         }
         for _, control in ipairs(controls) do
             if control and (type(control.Get) ~= "function" or control:Get() ~= enabled) then
@@ -2031,6 +2349,54 @@ return function(context)
         Callback = function(enabled) state.AutoPartner = enabled == true end,
     })
 
+    Equipment.BirdDropdown = Equipment.BirdSection:AddDropdown({
+        Name = "Bird",
+        Description = "Birds use Wins for permanent top-speed boosts. Robux birds remain prompt-only.",
+        Flag = "dograce_selected_bird",
+        Values = Equipment.BirdChoices,
+        Default = choiceForId(Equipment.BirdChoices, Equipment.BirdChoiceIds, state.SelectedBird),
+        Callback = function(value)
+            state.SelectedBird = Equipment.BirdChoiceIds[value] or state.SelectedBird
+        end,
+    })
+    Equipment.BirdSection:AddButton({Name = "Buy Selected Bird", Callback = function()
+        if not Equipment.buySelectedBird() then notify(state.LastAction, COLORS.warning) end
+    end})
+    Equipment.BirdSection:AddButton({Name = "Equip Selected Bird", Callback = function()
+        if not Equipment.equipSelectedBird() then notify(state.LastAction, COLORS.warning) end
+    end})
+    automationControls.Bird = Equipment.BirdSection:AddToggle({
+        Name = "Auto Best Bird",
+        Description = "Buys the strongest affordable Wins bird and equips the strongest bird you own.",
+        Flag = "dograce_auto_bird",
+        Default = false,
+        Callback = function(enabled) state.AutoBird = enabled == true end,
+    })
+
+    Equipment.ShoeDropdown = Equipment.ShoeSection:AddDropdown({
+        Name = "Shoes",
+        Description = "Normal shoes use bones. Robux shoes remain prompt-only.",
+        Flag = "dograce_selected_shoe",
+        Values = Equipment.ShoeChoices,
+        Default = choiceForId(Equipment.ShoeChoices, Equipment.ShoeChoiceIds, state.SelectedShoe),
+        Callback = function(value)
+            state.SelectedShoe = Equipment.ShoeChoiceIds[value] or state.SelectedShoe
+        end,
+    })
+    Equipment.ShoeSection:AddButton({Name = "Buy Selected Shoes", Callback = function()
+        if not Equipment.buySelectedShoe() then notify(state.LastAction, COLORS.warning) end
+    end})
+    Equipment.ShoeSection:AddButton({Name = "Equip Selected Shoes", Callback = function()
+        if not Equipment.equipSelectedShoe() then notify(state.LastAction, COLORS.warning) end
+    end})
+    automationControls.Shoe = Equipment.ShoeSection:AddToggle({
+        Name = "Auto Best Shoes",
+        Description = "Waits for race-earned bones, then buys and equips the strongest affordable acceleration shoes.",
+        Flag = "dograce_auto_shoe",
+        Default = false,
+        Callback = function(enabled) state.AutoShoe = enabled == true end,
+    })
+
     speedInputControl = MovementSection:AddInput({
         Name = "Speed Multiplier",
         Description = "Multiplies native lobby and race WalkSpeed; 1 restores the exact native value.",
@@ -2165,6 +2531,16 @@ return function(context)
         partnerAccessLabel.Text = accessText(partnerReady, partnerReason)
         local crateReady, crateReason = crateAccess()
         crateAccessLabel.Text = accessText(crateReady, crateReason)
+        local birdReady, birdReason = Equipment.birdAccess(state.SelectedBird, false)
+        if data and data.Birds and data.Birds[state.SelectedBird] then
+            birdReady, birdReason = Equipment.birdAccess(state.SelectedBird, true)
+        end
+        Equipment.BirdAccessLabel.Text = accessText(birdReady, birdReason)
+        local shoeReady, shoeReason = Equipment.shoeAccess(state.SelectedShoe, false)
+        if data and data.Shoes and data.Shoes[state.SelectedShoe] then
+            shoeReady, shoeReason = Equipment.shoeAccess(state.SelectedShoe, true)
+        end
+        Equipment.ShoeAccessLabel.Text = accessText(shoeReady, shoeReason)
         local equippedGear, storedGear = 0, 0
         if data and ItemsDataHelper then
             local okEquipped, equipped = pcall(ItemsDataHelper.GetEquippedItemsNum, data)
@@ -2226,6 +2602,8 @@ return function(context)
             gui:SetAttribute("DogRaceSelectedDog", state.SelectedDog)
             gui:SetAttribute("DogRaceSelectedPartner", state.SelectedPartner)
             gui:SetAttribute("DogRaceSelectedCrate", state.SelectedCrate)
+            gui:SetAttribute("DogRaceSelectedBird", state.SelectedBird)
+            gui:SetAttribute("DogRaceSelectedShoe", state.SelectedShoe)
             gui:SetAttribute("DogRaceSpeedMultiplier", state.SpeedMultiplier)
             gui:SetAttribute("DogRaceFullProgression", state.FullProgression)
             gui:SetAttribute("DogRaceSmartBestEgg", state.SmartBestEgg)
@@ -2237,6 +2615,8 @@ return function(context)
             gui:SetAttribute("DogRaceAutoAchievements", state.AutoAchievements)
             gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
             gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
+            gui:SetAttribute("DogRaceAutoBird", state.AutoBird)
+            gui:SetAttribute("DogRaceAutoShoe", state.AutoShoe)
         end)
     end
 
@@ -2282,6 +2662,8 @@ return function(context)
         state.AutoGearCrate = false
         state.AutoEquipGear = false
         state.AutoMergeGear = false
+        state.AutoBird = false
+        state.AutoShoe = false
         if state.HybridMode then
             stopHybrid()
         end
@@ -2302,27 +2684,27 @@ return function(context)
         end))
     end
 
-    local statusAccumulator = 0
-    local automationAccumulator = 0
+    Equipment.StatusAccumulator = 0
+    Equipment.AutomationAccumulator = 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then
             return
         end
         updateSpeedOverride()
-        statusAccumulator = statusAccumulator + deltaTime
-        automationAccumulator = automationAccumulator + deltaTime
+        Equipment.StatusAccumulator = Equipment.StatusAccumulator + deltaTime
+        Equipment.AutomationAccumulator = Equipment.AutomationAccumulator + deltaTime
         local now = os.clock()
 
         if state.AutoDash and now - state.LastDash >= state.DashInterval then
             state.LastDash = now
             dashNow()
         end
-        if statusAccumulator >= 0.25 then
-            statusAccumulator = 0
+        if Equipment.StatusAccumulator >= 0.25 then
+            Equipment.StatusAccumulator = 0
             updateStatus()
         end
-        if automationAccumulator >= 0.5 then
-            automationAccumulator = 0
+        if Equipment.AutomationAccumulator >= 0.5 then
+            Equipment.AutomationAccumulator = 0
             local data = getData()
             if state.FullProgression then
                 -- Profiles and individual toggles can be applied in any order. The master
@@ -2436,6 +2818,12 @@ return function(context)
                         end
                     end
                 end
+                if state.AutoBird then
+                    Equipment.bestBirdStep()
+                end
+                if state.AutoShoe then
+                    Equipment.bestShoeStep()
+                end
             end
             if now - state.LastGearSweep >= 3 then
                 state.LastGearSweep = now
@@ -2453,6 +2841,6 @@ return function(context)
     end))
 
     updateStatus()
-    selectHomeCategory("Race")
+    selectHomeCategory("🏁 Race")
     notify("Dog Race module ready", COLORS.success)
 end
