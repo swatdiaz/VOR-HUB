@@ -3962,29 +3962,17 @@ return function(context)
                     and (enemyRoot.Position - island.Part.Position).Magnitude <= 2500 then
                     aliveEnemyCount += 1
                     aliveEnemyHealth += enemyBody.Health
-                    local owned = false
-                    if type(isnetworkowner) == "function" then
-                        local ownerOk, ownerResult = pcall(isnetworkowner, enemyRoot)
-                        owned = ownerOk and ownerResult == true
-                    end
-                    local actionOk = pcall(function()
-                        if owned then
-                            enemyBody.Health = -9e9
-                        end
-                    end)
-                    if owned and actionOk then
-                        if not state.RaidVoidTargets[enemy] then
-                            state.RaidVoidTargets[enemy] = true
-                            state.RaidVoidKillCount += 1
-                        end
-                        killed += 1
-                    else
-                        waitingForOwnership += 1
-                        local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
-                        if distance < nearestWaitingDistance then
-                            nearestWaiting = enemy
-                            nearestWaitingDistance = distance
-                        end
+                    -- Never write Humanoid.Health directly. Even with local
+                    -- network ownership that can remove the replicated NPC
+                    -- without awarding the raid server a credited kill, leaving
+                    -- a live timer and no enemy to finish. Stationary native
+                    -- attacks may make credited progress; otherwise the bounded
+                    -- fallback resumes ordinary close combat.
+                    waitingForOwnership += 1
+                    local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
+                    if distance < nearestWaitingDistance then
+                        nearestWaiting = enemy
+                        nearestWaitingDistance = distance
                     end
                 end
             end
@@ -4000,8 +3988,8 @@ return function(context)
                 state.RaidVoidFallbackLastProgress = os.clock()
             elseif waitingForOwnership > 0
                 and os.clock() - state.RaidVoidFallbackLastProgress >= state.RaidVoidFallbackDelay then
-                -- Ownership-only Island 5 kills can sit forever while every NPC
-                -- remains server-owned. Stop parking in place once health/count
+                -- Stationary Island 5 attacks can sit forever without credited
+                -- damage. Stop parking in place once health/count
                 -- has made no progress and resume ordinary 150-speed raid combat.
                 state.RaidVoidCombatFallback = true
             end
@@ -7838,7 +7826,7 @@ return function(context)
         RaidSection:AddLabel("Raids temporarily suppress Double Attack and Auto Magnet for server-stable single-target hits; Island 5 Force Kill falls back when ownership stalls.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Attempts stationary ownership kills, then automatically resumes 150-speed close-range combat if enemy health stalls",
+            Description = "Attempts stationary credited hits, then automatically resumes 150-speed close-range combat if enemy health stalls",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)
