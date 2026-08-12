@@ -3789,19 +3789,19 @@ return function(context)
             if not root then
                 return nil
             end
-            -- Island markers are server-wide. Lock this cycle to the Island 1
+            -- Island markers are server-wide. Lock this cycle to the marker
             -- cluster the local character actually entered so a later-numbered
-            -- island from another player's raid cannot kidnap our farm.
+            -- island from another player's raid cannot kidnap our farm. Using
+            -- the nearest numbered marker also reacquires the right cluster
+            -- when the module is reloaded midway through Islands 2-5.
             if not state.RaidClusterAnchor then
                 local nearestEntry = nil
                 local nearestDistance = math.huge
                 for _, candidate in ipairs(islands) do
-                    if candidate.Index == 1 then
-                        local distance = (candidate.Part.Position - root.Position).Magnitude
-                        if distance < nearestDistance then
-                            nearestEntry = candidate
-                            nearestDistance = distance
-                        end
+                    local distance = (candidate.Part.Position - root.Position).Magnitude
+                    if distance < nearestDistance then
+                        nearestEntry = candidate
+                        nearestDistance = distance
                     end
                 end
                 if not nearestEntry or nearestDistance > 5000 then
