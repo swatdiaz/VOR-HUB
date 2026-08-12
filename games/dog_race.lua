@@ -1663,7 +1663,10 @@ return function(context)
         end
         if bestId then
             state.SelectedUpgrade = bestId
-            return buySelectedUpgrade()
+            local ok, result = fireServiceRemote("UpgradeService", "Upgrade", bestId)
+            state.LastAction = ok and ("Requested balanced bone upgrade: " .. bestId)
+                or ("Upgrade failed: " .. tostring(result))
+            return ok
         end
         return false
     end
