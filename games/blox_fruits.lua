@@ -4059,7 +4059,13 @@ return function(context)
                 state.RaidTargetName = nil
                 state.RaidSafeModeActive = false
                 RaidRuntime.VoidKillStep(nil)
-                cancelMove(false)
+                -- Auto Start owns the long trip back to the raid room between
+                -- cycles. Cancelling here every farm tick used to interrupt
+                -- that tween roughly ten times per second, making the next
+                -- raid appear stuck after a successful completion.
+                if not state.AutoStartRaid then
+                    cancelMove(false)
+                end
                 FarmVertical.Release()
                 raidLabel.Text = "Dungeon / Raid: Waiting to start"
                 return
