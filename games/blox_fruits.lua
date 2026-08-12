@@ -297,6 +297,8 @@ return function(context)
             AuraPendingError = nil,
             AuraLastRequestAt = nil,
             AuraLastHitAt = nil,
+            LastRaidNativeFallback = -math.huge,
+            RaidNativeFallbackCount = 0,
             AuraWeaponName = nil,
             AuraWeaponType = nil,
             AuraAttackMode = nil,
@@ -2876,8 +2878,31 @@ return function(context)
                 if damaged > 0 then
                     state.AuraHits += damaged
                     state.AuraLastHitAt = os.clock()
+                elseif state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true
+                    and not state.RaidSafeModeActive
+                    and os.clock() - state.LastRaidNativeFallback >= 0.22 then
+                    local fallbackTool = plan.Double and plan.Sword or plan.Tool
+                    local targetHumanoid = target.Enemy and target.Enemy:FindFirstChildOfClass("Humanoid")
+                    local targetRoot = target.Enemy and modelRoot(target.Enemy)
+                    local playerRoot = rootPart()
+                    if fallbackTool and fallbackTool.Parent and targetHumanoid
+                        and targetHumanoid.Health > 0 and targetRoot and playerRoot
+                        and (targetRoot.Position - playerRoot.Position).Magnitude <= state.AuraRange then
+                        state.LastRaidNativeFallback = os.clock()
+                        equipTool(fallbackTool)
+                        local activated = pcall(function()
+                            fallbackTool:Activate()
+                        end)
+                        if activated then
+                            state.RaidNativeFallbackCount += 1
+                            state.AuraStage = "raid-native-fallback"
+                            gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
+                        end
+                    end
                 end
-                state.AuraStage = "idle"
+                if state.AuraStage ~= "raid-native-fallback" then
+                    state.AuraStage = "idle"
+                end
             end)
             return true
         end
@@ -8549,6 +8574,7 @@ return function(context)
                         gui:SetAttribute("BloxRaidVoidMoved", state.RaidVoidMoved)
                         gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
                         gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
+                        gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
                         gui:SetAttribute("BloxRaidVoidFallbackActive", state.RaidVoidFallbackActive)
                         gui:SetAttribute(
                             "BloxRaidVoidFocus",
@@ -8742,6 +8768,7 @@ return function(context)
             gui:SetAttribute("BloxRaidVoidMoved", 0)
             gui:SetAttribute("BloxRaidVoidStaged", 0)
             gui:SetAttribute("BloxRaidVoidKillCount", 0)
+            gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
             gui:SetAttribute("BloxRaidVoidFallbackActive", false)
             gui:SetAttribute("BloxRaidVoidFocus", "")
             gui:SetAttribute("BloxRaidSafeModeActive", false)

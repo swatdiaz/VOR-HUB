@@ -394,6 +394,8 @@ $raidRangeSafety = (
     $bloxText -match 'BloxRaidEffectivePositionX' -and
     $bloxText -match 'BloxRaidEffectivePositionY' -and
     $bloxText -match 'BloxRaidEffectivePositionZ' -and
+    $bloxText -match 'LastRaidNativeFallback = -math\.huge' -and
+    $bloxText -match '(?s)damaged > 0.*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?fallbackTool:Activate\(\).*?BloxRaidNativeFallbackCount' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
