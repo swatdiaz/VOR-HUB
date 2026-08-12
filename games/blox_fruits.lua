@@ -152,6 +152,7 @@ return function(context)
             RaidMaxHitHeight = 37.5,
             RaidRecoveryPercent = 70,
             RaidRecoveryHeight = 250,
+            RaidTweenSpeed = 150,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
         -- both its regular 0.3-second gate and its fifth-hit 1-second gate.
@@ -1107,7 +1108,7 @@ return function(context)
             end
         end
 
-        local function moveTo(targetCFrame)
+        local function moveTo(targetCFrame, speedOverride)
             local root = rootPart()
             if not root or typeof(targetCFrame) ~= "CFrame" then
                 return false
@@ -1171,7 +1172,11 @@ return function(context)
             -- server starts restoring an older replicated position. Preserve
             -- the selected speed for short hops, but cap only the risky long
             -- leg instead of letting a 650 slider value cause a full rollback.
-            local effectiveSpeed = math.max(tonumber(state.TweenSpeed) or 300, 1)
+            local effectiveSpeed = math.max(tonumber(speedOverride) or tonumber(state.TweenSpeed) or 300, 1)
+            if speedOverride == nil and state.AutoRaid
+                and LocalPlayer:GetAttribute("IslandRaiding") == true then
+                effectiveSpeed = math.min(effectiveSpeed, DoubleAttackEngine.RaidTweenSpeed)
+            end
             if distance >= 1200 then
                 effectiveSpeed = math.min(effectiveSpeed, 300)
             elseif distance >= 450 then
@@ -1370,6 +1375,9 @@ return function(context)
         end
 
         local function moveToFarmPosition(targetCFrame)
+            if state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true then
+                return moveTo(targetCFrame)
+            end
             if not state.MobAuraRandomSquare and not state.MobAuraOrbit then
                 return moveTo(targetCFrame)
             end
@@ -4027,7 +4035,7 @@ return function(context)
                 local retreatHeight = math.max(DoubleAttackEngine.RaidRecoveryHeight, safeHeight + 100)
                 local retreatCFrame = island.Part.CFrame + Vector3.new(raidX, retreatHeight, raidZ)
                 state.FarmHoldY = retreatCFrame.Position.Y
-                moveTo(retreatCFrame)
+                moveTo(retreatCFrame, math.max(300, tonumber(state.TweenSpeed) or 300))
                 raidLabel.Text = string.format(
                     "Dungeon / Raid: %s recovery at %.0f%% health",
                     safeModeRecovery and "Safe mode" or "Emergency",
@@ -7674,6 +7682,7 @@ return function(context)
             end,
         })
         RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
+        RaidSection:AddLabel("Auto Farm Raid always tweens between NPCs at 150 studs/second; the global Tween Speed still controls travel outside raids.")
         RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking and yields to final-island Void Kill automatically.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",

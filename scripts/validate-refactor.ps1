@@ -384,6 +384,9 @@ $raidRangeSafety = (
     $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
     $bloxText -match 'RaidRecoveryHeight = 250' -and
+    $bloxText -match 'RaidTweenSpeed = 150' -and
+    $bloxText -match '(?s)if speedOverride == nil and state\.AutoRaid.*?LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?effectiveSpeed = math\.min\(effectiveSpeed, DoubleAttackEngine\.RaidTweenSpeed\)' -and
+    $bloxText -match '(?s)local function moveToFarmPosition\(targetCFrame\).*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?return moveTo\(targetCFrame\)' -and
     $bloxText -match 'state\.RaidFarmOffset = function\(\)' -and
     $bloxText -match 'allowedHorizontal = math\.sqrt\(math\.max\(0, maximum \* maximum - y \* y\)\)' -and
     $bloxText -match 'state\.PositionAnchorY = livePosition\.Y' -and
