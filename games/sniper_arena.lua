@@ -14,6 +14,7 @@ return function(context)
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local RunService = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
+    local GuiService = game:GetService("GuiService")
     local Lighting = game:GetService("Lighting")
     local CollectionService = game:GetService("CollectionService")
     local HttpService = game:GetService("HttpService")
@@ -592,17 +593,11 @@ return function(context)
         return nil
     end
 
-    local function pointerOverVor()
+    local function menuBlocksTrigger()
+        if GuiService.MenuIsOpen then return true end
         if not gui or not gui.Enabled then return false end
-        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        if not playerGui then return false end
-        local mousePosition = UserInputService:GetMouseLocation()
-        local ok, objects = pcall(playerGui.GetGuiObjectsAtPosition, playerGui, mousePosition.X, mousePosition.Y)
-        if not ok or type(objects) ~= "table" then return false end
-        for _, object in ipairs(objects) do
-            if object:IsDescendantOf(gui) then return true end
-        end
-        return false
+        local mainWindow = gui:FindFirstChild("LuxuryWindow", true)
+        return mainWindow == nil or mainWindow.Visible
     end
 
     local triggerInputToken = "VOR_TRIGGER_" .. tostring(LocalPlayer.UserId)
@@ -645,7 +640,7 @@ return function(context)
     local lastTriggerTarget, lastTriggerAt = nil, -math.huge
     local function tryTrigger()
         if not state.Alive or not state.TriggerBot or not isActiveMatch()
-            or pointerOverVor() or UserInputService:GetFocusedTextBox() ~= nil then
+            or menuBlocksTrigger() or UserInputService:GetFocusedTextBox() ~= nil then
             lastTriggerTarget = nil
             return false
         end
@@ -977,7 +972,7 @@ return function(context)
     AimSection:AddToggle({Name = "Wall Check", Description = "Off is aggressive; on only selects targets with a clear ray.", Flag = "sniper_arena_wall_check_v2", Default = false, Callback = function(v) state.WallCheck = v == true end})
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Default = false, Callback = function(v) state.ShowFov = v == true end})
 
-    CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
+    CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Pauses while the VOR or Roblox menu is open, then resumes automatically when it closes.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
     CombatStatusSection:AddToggle({Name = "Big Head (Visible Body Required)", Description = "Manual and session-only. The enlarged head is assisted only while the enemy's real torso or root has a clear camera ray.", Flag = "sniper_arena_hitbox_visible_body_v3", Persist = false, Default = false, Callback = function(v)
         state.HitboxExpand = v == true
@@ -1147,6 +1142,7 @@ return function(context)
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
+            gui:SetAttribute("SniperArenaTriggerPausedByMenu", state.TriggerBot and menuBlocksTrigger())
             gui:SetAttribute("SniperArenaTriggerClicks", state.TriggerClicks)
             gui:SetAttribute("SniperArenaTriggerNativeAttempts", state.TriggerNativeAttempts)
             gui:SetAttribute("SniperArenaTriggerNativeShots", state.TriggerNativeShots)

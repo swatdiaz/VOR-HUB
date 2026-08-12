@@ -1111,7 +1111,11 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'local firstHover = target ~= lastTriggerTarget' -and
     $sniperArenaText -match 'LocalPlayer:GetAttribute\("GameRoom"\)' -and
     $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
-    $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or pointerOverVor\(\)' -and
+    $sniperArenaText -match 'local function menuBlocksTrigger\(\)' -and
+    $sniperArenaText -match 'GuiService\.MenuIsOpen' -and
+    $sniperArenaText -match 'mainWindow == nil or mainWindow\.Visible' -and
+    $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or menuBlocksTrigger\(\)' -and
+    $sniperArenaText -match 'SniperArenaTriggerPausedByMenu' -and
     $sniperArenaText -match 'hostileForTarget\(target\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_visible_body_v3"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_size_v3"[^\r\n]*Persist\s*=\s*false[^\r\n]*Max\s*=\s*30' -and
