@@ -153,7 +153,7 @@ return function(context)
             RaidRecoveryPercent = 70,
             -- High enough to break NPC melee pressure without leaving the
             -- raid's streaming radius and unloading every remaining target.
-            RaidRecoveryHeight = 140,
+            RaidRecoveryHeight = 500,
             RaidTweenSpeed = 150,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
