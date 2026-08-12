@@ -1092,12 +1092,12 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
     $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_v2",\s*Default\s*=\s*true' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_v2"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_radius_v2"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names",\s*Default\s*=\s*false' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
     $sniperArenaText -match 'hostile\.Kind == "BOT" and "BOT"' -and
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -match 'GetTagged\("Boss"\)' -and
