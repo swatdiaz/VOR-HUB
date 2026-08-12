@@ -1095,7 +1095,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_names",\s*Default\s*=\s*false' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names",\s*Default\s*=\s*false' -and
     $sniperArenaText -match 'hostile\.Kind == "BOT" and "BOT"' -and
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -match 'GetTagged\("Boss"\)' -and
