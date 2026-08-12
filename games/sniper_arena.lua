@@ -53,6 +53,8 @@ return function(context)
     local CombatControllerApi = safeRequire(CombatController)
     local ClientComponent = CombatController and CombatController:FindFirstChild("ClientComponent")
     local ClientShootableComponent = safeRequire(ClientComponent and ClientComponent:FindFirstChild("ClientShootableComponent"))
+    local SlideHelper = safeRequire(Client and Client:FindFirstChild("CombatHelper") and Client.CombatHelper:FindFirstChild("Slide"))
+    local GameConfig = safeRequire(Config and Config:FindFirstChild("Config")) or {}
     local WeaponConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Weapon")) or {}
     local MatchConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Matchmaking")) or {}
 
@@ -74,6 +76,7 @@ return function(context)
     local EspSection = VisualsPage:AddSection("Enemy ESP", "Left")
     local VisibilitySection = VisualsPage:AddSection("Visibility", "Right")
     local QueueSection = WorldPage:AddSection("Matchmaking", "Left")
+    local MovementSection = WorldPage:AddSection("Native Slide", "Left")
     local WorldStatusSection = WorldPage:AddSection("Server Status", "Right")
 
     HomePage:AddSection("Sniper Arena Support", "Left"):AddParagraph({
@@ -140,6 +143,9 @@ return function(context)
         CaseBatchSize = 5,
         CasesOpened = 0,
         LastCaseOpen = 0,
+        SlideBoost = false,
+        SlideMultiplier = 1.5,
+        BoostedSlides = 0,
         SelectedFamily = "SSG",
         LastClaim = 0,
         LastUnlock = 0,
@@ -151,6 +157,31 @@ return function(context)
     local highlights = {}
     local hitboxDefaults = setmetatable({}, {__mode = "k"})
     local weaponValueDefaults = setmetatable({}, {__mode = "k"})
+
+    local originalSlide, boostedSlide
+    if SlideHelper and type(SlideHelper.Slide) == "function" then
+        originalSlide = SlideHelper.Slide
+        boostedSlide = function(options, token)
+            if not state.Alive or not state.SlideBoost then
+                return originalSlide(options, token)
+            end
+            local adjusted = {}
+            if type(options) == "table" then
+                for key, value in pairs(options) do adjusted[key] = value end
+            end
+            local multiplier = math.clamp(tonumber(state.SlideMultiplier) or 1, 1, 3)
+            if tonumber(adjusted.CustomSpeed) then
+                adjusted.CustomSpeed = adjusted.CustomSpeed * multiplier
+            else
+                local defaultSpeed = GameConfig.Movement and tonumber(GameConfig.Movement.SlideSpeed) or 1
+                adjusted.Speed = (tonumber(adjusted.Speed) or defaultSpeed) * multiplier
+            end
+            local result = originalSlide(adjusted, token)
+            if result then state.BoostedSlides += 1 end
+            return result
+        end
+        SlideHelper.Slide = boostedSlide
+    end
 
     local function notify(message, color)
         Window:Notify("Sniper Arena", tostring(message), 4, color or COLORS.accentBright)
@@ -948,6 +979,9 @@ return function(context)
     end})
     VisibilitySection:AddSlider({Name = "Camera FOV", Flag = "sniper_arena_camera_fov", Min = 50, Max = 120, Step = 1, Default = 80, Callback = function(v) state.CameraFov = tonumber(v) or 80 end})
 
+    MovementSection:AddToggle({Name = "Native Slide Speed", Description = "Multiplies the game's own slide impulse. No CFrame teleporting.", Flag = "sniper_arena_native_slide_speed", Default = false, Callback = function(v) state.SlideBoost = v == true end})
+    MovementSection:AddSlider({Name = "Slide Multiplier", Description = "Experimental native range. Start at 1.5x.", Flag = "sniper_arena_slide_multiplier", Min = 1, Max = 3, Step = 0.1, Default = 1.5, Suffix = "x", Callback = function(v) state.SlideMultiplier = math.clamp(tonumber(v) or 1.5, 1, 3) end})
+
     local queueNames = {}
     for name in pairs(MatchConfig.Queues or {}) do queueNames[#queueNames + 1] = name end
     table.sort(queueNames)
@@ -1034,6 +1068,10 @@ return function(context)
             gui:SetAttribute("SniperArenaAutoOpenCases", state.AutoOpenCases)
             gui:SetAttribute("SniperArenaOwnedCases", caseTotal)
             gui:SetAttribute("SniperArenaCasesOpened", state.CasesOpened)
+            gui:SetAttribute("SniperArenaSlideBoost", state.SlideBoost)
+            gui:SetAttribute("SniperArenaSlideMultiplier", state.SlideMultiplier)
+            gui:SetAttribute("SniperArenaBoostedSlides", state.BoostedSlides)
+            gui:SetAttribute("SniperArenaNativeSlideAvailable", originalSlide ~= nil)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
@@ -1079,9 +1117,13 @@ return function(context)
         state.NoSpread = false
         state.FastReload = false
         state.AutoOpenCases = false
+        state.SlideBoost = false
         releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
+        if originalSlide and boostedSlide and SlideHelper and SlideHelper.Slide == boostedSlide then
+            SlideHelper.Slide = originalSlide
+        end
         if renderStepBound then
             pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
             renderStepBound = false

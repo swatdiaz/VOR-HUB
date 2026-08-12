@@ -1131,6 +1131,11 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_open_cases"' -and
     $sniperArenaText -match 'GachaService\.Gacha' -and
     $sniperArenaText -notmatch 'sniper_arena_movement_boost' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_native_slide_speed"' -and
+    $sniperArenaText -match 'SlideHelper\.Slide = boostedSlide' -and
+    $sniperArenaText -match 'GameConfig\.Movement\.SlideSpeed' -and
+    $sniperArenaText -match 'adjusted\.Speed = .*\* multiplier' -and
+    $sniperArenaText -notmatch 'root\.CFrame = root\.CFrame \+' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Default\s*=\s*false' -and
