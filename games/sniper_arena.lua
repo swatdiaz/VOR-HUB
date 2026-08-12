@@ -206,27 +206,30 @@ return function(context)
         camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
     end
 
-    local function silentAimRay(ray)
-        if not state.Alive or not state.SilentAim or math.random(1, 100) > state.SilentAimChance then return ray end
-        local part = acquireTarget()
-        if not part then return ray end
-        state.CurrentTarget = part
-        local aimPosition = part.Position + part.AssemblyLinearVelocity * state.SilentAimPrediction
-        if typeof(ray) == "CFrame" then
-            return CFrame.lookAt(ray.Position, aimPosition)
-        end
-        return ray
-    end
-
-    local originalLocalShoot, silentAimWrapper
-    if ClientShootableComponent and type(ClientShootableComponent.LocalShoot) == "function" then
+    local originalLocalShoot, originalTargetResolver, silentTargetResolver
+    local silentAimHooked = false
+    if ClientShootableComponent and type(ClientShootableComponent.LocalShoot) == "function"
+        and type(debug) == "table" and type(debug.getupvalues) == "function" and type(debug.setupvalue) == "function" then
         originalLocalShoot = ClientShootableComponent.LocalShoot
-        silentAimWrapper = function(component, shotRay, ...)
-            return originalLocalShoot(component, silentAimRay(shotRay), ...)
-        end
-        local installed = pcall(function() ClientShootableComponent.LocalShoot = silentAimWrapper end)
-        if not installed then
-            originalLocalShoot, silentAimWrapper = nil, nil
+        local readOk, shotUpvalues = pcall(debug.getupvalues, originalLocalShoot)
+        originalTargetResolver = readOk and shotUpvalues[4] or nil
+        if type(originalTargetResolver) == "function" then
+            silentTargetResolver = function(...)
+                local originalResults = table.pack(originalTargetResolver(...))
+                if state.Alive and state.SilentAim and math.random(1, 100) <= state.SilentAimChance then
+                    local part = acquireTarget()
+                    if part then
+                        state.CurrentTarget = part
+                        return part.Position + part.AssemblyLinearVelocity * state.SilentAimPrediction, part
+                    end
+                end
+                return table.unpack(originalResults, 1, originalResults.n)
+            end
+            local installed = pcall(debug.setupvalue, originalLocalShoot, 4, silentTargetResolver)
+            if installed then
+                local verifyOk, verifyUpvalues = pcall(debug.getupvalues, originalLocalShoot)
+                silentAimHooked = verifyOk and verifyUpvalues[4] == silentTargetResolver
+            end
         end
     end
 
@@ -273,26 +276,28 @@ return function(context)
                         clearEsp(player)
                         local highlight = Instance.new("Highlight")
                         highlight.Name = "VORSniperEnemy"
-                        highlight.FillColor = Color3.fromRGB(255, 60, 90)
-                        highlight.OutlineColor = Color3.new(1, 1, 1)
-                        highlight.FillTransparency = 0.65
+                        highlight.FillColor = Color3.fromRGB(255, 20, 65)
+                        highlight.OutlineColor = Color3.fromRGB(255, 235, 90)
+                        highlight.FillTransparency = 0.18
+                        highlight.OutlineTransparency = 0
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                         highlight.Adornee = model
                         highlight.Parent = model
                         local billboard = Instance.new("BillboardGui")
                         billboard.Name = "VORSniperLabel"
                         billboard.AlwaysOnTop = true
-                        billboard.Size = UDim2.fromOffset(220, 34)
-                        billboard.StudsOffset = Vector3.new(0, 3.4, 0)
+                        billboard.Size = UDim2.fromOffset(300, 46)
+                        billboard.StudsOffset = Vector3.new(0, 3.8, 0)
                         billboard.Adornee = model:FindFirstChild("Head") or root
                         billboard.Parent = model
                         local label = Instance.new("TextLabel")
-                        label.BackgroundTransparency = 1
+                        label.BackgroundColor3 = Color3.fromRGB(20, 0, 8)
+                        label.BackgroundTransparency = 0.2
                         label.Size = UDim2.fromScale(1, 1)
                         label.Font = Enum.Font.GothamBold
                         label.TextColor3 = Color3.new(1, 1, 1)
                         label.TextStrokeTransparency = 0
-                        label.TextSize = 13
+                        label.TextSize = 16
                         label.Parent = billboard
                         entry = {Highlight = highlight, Billboard = billboard, Label = label}
                         highlights[player] = entry
@@ -580,10 +585,13 @@ return function(context)
             gui:SetAttribute("SniperArenaAutoUnlock", state.AutoUnlock)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
-            gui:SetAttribute("SniperArenaSilentAimHooked", silentAimWrapper ~= nil)
+            gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaEnemyEsp", state.EnemyEsp)
         end)
     end
+
+    local renderStepName = "VORSniperArenaCamera_" .. tostring(LocalPlayer.UserId)
+    local renderStepBound = false
 
     runtimeEnvironment.__VORSniperArenaCleanup = function()
         if not state.Alive then return end
@@ -591,8 +599,16 @@ return function(context)
         state.AimAssist = false
         state.SilentAim = false
         state.EnemyEsp = false
-        if ClientShootableComponent and silentAimWrapper and ClientShootableComponent.LocalShoot == silentAimWrapper then
-            pcall(function() ClientShootableComponent.LocalShoot = originalLocalShoot end)
+        if renderStepBound then
+            pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
+            renderStepBound = false
+        end
+        if originalLocalShoot and silentTargetResolver and originalTargetResolver and type(debug) == "table"
+            and type(debug.getupvalues) == "function" and type(debug.setupvalue) == "function" then
+            local readOk, shotUpvalues = pcall(debug.getupvalues, originalLocalShoot)
+            if readOk and shotUpvalues[4] == silentTargetResolver then
+                pcall(debug.setupvalue, originalLocalShoot, 4, originalTargetResolver)
+            end
         end
         for player in pairs(highlights) do clearEsp(player) end
         for _, object in ipairs(drawings) do pcall(function() object:Remove() end) end
@@ -609,12 +625,18 @@ return function(context)
         if type(cleanup) == "function" then cleanup() end
     end)) end
 
+    renderStepBound = pcall(function()
+        RunService:BindToRenderStep(renderStepName, Enum.RenderPriority.Camera.Value + 50, function(deltaTime)
+            if not state.Alive then return end
+            updateAim(deltaTime)
+            updateFovCircle()
+            updateEnvironment()
+        end)
+    end)
+
     local automationClock, statusClock, espClock = 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
-        updateAim(deltaTime)
-        updateFovCircle()
-        updateEnvironment()
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
         automationClock = automationClock + deltaTime

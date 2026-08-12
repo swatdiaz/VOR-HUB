@@ -1087,8 +1087,9 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'OnlineRewardClaim' -and
     $sniperArenaText -match 'MatchmakingService\.Match' -and
     $sniperArenaText -match 'mode\s*==\s*"Arcade"' -and
-    $sniperArenaText -match 'ClientShootableComponent\.LocalShoot\s*=\s*silentAimWrapper' -and
-    $sniperArenaText -match 'CFrame\.lookAt\(ray\.Position,\s*aimPosition\)' -and
+    $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*4,\s*silentTargetResolver' -and
+    $sniperArenaText -match 'return part\.Position \+ part\.AssemblyLinearVelocity \* state\.SilentAimPrediction, part' -and
+    $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Camera\.Value \+ 50' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
