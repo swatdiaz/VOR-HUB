@@ -1741,7 +1741,19 @@ return function(context)
         end
         local count = 0
         for _, stack in pairs(data.Items or {}) do
-            if (tonumber(stack.Num) or 0) >= amount then
+            local owned = tonumber(stack.Num) or 0
+            if ItemsDataHelper and type(ItemsDataHelper.GetUnequippedNum) == "function" then
+                local ok, value = pcall(
+                    ItemsDataHelper.GetUnequippedNum,
+                    data,
+                    stack.ItemId,
+                    stack.RarityIndex
+                )
+                if ok then
+                    owned = tonumber(value) or owned
+                end
+            end
+            if owned >= amount and (tonumber(stack.RarityIndex) or 0) < 6 then
                 local ok = fireServiceRemote("ItemService", "MergeItems", stack.ItemId, stack.RarityIndex)
                 if ok then
                     count = count + 1
@@ -2438,6 +2450,7 @@ return function(context)
     })
     automationControls.MergeGear = GearSection:AddToggle({
         Name = "Auto Merge Gear",
+        Description = "Merges each three-piece matching unequipped stack into the next rarity, then checks again every three seconds.",
         Flag = "dograce_auto_merge_gear",
         Default = false,
         Callback = function(enabled) state.AutoMergeGear = enabled == true end,
@@ -2800,6 +2813,8 @@ return function(context)
             gui:SetAttribute("DogRacePetCount", petCount)
             gui:SetAttribute("DogRacePetStorageMax", maxPetStorage(data or {}))
             gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
+            gui:SetAttribute("DogRaceAutoMergeGear", state.AutoMergeGear)
+            gui:SetAttribute("DogRaceAutoEquipGear", state.AutoEquipGear)
             gui:SetAttribute("DogRaceAutoBird", state.AutoBird)
             gui:SetAttribute("DogRaceAutoShoe", state.AutoShoe)
         end)
