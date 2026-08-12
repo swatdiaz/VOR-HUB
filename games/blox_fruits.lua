@@ -137,6 +137,10 @@ return function(context)
             RaidVoidMoved = 0,
             RaidVoidStaged = 0,
             RaidVoidKillCount = 0,
+            RaidVoidFocus = nil,
+            RaidVoidFocusDistance = math.huge,
+            RaidVoidFallbackActive = false,
+            RaidSafeModeActive = false,
             RaidVoidTargets = setmetatable({}, {__mode = "k"}),
             RaidVoidOriginalCFrames = setmetatable({}, {__mode = "k"}),
             LastRaidVoidStep = 0,
@@ -3011,6 +3015,9 @@ return function(context)
             gui:SetAttribute("BloxRaidVoidMoved", state.RaidVoidMoved)
             gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
             gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
+            gui:SetAttribute("BloxRaidVoidFallbackActive", state.RaidVoidFallbackActive)
+            gui:SetAttribute("BloxRaidVoidFocus", "")
+            gui:SetAttribute("BloxRaidSafeModeActive", state.RaidSafeModeActive)
             gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
             gui:SetAttribute(
                 "BloxMultiGrabSingleFallback",
@@ -3691,6 +3698,9 @@ return function(context)
                 state.RaidVoidActive = false
                 state.RaidVoidMoved = 0
                 state.RaidVoidStaged = 0
+                state.RaidVoidFocus = nil
+                state.RaidVoidFocusDistance = math.huge
+                state.RaidVoidFallbackActive = false
                 return 0
             end
             state.RaidVoidActive = true
@@ -3715,6 +3725,8 @@ return function(context)
             -- naturally for several seconds before removal.
             local killed = 0
             local waitingForOwnership = 0
+            local nearestWaiting = nil
+            local nearestWaitingDistance = math.huge
             for _, enemy in ipairs(loadedEnemies()) do
                 local enemyRoot = modelRoot(enemy)
                 local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
@@ -3738,11 +3750,19 @@ return function(context)
                         killed += 1
                     else
                         waitingForOwnership += 1
+                        local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
+                        if distance < nearestWaitingDistance then
+                            nearestWaiting = enemy
+                            nearestWaitingDistance = distance
+                        end
                     end
                 end
             end
             state.RaidVoidMoved = killed
             state.RaidVoidStaged = waitingForOwnership
+            state.RaidVoidFocus = nearestWaiting
+            state.RaidVoidFocusDistance = nearestWaitingDistance
+            state.RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil
             state.RaidGathered = 0
             return killed
         end
@@ -3805,6 +3825,7 @@ return function(context)
                 state.RaidIslandIndex = 0
                 state.RaidIslandName = nil
                 state.RaidTargetName = nil
+                state.RaidSafeModeActive = false
                 RaidRuntime.VoidKillStep(nil)
                 cancelMove(false)
                 FarmVertical.Release()
@@ -3819,6 +3840,7 @@ return function(context)
                 state.RaidIslandIndex = 0
                 state.RaidIslandName = nil
                 state.RaidTargetName = nil
+                state.RaidSafeModeActive = false
                 RaidRuntime.VoidKillStep(nil)
                 cancelMove(false)
                 FarmVertical.Release()
@@ -3839,16 +3861,49 @@ return function(context)
                 DoubleAttackEngine.RaidMaxHitHeight
             )
             state.ActiveFarmHeightOverride = safeHeight
-            local voided = RaidRuntime.VoidKillStep(island)
-            if state.RaidVoidActive then
+            local currentHealth = healthPercent()
+            local safeModeRecovery = state.SafeMode and currentHealth <= state.SafeHealthPercent
+            local emergencyRecovery = currentHealth <= DoubleAttackEngine.RaidRecoveryPercent
+            state.RaidSafeModeActive = safeModeRecovery or emergencyRecovery
+            if state.RaidSafeModeActive then
+                RaidRuntime.VoidKillStep(nil)
                 state.ActiveFarmTarget = nil
                 state.ActiveFarmVerticalLock = false
                 state.RaidTargetName = nil
-                moveTo(island.Part.CFrame + Vector3.new(0, safeHeight, 0))
+                local retreatHeight = math.max(65, safeHeight + 25)
+                moveTo(island.Part.CFrame + Vector3.new(0, retreatHeight, 0))
                 raidLabel.Text = string.format(
-                    "Dungeon / Raid: Island %d FORCE KILL | Waiting ownership: %d | Killed: %d | Total: %d",
+                    "Dungeon / Raid: %s recovery at %.0f%% health",
+                    safeModeRecovery and "Safe mode" or "Emergency",
+                    currentHealth
+                )
+                return
+            end
+            local voided = RaidRuntime.VoidKillStep(island)
+            if state.RaidVoidActive then
+                local fallbackEnemy = state.RaidVoidFocus
+                local fallbackRoot = modelRoot(fallbackEnemy)
+                if state.RaidVoidFallbackActive and modelAlive(fallbackEnemy) and fallbackRoot then
+                    state.ActiveFarmTarget = fallbackEnemy
+                    state.ActiveFarmVerticalLock = true
+                    state.CurrentEnemyName = normalizeEnemyName(fallbackEnemy.Name)
+                    state.RaidTargetName = state.CurrentEnemyName
+                    syncFarmAuraRange(safeHeight)
+                    local targetCFrame = positionAtEnemy(fallbackEnemy, true, safeHeight)
+                    if targetCFrame then
+                        moveToFarmPosition(targetCFrame)
+                    end
+                else
+                    state.ActiveFarmTarget = nil
+                    state.ActiveFarmVerticalLock = false
+                    state.RaidTargetName = nil
+                    moveTo(island.Part.CFrame + Vector3.new(0, safeHeight, 0))
+                end
+                raidLabel.Text = string.format(
+                    "Dungeon / Raid: Island %d FORCE KILL | Waiting: %d | Native fallback: %s | Killed: %d | Total: %d",
                     island.Index,
                     state.RaidVoidStaged,
+                    state.RaidVoidFallbackActive and "ACTIVE" or "idle",
                     voided,
                     state.RaidVoidKillCount
                 )
@@ -7451,6 +7506,11 @@ return function(context)
                     state.ActiveFarmHeightOverride = nil
                     state.RaidVoidActive = false
                     state.RaidVoidMoved = 0
+                    state.RaidVoidStaged = 0
+                    state.RaidVoidFocus = nil
+                    state.RaidVoidFocusDistance = math.huge
+                    state.RaidVoidFallbackActive = false
+                    state.RaidSafeModeActive = false
                     cancelMove()
                 end
                 gui:SetAttribute("BloxAutoRaid", enabled)
@@ -7463,7 +7523,7 @@ return function(context)
         RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking and yields to final-island Void Kill automatically.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Matches Solix: network-finishes Island 5 NPCs at full health and leaves each corpse replicated to fall naturally",
+            Description = "Tries the network finish first, then closes distance and falls back to native credited attacks instead of stalling",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)
@@ -7471,6 +7531,9 @@ return function(context)
                 state.RaidVoidActive = false
                 state.RaidVoidMoved = 0
                 state.RaidVoidStaged = 0
+                state.RaidVoidFocus = nil
+                state.RaidVoidFocusDistance = math.huge
+                state.RaidVoidFallbackActive = false
                 if enabled then
                     state.LastRaidVoidStep = 0
                     state.RaidVoidKillCount = 0
@@ -7881,6 +7944,10 @@ return function(context)
             state.RaidVoidActive = false
             state.RaidVoidMoved = 0
             state.RaidVoidStaged = 0
+            state.RaidVoidFocus = nil
+            state.RaidVoidFocusDistance = math.huge
+            state.RaidVoidFallbackActive = false
+            state.RaidSafeModeActive = false
             state.RaidGathered = 0
             if LocalPlayer:GetAttribute("IslandRaiding") == true then
                 local now = os.clock()
@@ -8307,6 +8374,12 @@ return function(context)
                         gui:SetAttribute("BloxRaidVoidMoved", state.RaidVoidMoved)
                         gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
                         gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
+                        gui:SetAttribute("BloxRaidVoidFallbackActive", state.RaidVoidFallbackActive)
+                        gui:SetAttribute(
+                            "BloxRaidVoidFocus",
+                            state.RaidVoidFocus and normalizeEnemyName(state.RaidVoidFocus.Name) or ""
+                        )
+                        gui:SetAttribute("BloxRaidSafeModeActive", state.RaidSafeModeActive)
                         gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
                     end
                 end)
@@ -8488,6 +8561,9 @@ return function(context)
             gui:SetAttribute("BloxRaidVoidMoved", 0)
             gui:SetAttribute("BloxRaidVoidStaged", 0)
             gui:SetAttribute("BloxRaidVoidKillCount", 0)
+            gui:SetAttribute("BloxRaidVoidFallbackActive", false)
+            gui:SetAttribute("BloxRaidVoidFocus", "")
+            gui:SetAttribute("BloxRaidSafeModeActive", false)
             gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
             gui:SetAttribute("BloxBossVerticalLocked", false)
             gui:SetAttribute("BloxBossAnchorY", 0)

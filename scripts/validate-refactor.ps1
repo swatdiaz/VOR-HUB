@@ -382,7 +382,14 @@ $raidRangeSafety = (
     $bloxText -match 'RaidSafeHeight = DoubleAttackEngine\.RaidMaxHitHeight' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
     $bloxText -match 'math\.min\(\s*math\.max\(state\.RaidSafeHeight, tonumber\(state\.MobAuraHeight\) or 20\),\s*DoubleAttackEngine\.RaidMaxHitHeight' -and
-    $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent'
+    $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
+    $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
+    $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
+    $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?RaidRuntime\.VoidKillStep\(nil\).*?retreatHeight = math\.max\(65, safeHeight \+ 25\)' -and
+    $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
+    $bloxText -match '(?s)state\.RaidVoidFallbackActive and modelAlive\(fallbackEnemy\).*?moveToFarmPosition\(targetCFrame\)' -and
+    $bloxText -match 'BloxRaidSafeModeActive' -and
+    $bloxText -match 'BloxRaidVoidFallbackActive'
 )
 if (-not $raidRangeSafety) {
     throw "Raid farming must stay just inside registered hit range and retreat before burst damage becomes lethal"
