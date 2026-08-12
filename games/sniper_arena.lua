@@ -74,7 +74,6 @@ return function(context)
     local EspSection = VisualsPage:AddSection("Enemy ESP", "Left")
     local VisibilitySection = VisualsPage:AddSection("Visibility", "Right")
     local QueueSection = WorldPage:AddSection("Matchmaking", "Left")
-    local MovementSection = WorldPage:AddSection("Movement", "Left")
     local WorldStatusSection = WorldPage:AddSection("Server Status", "Right")
 
     HomePage:AddSection("Sniper Arena Support", "Left"):AddParagraph({
@@ -141,8 +140,6 @@ return function(context)
         CaseBatchSize = 5,
         CasesOpened = 0,
         LastCaseOpen = 0,
-        MovementBoost = false,
-        MovementSpeed = 60,
         SelectedFamily = "SSG",
         LastClaim = 0,
         LastUnlock = 0,
@@ -865,16 +862,6 @@ return function(context)
         return count
     end
 
-    local function updateMovement(deltaTime)
-        if not state.MovementBoost then return end
-        local _, humanoid, root = character()
-        if not humanoid or humanoid.Health <= 0 or not root then return end
-        local direction = humanoid.MoveDirection
-        if direction.Magnitude <= 0 then return end
-        local extraSpeed = math.clamp(tonumber(state.MovementSpeed) or 0, 0, 300)
-        root.CFrame = root.CFrame + direction.Unit * extraSpeed * math.min(deltaTime, 1 / 20)
-    end
-
     local function queue(name)
         if not MatchmakingService or type(MatchmakingService.Match) ~= "function" then notify("Matchmaking unavailable", COLORS.warning) return end
         local ok, result = pcall(MatchmakingService.Match, name)
@@ -960,9 +947,6 @@ return function(context)
         if camera and not state.FovOverride then camera.FieldOfView = defaults.CameraFov end
     end})
     VisibilitySection:AddSlider({Name = "Camera FOV", Flag = "sniper_arena_camera_fov", Min = 50, Max = 120, Step = 1, Default = 80, Callback = function(v) state.CameraFov = tonumber(v) or 80 end})
-
-    MovementSection:AddToggle({Name = "Movement Boost", Description = "Adds adjustable movement each rendered frame. Server correction may limit extreme values.", Flag = "sniper_arena_movement_boost", Default = false, Callback = function(v) state.MovementBoost = v == true end})
-    MovementSection:AddSlider({Name = "Extra Speed", Flag = "sniper_arena_movement_speed", Min = 0, Max = 300, Step = 5, Default = 60, Suffix = " studs/s", Callback = function(v) state.MovementSpeed = math.clamp(tonumber(v) or 60, 0, 300) end})
 
     local queueNames = {}
     for name in pairs(MatchConfig.Queues or {}) do queueNames[#queueNames + 1] = name end
@@ -1050,8 +1034,6 @@ return function(context)
             gui:SetAttribute("SniperArenaAutoOpenCases", state.AutoOpenCases)
             gui:SetAttribute("SniperArenaOwnedCases", caseTotal)
             gui:SetAttribute("SniperArenaCasesOpened", state.CasesOpened)
-            gui:SetAttribute("SniperArenaMovementBoost", state.MovementBoost)
-            gui:SetAttribute("SniperArenaMovementSpeed", state.MovementSpeed)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
@@ -1096,7 +1078,6 @@ return function(context)
         state.NoSpread = false
         state.FastReload = false
         state.AutoOpenCases = false
-        state.MovementBoost = false
         releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
@@ -1134,7 +1115,6 @@ return function(context)
             if not state.Alive then return end
             updateHitboxes()
             updateAim(deltaTime)
-            updateMovement(deltaTime)
             updateFovCircle()
             updateEnvironment()
         end)
