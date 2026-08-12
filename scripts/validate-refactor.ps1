@@ -379,9 +379,14 @@ if (-not $raidPurchaseGuards) {
 $raidRangeSafety = (
     $bloxText -match 'RaidHitMargin = 0\.5' -and
     $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
-    $bloxText -match 'RaidSafeHeight = DoubleAttackEngine\.RaidMaxHitHeight' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
-    $bloxText -match 'math\.min\(\s*math\.max\(state\.RaidSafeHeight, tonumber\(state\.MobAuraHeight\) or 20\),\s*DoubleAttackEngine\.RaidMaxHitHeight' -and
+    $bloxText -match 'state\.RaidFarmOffset = function\(\)' -and
+    $bloxText -match 'allowedHorizontal = math\.sqrt\(math\.max\(0, maximum \* maximum - y \* y\)\)' -and
+    $bloxText -match 'state\.PositionAnchorY = livePosition\.Y' -and
+    $bloxText -match 'BloxRaidPositionClamped' -and
+    $bloxText -match 'BloxRaidEffectivePositionX' -and
+    $bloxText -match 'BloxRaidEffectivePositionY' -and
+    $bloxText -match 'BloxRaidEffectivePositionZ' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
@@ -1170,7 +1175,9 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'installSniperArenaBackground\(\)' -and
     $sniperArenaText -match 'thumbnails\.roblox\.com/v1/games/icons\?universeIds=9534705677' -and
     $sniperArenaText -match 'SETTINGS\.DefaultPanelBackground = "[^\"]* Sniper Arena"' -and
-    $profilesText -match 'table\.insert\(backgroundOptions, 1, "[^\"]* Sniper Arena"\)' -and
+    $profilesText -match 'for name, image in pairs\(SETTINGS\.PanelBackgrounds or \{\}\)' -and
+    $profilesText -match 'table\.sort\(backgroundOptions\)' -and
+    $profilesText -match 'table\.find\(backgroundOptions, SETTINGS\.DefaultPanelBackground\)' -and
     $profilesText -match '(?s)Name\s*=\s*"Hub Transparency".*?Min\s*=\s*0,' -and
     $uiText -match 'local lowEndSolidify = math\.clamp\(\(0\.15 - value\) / 0\.15, 0, 1\)' -and
     $uiText -match 'base \* \(1 - 0\.35 \* lowEndSolidify\)' -and

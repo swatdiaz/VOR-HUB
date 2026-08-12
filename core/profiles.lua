@@ -374,9 +374,16 @@ return function(context)
         local profiles = page:AddSection("Profiles", "Right")
         local access = page:AddSection("Access & Community", "Left")
         local runtime = page:AddSection("Runtime", "Right")
-        local backgroundOptions = {"VOR Signature (557862299)", "VOR Void", "VOR Purple"}
-        if SETTINGS.PanelBackgrounds and SETTINGS.PanelBackgrounds["🎯 Sniper Arena"] then
-            table.insert(backgroundOptions, 1, "🎯 Sniper Arena")
+        local backgroundOptions = {}
+        for name, image in pairs(SETTINGS.PanelBackgrounds or {}) do
+            if type(name) == "string" and type(image) == "string" and image ~= "" then
+                backgroundOptions[#backgroundOptions + 1] = name
+            end
+        end
+        table.sort(backgroundOptions)
+        local defaultIndex = table.find(backgroundOptions, SETTINGS.DefaultPanelBackground)
+        if defaultIndex and defaultIndex > 1 then
+            table.insert(backgroundOptions, 1, table.remove(backgroundOptions, defaultIndex))
         end
 
         appearance:AddDropdown({

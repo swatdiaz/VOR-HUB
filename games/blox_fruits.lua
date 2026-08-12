@@ -3,9 +3,16 @@ return function(context)
     local Window = assert(context.Window, "Blox Fruits module requires Window")
     local createCategoryHomePage = assert(context.CreateCategoryHomePage, "Blox Fruits module requires CreateCategoryHomePage")
     local COLORS = context.Colors or context.COLORS
+    local SETTINGS = context.SETTINGS or context.Settings or {}
     local track = assert(context.Track, "Blox Fruits module requires Track")
     local gui = assert(context.Gui, "Blox Fruits module requires Gui")
     local tracebackError = context.Utilities and context.Utilities.Traceback or tostring
+    local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
+    local previousCleanup = runtimeEnvironment.__VORBloxFruitsCleanup
+    runtimeEnvironment.__VORBloxFruitsCleanup = nil
+    if type(previousCleanup) == "function" then
+        pcall(previousCleanup)
+    end
     local built, buildError = xpcall(function()
         local Players = game:GetService("Players")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,6 +24,61 @@ return function(context)
         local HttpService = game:GetService("HttpService")
         local CollectionService = game:GetService("CollectionService")
         local LocalPlayer = Players.LocalPlayer
+
+        do
+        local function installBloxFruitsBackgrounds()
+            local requestFunction = runtimeEnvironment.request or runtimeEnvironment.http_request
+                or (type(runtimeEnvironment.syn) == "table" and runtimeEnvironment.syn.request)
+            local writeFile = runtimeEnvironment.writefile
+            local isFile = runtimeEnvironment.isfile
+            local makeFolder = runtimeEnvironment.makefolder
+            local customAsset = runtimeEnvironment.getcustomasset or runtimeEnvironment.getsynasset
+            if type(requestFunction) ~= "function" or type(writeFile) ~= "function"
+                or type(customAsset) ~= "function" then return nil, {} end
+
+            local key = "🍈 Blox Fruits Live"
+            local assets = {}
+            local ok = pcall(function()
+                if type(makeFolder) == "function" then
+                    pcall(makeFolder, "VORHub")
+                    pcall(makeFolder, "VORHub/Assets")
+                end
+                local metadataJson = game:HttpGet(
+                    "https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=994732206&countPerUniverse=10&defaults=true&size=768x432&format=Png&isCircular=false"
+                )
+                local metadata = HttpService:JSONDecode(metadataJson)
+                local thumbnails = metadata and metadata.data and metadata.data[1] and metadata.data[1].thumbnails or {}
+                for _, thumbnail in ipairs(thumbnails) do
+                    local targetId = tonumber(thumbnail.targetId)
+                    local imageUrl = thumbnail.state == "Completed" and thumbnail.imageUrl or nil
+                    if targetId and type(imageUrl) == "string" and imageUrl ~= "" then
+                        local assetPath = "VORHub/Assets/blox_fruits_" .. tostring(targetId) .. ".png"
+                        if type(isFile) ~= "function" or not isFile(assetPath) then
+                            local response = requestFunction({Url = imageUrl, Method = "GET"})
+                            local body = response and (response.Body or response.body)
+                            if type(body) == "string" and #body > 0 then
+                                writeFile(assetPath, body)
+                            end
+                        end
+                        if type(isFile) ~= "function" or isFile(assetPath) then
+                            local assetOk, content = pcall(customAsset, assetPath)
+                            if assetOk and type(content) == "string" and content ~= "" then
+                                assets[#assets + 1] = content
+                            end
+                        end
+                    end
+                end
+                assert(#assets > 0, "No Blox Fruits thumbnails were cached")
+                SETTINGS.PanelBackgrounds = SETTINGS.PanelBackgrounds or {}
+                SETTINGS.PanelBackgrounds[key] = assets[1]
+                SETTINGS.DefaultPanelBackground = key
+            end)
+            if not ok then return nil, {} end
+            return key, assets
+        end
+
+        context.BloxFruitsBackgroundKey, context.BloxFruitsBackgroundAssets = installBloxFruitsBackgrounds()
+        end
 
         local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage({TextOnly = true})
         local FarmingPage = addHomeCategory("Farming", 1)
@@ -341,6 +403,7 @@ return function(context)
             FarmAnimationConnection = nil,
             SafeMode = false,
             SafeHealthPercent = 30,
+            BackgroundFrame = 1,
             CurrentEnemyName = nil,
             CurrentQuestName = nil,
             MoveTween = nil,
@@ -403,6 +466,34 @@ return function(context)
             WaterPlatform = nil,
             DamageDebugConnection = nil,
         }
+
+        do
+        local bloxBackgroundKey = context.BloxFruitsBackgroundKey
+        local bloxBackgroundAssets = context.BloxFruitsBackgroundAssets or {}
+        local function showBloxFruitsBackground(frame)
+            if not bloxBackgroundKey or #bloxBackgroundAssets == 0 then
+                return false
+            end
+            frame = ((tonumber(frame) or 1) - 1) % #bloxBackgroundAssets + 1
+            state.BackgroundFrame = frame
+            SETTINGS.PanelBackgrounds[bloxBackgroundKey] = bloxBackgroundAssets[frame]
+            Window:SetPanelBackground(bloxBackgroundKey)
+            gui:SetAttribute("BloxBackgroundFrame", frame)
+            gui:SetAttribute("BloxBackgroundFrameCount", #bloxBackgroundAssets)
+            return true
+        end
+
+        if showBloxFruitsBackground(1) then
+            task.spawn(function()
+                while state.Alive do
+                    task.wait(15)
+                    if state.Alive and gui:GetAttribute("VORPanelBackground") == bloxBackgroundKey then
+                        showBloxFruitsBackground(state.BackgroundFrame + 1)
+                    end
+                end
+            end)
+        end
+        end
         state.BerryEnvironment = type(getgenv) == "function" and getgenv() or _G
         pcall(function()
             local resumeSetting = TeleportService:GetTeleportSetting("VORBerryResumeHop")
@@ -1146,7 +1237,7 @@ return function(context)
             return enemyRoot.Position.Y
         end
 
-        local function positionAtEnemy(enemy, lockVertical, heightOverride)
+        local function positionAtEnemy(enemy, lockVertical, heightOverride, xOverride, zOverride)
             local enemyRoot = modelRoot(enemy)
             if not enemyRoot then
                 return nil
@@ -1219,9 +1310,9 @@ return function(context)
                 state.PositionJitter = Vector3.zero
             end
             local localOffset = Vector3.new(
-                state.FarmPositionX + horizontalOffset.X,
+                (tonumber(xOverride) or state.FarmPositionX) + horizontalOffset.X,
                 math.max(3, tonumber(heightOverride) or tonumber(state.MobAuraHeight) or 20),
-                state.FarmPositionZ + horizontalOffset.Z
+                (tonumber(zOverride) or state.FarmPositionZ) + horizontalOffset.Z
             )
             local worldOffset = state.PositionBasis:VectorToWorldSpace(localOffset)
             local gatheredFrom = state.GatherOriginalCFrames[enemy]
@@ -1241,6 +1332,14 @@ return function(context)
                     state.PositionAnchorWorld = stableAnchor
                 end
                 livePosition = stableAnchor
+            end
+            -- Raid NPCs regularly cross bridges and tiered islands. The generic
+            -- ground ray can hit the invisible raid-island locator above the NPC,
+            -- leaving the player more than Aura Kill's 70-stud maximum away.
+            -- Follow the live raid target's own elevation while retaining the
+            -- yaw lock that prevents the old circular movement bug.
+            if lockVertical and state.AutoRaid and LocalPlayer:GetAttribute("IslandRaiding") == true then
+                state.PositionAnchorY = livePosition.Y
             end
             local enemyAnchor = lockVertical and Vector3.new(
                 livePosition.X,
@@ -1306,6 +1405,33 @@ return function(context)
                 end
             end
             return required
+        end
+
+        state.RaidFarmOffset = function()
+            local x = tonumber(state.FarmPositionX) or 0
+            local y = math.max(3, tonumber(state.MobAuraHeight) or 20)
+            local z = tonumber(state.FarmPositionZ) or 0
+            local clamped = false
+            if state.DoubleAttack then
+                local maximum = DoubleAttackEngine.RaidMaxHitHeight
+                if y > maximum then
+                    y = maximum
+                    clamped = true
+                end
+                local horizontal = math.sqrt(x * x + z * z)
+                local allowedHorizontal = math.sqrt(math.max(0, maximum * maximum - y * y))
+                if horizontal > allowedHorizontal and horizontal > 0 then
+                    local scale = allowedHorizontal / horizontal
+                    x *= scale
+                    z *= scale
+                    clamped = true
+                end
+            end
+            gui:SetAttribute("BloxRaidPositionClamped", clamped)
+            gui:SetAttribute("BloxRaidEffectivePositionX", x)
+            gui:SetAttribute("BloxRaidEffectivePositionY", y)
+            gui:SetAttribute("BloxRaidEffectivePositionZ", z)
+            return x, y, z
         end
 
         local function healthPercent()
@@ -3855,13 +3981,11 @@ return function(context)
             state.RaidMovementReady = true
             state.RaidIslandIndex = island.Index
             state.RaidIslandName = island.Name
-            -- Registered M1 targeting stops at DoubleAttackEngine.HitRange. Stay
-            -- as high as possible while keeping a small replication/motion margin
-            -- so Dough enemies cannot force the player outside the hit window.
-            local safeHeight = math.min(
-                math.max(state.RaidSafeHeight, tonumber(state.MobAuraHeight) or 20),
-                DoubleAttackEngine.RaidMaxHitHeight
-            )
+            -- Raids use the same saved X/Y/Z controller as every other farm.
+            -- Only Double Attack needs a 38-stud spherical clamp; preserve the
+            -- requested Y and trim horizontal offset only when required.
+            local raidX, safeHeight, raidZ = state.RaidFarmOffset()
+            state.RaidSafeHeight = safeHeight
             state.ActiveFarmHeightOverride = safeHeight
             local currentHealth = healthPercent()
             local safeModeRecovery = state.SafeMode and currentHealth <= state.SafeHealthPercent
@@ -3891,7 +4015,7 @@ return function(context)
                     state.CurrentEnemyName = normalizeEnemyName(fallbackEnemy.Name)
                     state.RaidTargetName = state.CurrentEnemyName
                     syncFarmAuraRange(safeHeight)
-                    local targetCFrame = positionAtEnemy(fallbackEnemy, true, safeHeight)
+                    local targetCFrame = positionAtEnemy(fallbackEnemy, true, safeHeight, raidX, raidZ)
                     if targetCFrame then
                         moveToFarmPosition(targetCFrame)
                     end
@@ -3948,7 +4072,7 @@ return function(context)
                     return
                 end
                 syncFarmAuraRange(safeHeight)
-                local targetCFrame = positionAtEnemy(enemy, true, safeHeight)
+                local targetCFrame = positionAtEnemy(enemy, true, safeHeight, raidX, raidZ)
                 if targetCFrame then
                     moveToFarmPosition(targetCFrame)
                 end
@@ -8401,6 +8525,9 @@ return function(context)
                 return
             end
             cleaned = true
+            if runtimeEnvironment.__VORBloxFruitsCleanup == cleanup then
+                runtimeEnvironment.__VORBloxFruitsCleanup = nil
+            end
             if state.DamageDebugConnection then
                 pcall(function()
                     state.DamageDebugConnection:Disconnect()
@@ -8597,7 +8724,11 @@ return function(context)
             gui:SetAttribute("BloxAutoAttack", false)
             gui:SetAttribute("BloxLastAttackAt", 0)
             gui:SetAttribute("BloxAttackCount", state.AuraRequests)
-            track(gui.Destroying:Connect(cleanup))
+            gui.Destroying:Once(cleanup)
+            if context.Utilities and type(context.Utilities.OnCleanup) == "function" then
+                context.Utilities.OnCleanup(cleanup)
+            end
+            runtimeEnvironment.__VORBloxFruitsCleanup = cleanup
         end
 
         (function()
