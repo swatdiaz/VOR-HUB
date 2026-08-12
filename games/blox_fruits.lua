@@ -366,6 +366,14 @@ return function(context)
             DashLengthHasApplied = false,
             DashLengthLastApplied = nil,
             DashLengthConnection = nil,
+            DashSpeedMultiplier = 1,
+            DashSpeedCharacter = nil,
+            DashSpeedBase = nil,
+            DashSpeedHadBase = false,
+            DashSpeedApplying = false,
+            DashSpeedHasApplied = false,
+            DashSpeedLastApplied = nil,
+            DashSpeedConnection = nil,
             SubmarineWorkerSpeak = Net and Net:FindFirstChild("RF/SubmarineWorkerSpeak"),
             LastSubmergedTravel = -math.huge,
             SubmergedTravelRequestedAt = -math.huge,
@@ -646,6 +654,68 @@ return function(context)
             state.DashLengthApplying = false
             gui:SetAttribute("BloxDashLengthModifier", modifier)
             gui:SetAttribute("BloxDashLengthEffectiveBonus", base + modifier)
+        end
+
+        state.RestoreDashSpeed = function()
+            local dashCharacter = state.DashSpeedCharacter
+            if state.DashSpeedConnection then
+                pcall(function()
+                    state.DashSpeedConnection:Disconnect()
+                end)
+                state.DashSpeedConnection = nil
+            end
+            if dashCharacter and dashCharacter.Parent then
+                state.DashSpeedApplying = true
+                dashCharacter:SetAttribute(
+                    "DashSpeed",
+                    state.DashSpeedHadBase and state.DashSpeedBase or nil
+                )
+                state.DashSpeedApplying = false
+            end
+            state.DashSpeedCharacter = nil
+            state.DashSpeedBase = nil
+            state.DashSpeedHadBase = false
+            state.DashSpeedHasApplied = false
+            state.DashSpeedLastApplied = nil
+        end
+
+        state.ApplyDashSpeedMultiplier = function()
+            local dashCharacter = character()
+            if not dashCharacter then
+                return
+            end
+            if state.DashSpeedCharacter ~= dashCharacter then
+                state.RestoreDashSpeed()
+                state.DashSpeedCharacter = dashCharacter
+                state.DashSpeedBase = dashCharacter:GetAttribute("DashSpeed")
+                state.DashSpeedHadBase = state.DashSpeedBase ~= nil
+                local observedCharacter = dashCharacter
+                state.DashSpeedConnection = track(
+                    observedCharacter:GetAttributeChangedSignal("DashSpeed"):Connect(function()
+                        if state.DashSpeedApplying or state.DashSpeedCharacter ~= observedCharacter then
+                            return
+                        end
+                        local current = observedCharacter:GetAttribute("DashSpeed")
+                        if state.DashSpeedHasApplied and current == state.DashSpeedLastApplied then
+                            return
+                        end
+                        state.DashSpeedBase = current
+                        state.DashSpeedHadBase = current ~= nil
+                        task.defer(state.ApplyDashSpeedMultiplier)
+                    end)
+                )
+            end
+            local multiplier = math.clamp(tonumber(state.DashSpeedMultiplier) or 1, 0.1, 10)
+            local base = tonumber(state.DashSpeedBase) or 1
+            local applied = multiplier == 1 and (state.DashSpeedHadBase and state.DashSpeedBase or nil)
+                or base * multiplier
+            state.DashSpeedApplying = true
+            state.DashSpeedHasApplied = true
+            state.DashSpeedLastApplied = applied
+            dashCharacter:SetAttribute("DashSpeed", applied)
+            state.DashSpeedApplying = false
+            gui:SetAttribute("BloxDashSpeedMultiplier", multiplier)
+            gui:SetAttribute("BloxDashSpeedEffective", base * multiplier)
         end
 
         local function invoke(command, ...)
@@ -8102,6 +8172,20 @@ return function(context)
                 state.ApplyDashLengthModifier()
             end,
         })
+        PlayerStateSection:AddSlider({
+            Name = "Dash Speed Multiplier",
+            Description = "Changes the native Q/mobile DashSpeed attribute; 1x restores the game's current value",
+            Flag = "blox_dash_speed_multiplier",
+            Min = 0.1,
+            Max = 10,
+            Step = 0.1,
+            Round = 1,
+            Default = 1,
+            Callback = function(value)
+                state.DashSpeedMultiplier = math.clamp(tonumber(value) or 1, 0.1, 10)
+                state.ApplyDashSpeedMultiplier()
+            end,
+        })
         PlayerStateSection:AddToggle({
             Name = "Walk on Water",
             Flag = "blox_walk_water",
@@ -8206,6 +8290,7 @@ return function(context)
             state.OriginalFruitTapCooldown = tonumber(newCharacter:GetAttribute("FruitTAPCooldown")) or 0
             newCharacter:SetAttribute("FruitTAPCooldown", state.FruitM1CooldownReduction)
             task.defer(state.ApplyDashLengthModifier)
+            task.defer(state.ApplyDashSpeedMultiplier)
             resetMobAuraOrbit()
             state.MobAuraTarget = nil
             state.MobAuraTargetName = nil
@@ -8764,6 +8849,7 @@ return function(context)
             state.SeaEvent.RestoreBoatNoclip()
             state.SeaEvent.DestroySafety()
             state.RestoreDashLength()
+            state.RestoreDashSpeed()
             FarmVertical.SetAntiRagdoll(false)
             FarmVertical.SetCalmPose(false)
             FarmVertical.Release()
@@ -8902,6 +8988,8 @@ return function(context)
             gui:SetAttribute("BloxWalkOnWater", state.WalkOnWater)
             gui:SetAttribute("BloxDashLengthModifier", state.DashLengthModifier)
             gui:SetAttribute("BloxDashLengthEffectiveBonus", 0)
+            gui:SetAttribute("BloxDashSpeedMultiplier", state.DashSpeedMultiplier)
+            gui:SetAttribute("BloxDashSpeedEffective", 0)
             gui:SetAttribute("BloxPlayerESP", state.PlayerESP)
             gui:SetAttribute("BloxPlayerESPCount", 0)
             gui:SetAttribute(
@@ -8946,6 +9034,19 @@ return function(context)
             Enabled = false,
             Motors = setmetatable({}, {__mode = "k"}),
             StartedAt = 0,
+        }
+        local developerOutfitState = {
+            Enabled = false,
+            Selected = "Uzoth",
+            CustomUsername = "",
+            Character = nil,
+            OriginalSnapshot = nil,
+            AddedAccessories = {},
+            Generation = 0,
+        }
+        local DEVELOPER_OUTFITS = {
+            Uzoth = "Uzoth",
+            ["rip_indra"] = "rip_indra",
         }
         local VOID_KITSUNE_COLORS = {
             Color3.fromRGB(151, 70, 255),
@@ -9323,7 +9424,305 @@ return function(context)
             gui:SetAttribute("BloxIdentityMask", identityMaskState.Mode)
         end
 
+        local function selectedDeveloperUsername()
+            if developerOutfitState.Selected == "Custom Username" then
+                return tostring(developerOutfitState.CustomUsername or ""):match("^%s*(.-)%s*$")
+            end
+            return DEVELOPER_OUTFITS[developerOutfitState.Selected]
+        end
+
+        local function restoreDeveloperOutfit(silent)
+            developerOutfitState.Generation += 1
+            local outfitCharacter = developerOutfitState.Character
+            local original = developerOutfitState.OriginalSnapshot
+            local restored = false
+            for _, accessory in ipairs(developerOutfitState.AddedAccessories) do
+                if accessory and accessory.Parent then
+                    accessory:Destroy()
+                end
+            end
+            table.clear(developerOutfitState.AddedAccessories)
+            if outfitCharacter and outfitCharacter.Parent and original then
+                for _, accessory in ipairs(original.Accessories) do
+                    if accessory then
+                        accessory.Parent = outfitCharacter
+                    end
+                end
+                for _, clothing in ipairs(original.Clothing) do
+                    if clothing.Instance and clothing.Instance.Parent then
+                        clothing.Instance[clothing.Property] = clothing.Value
+                    end
+                end
+                for _, child in ipairs(outfitCharacter:GetChildren()) do
+                    if child:GetAttribute("VORDeveloperOutfit") == true then
+                        child:Destroy()
+                    end
+                end
+                restored = true
+            end
+            developerOutfitState.Character = nil
+            developerOutfitState.OriginalSnapshot = nil
+            gui:SetAttribute("BloxDeveloperOutfitApplied", false)
+            gui:SetAttribute("BloxDeveloperOutfitUserId", 0)
+            gui:SetAttribute("BloxDeveloperOutfitUsername", "")
+            if not silent then
+                Window:Notify(
+                    "Developer Outfit",
+                    restored and "Original outfit restored locally" or "No local developer outfit was active",
+                    3
+                )
+            end
+        end
+
+        local function loadAvatarAsset(assetId, wantedClass)
+            if not tonumber(assetId) or tonumber(assetId) <= 0 then
+                return nil
+            end
+            local ok, objects = pcall(game.GetObjects, game, "rbxassetid://" .. tostring(assetId))
+            if not ok or type(objects) ~= "table" then
+                return nil
+            end
+            for _, object in ipairs(objects) do
+                if object:IsA(wantedClass) then
+                    return object
+                end
+                local found = object:FindFirstChildWhichIsA(wantedClass, true)
+                if found then
+                    found.Parent = nil
+                    object:Destroy()
+                    return found
+                end
+                object:Destroy()
+            end
+            return nil
+        end
+
+        local function attachLocalAccessory(outfitCharacter, accessory)
+            local handle = accessory and accessory:FindFirstChild("Handle")
+            if not handle or not handle:IsA("BasePart") then
+                return false
+            end
+            local handleAttachment = handle:FindFirstChildWhichIsA("Attachment")
+            local bodyAttachment = nil
+            if handleAttachment then
+                for _, descendant in ipairs(outfitCharacter:GetDescendants()) do
+                    if descendant:IsA("Attachment") and descendant.Name == handleAttachment.Name
+                        and not descendant:IsDescendantOf(accessory) then
+                        bodyAttachment = descendant
+                        break
+                    end
+                end
+            end
+            local bodyPart = bodyAttachment and bodyAttachment.Parent
+            if not bodyPart or not bodyPart:IsA("BasePart") then
+                return false
+            end
+            accessory:SetAttribute("VORDeveloperOutfit", true)
+            accessory.Parent = outfitCharacter
+            handle.CanCollide = false
+            handle.Massless = true
+            handle.CFrame = bodyPart.CFrame * bodyAttachment.CFrame * handleAttachment.CFrame:Inverse()
+            local weld = Instance.new("Weld")
+            weld.Name = "AccessoryWeld"
+            weld.Part0 = handle
+            weld.Part1 = bodyPart
+            weld.C0 = handleAttachment.CFrame
+            weld.C1 = bodyAttachment.CFrame
+            weld.Parent = handle
+            return true
+        end
+
+        local function avatarAccessoryIds(description)
+            local ids = {}
+            for _, property in ipairs({
+                "HatAccessory", "HairAccessory", "FaceAccessory", "NeckAccessory",
+                "ShouldersAccessory", "FrontAccessory", "BackAccessory", "WaistAccessory",
+            }) do
+                for rawId in string.gmatch(tostring(description[property] or ""), "%d+") do
+                    ids[#ids + 1] = tonumber(rawId)
+                end
+            end
+            return ids
+        end
+
+        local function applyLocalClothing(outfitCharacter, description, snapshot)
+            for _, entry in ipairs({
+                {Class = "Shirt", Property = "ShirtTemplate", Id = description.Shirt},
+                {Class = "Pants", Property = "PantsTemplate", Id = description.Pants},
+                {Class = "ShirtGraphic", Property = "Graphic", Id = description.GraphicTShirt},
+            }) do
+                local current = outfitCharacter:FindFirstChildOfClass(entry.Class)
+                if current and not snapshot.ClothingCaptured then
+                    snapshot.Clothing[#snapshot.Clothing + 1] = {
+                        Instance = current,
+                        Property = entry.Property,
+                        Value = current[entry.Property],
+                    }
+                end
+                local loaded = loadAvatarAsset(entry.Id, entry.Class)
+                if loaded then
+                    if current then
+                        current[entry.Property] = loaded[entry.Property]
+                        loaded:Destroy()
+                    else
+                        loaded:SetAttribute("VORDeveloperOutfit", true)
+                        loaded.Parent = outfitCharacter
+                    end
+                elseif current then
+                    current[entry.Property] = ""
+                end
+            end
+            snapshot.ClothingCaptured = true
+        end
+
+        local function applyDeveloperOutfit()
+            local username = selectedDeveloperUsername()
+            if not developerOutfitState.Enabled or not username or username == "" then
+                if developerOutfitState.Enabled then
+                    Window:Notify("Developer Outfit", "Enter a valid Roblox username first", 3)
+                end
+                return
+            end
+            developerOutfitState.Generation += 1
+            local generation = developerOutfitState.Generation
+            task.spawn(function()
+                local idOk, userId = pcall(Players.GetUserIdFromNameAsync, Players, username)
+                if not idOk or tonumber(userId) == nil then
+                    if developerOutfitState.Generation == generation then
+                        Window:Notify("Developer Outfit", "Could not resolve @" .. username, 3)
+                    end
+                    return
+                end
+                local descriptionOk, description = pcall(
+                    Players.GetHumanoidDescriptionFromUserId,
+                    Players,
+                    userId
+                )
+                if not descriptionOk or not description then
+                    if developerOutfitState.Generation == generation then
+                        Window:Notify("Developer Outfit", "Could not load @" .. username .. "'s avatar", 3)
+                    end
+                    return
+                end
+                local outfitCharacter = LocalPlayer.Character
+                local outfitHumanoid = outfitCharacter and outfitCharacter:FindFirstChildOfClass("Humanoid")
+                if developerOutfitState.Generation ~= generation
+                    or not developerOutfitState.Enabled or not outfitHumanoid then
+                    return
+                end
+                if developerOutfitState.Character ~= outfitCharacter
+                    or not developerOutfitState.OriginalSnapshot then
+                    local snapshot = {Accessories = {}, Clothing = {}}
+                    for _, child in ipairs(outfitCharacter:GetChildren()) do
+                        if child:IsA("Accessory") then
+                            snapshot.Accessories[#snapshot.Accessories + 1] = child
+                            child.Parent = nil
+                        end
+                    end
+                    developerOutfitState.Character = outfitCharacter
+                    developerOutfitState.OriginalSnapshot = snapshot
+                end
+                for _, accessory in ipairs(developerOutfitState.AddedAccessories) do
+                    if accessory and accessory.Parent then
+                        accessory:Destroy()
+                    end
+                end
+                table.clear(developerOutfitState.AddedAccessories)
+                local snapshot = developerOutfitState.OriginalSnapshot
+                applyLocalClothing(outfitCharacter, description, snapshot)
+                local addedCount = 0
+                for _, assetId in ipairs(avatarAccessoryIds(description)) do
+                    local accessory = loadAvatarAsset(assetId, "Accessory")
+                    if accessory and attachLocalAccessory(outfitCharacter, accessory) then
+                        developerOutfitState.AddedAccessories[#developerOutfitState.AddedAccessories + 1] = accessory
+                        addedCount += 1
+                    elseif accessory then
+                        accessory:Destroy()
+                    end
+                end
+                local applied = addedCount > 0
+                    or tonumber(description.Shirt) > 0
+                    or tonumber(description.Pants) > 0
+                if developerOutfitState.Generation ~= generation then
+                    return
+                end
+                gui:SetAttribute("BloxDeveloperOutfitApplied", applied)
+                gui:SetAttribute("BloxDeveloperOutfitUserId", applied and userId or 0)
+                gui:SetAttribute("BloxDeveloperOutfitUsername", applied and username or "")
+                Window:Notify(
+                    "Developer Outfit",
+                    applied and ("Wearing @" .. username .. " locally; other players still see you")
+                        or ("No locally loadable outfit assets were found for @" .. username),
+                    4
+                )
+            end)
+        end
+
         CosmeticsSection:AddLabel("Uses Kitsune's native three-channel VFX system plus its Galaxy mutation hooks, so the model, tails, and local abilities stay synchronized.")
+        CosmeticsSection:AddLabel("Experimental developer outfits are client-only. Nobody else sees the costume theft, you fashionable criminal.")
+        CosmeticsSection:AddDropdown({
+            Name = "Developer Outfit",
+            Description = "Choose a preset or enter any Roblox username below",
+            Flag = "blox_developer_outfit",
+            Options = {"Uzoth", "rip_indra", "Custom Username"},
+            Default = "Uzoth",
+            Callback = function(value)
+                developerOutfitState.Selected = tostring(value or "Uzoth")
+                if developerOutfitState.Enabled then
+                    applyDeveloperOutfit()
+                end
+            end,
+        })
+        CosmeticsSection:AddInput({
+            Name = "Custom Outfit Username",
+            Description = "Exact Roblox username; display names do not work",
+            Flag = "blox_developer_outfit_username",
+            Default = "",
+            Placeholder = "Example: Uzoth",
+            Callback = function(value)
+                developerOutfitState.CustomUsername = tostring(value or "")
+                if developerOutfitState.Enabled
+                    and developerOutfitState.Selected == "Custom Username" then
+                    applyDeveloperOutfit()
+                end
+            end,
+        })
+        CosmeticsSection:AddToggle({
+            Name = "Wear Developer Outfit (Local)",
+            Description = "Apply the selected avatar only on your client; disabling restores your saved outfit",
+            Flag = "blox_developer_outfit_enabled",
+            Default = false,
+            Callback = function(enabled)
+                developerOutfitState.Enabled = enabled == true
+                if developerOutfitState.Enabled then
+                    applyDeveloperOutfit()
+                else
+                    restoreDeveloperOutfit(developerOutfitState.OriginalSnapshot == nil)
+                end
+            end,
+        })
+        CosmeticsSection:AddButton({
+            Name = "Reapply Selected Outfit",
+            Callback = function()
+                if developerOutfitState.Enabled then
+                    applyDeveloperOutfit()
+                else
+                    Window:Notify("Developer Outfit", "Turn the local outfit toggle on first", 3)
+                end
+            end,
+        })
+        CosmeticsSection:AddButton({
+            Name = "Restore Original Outfit Now",
+            Callback = function()
+                local control = Window.PersistentControls["blox_developer_outfit_enabled"]
+                if control and control:Get() then
+                    control:Set(false)
+                else
+                    developerOutfitState.Enabled = false
+                    restoreDeveloperOutfit(false)
+                end
+            end,
+        })
         CosmeticsSection:AddToggle({
             Name = "Void Kitsune Theme",
             Description = "Galaxy mutation model with VOR violet, abyss purple, and void magenta VFX",
@@ -9394,6 +9793,21 @@ return function(context)
                 end
             end
         end))
+        track(LocalPlayer.CharacterAdded:Connect(function()
+            developerOutfitState.Character = nil
+            developerOutfitState.OriginalSnapshot = nil
+            table.clear(developerOutfitState.AddedAccessories)
+            if developerOutfitState.Enabled then
+                task.delay(1.5, applyDeveloperOutfit)
+            end
+        end))
+        gui.Destroying:Once(function()
+            developerOutfitState.Enabled = false
+            restoreDeveloperOutfit(true)
+            restoreKitsuneFloat()
+            restoreIdentityMask()
+            restoreKitsuneColors()
+        end)
         end)()
 
         if type(context.LoadModule) ~= "function" or type(context.RunBuilder) ~= "function" then

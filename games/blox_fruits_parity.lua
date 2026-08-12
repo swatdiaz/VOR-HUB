@@ -1064,7 +1064,8 @@ return function(context)
     local function stepEsp()
         local root = helpers.RootPart()
         for object in pairs(runtime.EspObjects) do
-            if not object.Parent then
+            if not object.Parent
+                or string.find(string.lower(object.Name), "sunflower", 1, true) then
                 removeEsp(object)
             end
         end
@@ -1102,8 +1103,17 @@ return function(context)
         end
         if runtime.Esp.Flower then
             for _, object in ipairs(workspace:GetDescendants()) do
-                local lower = string.lower(object.Name)
-                if lower:find("flower", 1, true) then
+                local lower = string.lower(object.Name):gsub("[%s_%-]", "")
+                -- Decorative Port flowers are literally named "sunflower"
+                -- and cannot be collected. Flower ESP is only for the three
+                -- Alchemist quest flowers and their readable aliases.
+                local questFlower = lower == "flower1"
+                    or lower == "flower2"
+                    or lower == "flower3"
+                    or lower == "redflower"
+                    or lower == "blueflower"
+                    or lower == "yellowflower"
+                if questFlower then
                     addEsp(object, object.Name, Color3.fromRGB(96, 220, 255))
                 end
             end

@@ -677,6 +677,48 @@ if (-not $dashLengthChanger) {
     throw "Dash Length Changer must use the native Dodge DashLength attribute, survive respawn, and restore the original value"
 }
 
+$dashSpeedChanger = (
+    $bloxText -match 'Name\s*=\s*"Dash Speed Multiplier"' -and
+    $bloxText -match 'Flag\s*=\s*"blox_dash_speed_multiplier"' -and
+    $bloxText -match 'GetAttributeChangedSignal\("DashSpeed"\)' -and
+    $bloxText -match 'dashCharacter:SetAttribute\("DashSpeed", applied\)' -and
+    $bloxText -match 'state\.ApplyDashSpeedMultiplier\s*=\s*function\(\)' -and
+    $bloxText -match 'task\.defer\(state\.ApplyDashSpeedMultiplier\)' -and
+    $bloxText -match 'state\.RestoreDashSpeed\(\)' -and
+    $bloxText -match 'BloxDashSpeedMultiplier'
+)
+if (-not $dashSpeedChanger) {
+    throw "Dash Speed Multiplier must use the native DashSpeed attribute, survive respawn, and restore the original value"
+}
+
+$flowerEspFilter = (
+    $parityText -match 'lower == "flower1"' -and
+    $parityText -match 'lower == "flower2"' -and
+    $parityText -match 'lower == "flower3"' -and
+    $parityText -match 'string\.find\(string\.lower\(object\.Name\), "sunflower", 1, true\)' -and
+    $parityText -notmatch 'if lower:find\("flower", 1, true\) then'
+)
+if (-not $flowerEspFilter) {
+    throw "Flower ESP must ignore decorative sunflowers and target only collectible Alchemist flowers"
+}
+
+$developerOutfit = (
+    $bloxText -match 'Name\s*=\s*"Wear Developer Outfit \(Local\)"' -and
+    $bloxText -match 'Flag\s*=\s*"blox_developer_outfit_enabled"' -and
+    $bloxText -match 'Players\.GetUserIdFromNameAsync' -and
+    $bloxText -match 'Players\.GetHumanoidDescriptionFromUserId' -and
+    $bloxText -match 'pcall\(game\.GetObjects, game, "rbxassetid://' -and
+    $bloxText -match 'weld\.Name = "AccessoryWeld"' -and
+    $bloxText -match 'snapshot\.Accessories\[#snapshot\.Accessories \+ 1\] = child' -and
+    $bloxText -match 'accessory\.Parent = outfitCharacter' -and
+    $bloxText -notmatch 'ApplyDescriptionReset\(' -and
+    $bloxText -match 'task\.delay\(1\.5, applyDeveloperOutfit\)' -and
+    $bloxText -match 'restoreDeveloperOutfit\(true\)'
+)
+if (-not $developerOutfit) {
+    throw "Developer outfits must be local, username-resolved, respawn-safe, and reversibly restore the original description"
+}
+
 $movementModes = @{
     "Auto Farm Level" = @("blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm", "blox_auto_chest")
     "Auto Collect Chests" = @("blox_auto_level", "blox_auto_boss", "blox_auto_raid", "blox_mob_aura_tp", "blox_selected_mob_farm")
