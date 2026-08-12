@@ -143,6 +143,7 @@ return function(context)
         AutoEquipBest = false,
         AutoDailyChest = false,
         FullProgression = false,
+        SmartBestEgg = true,
         HybridMode = false,
         HybridPhase = "Idle",
         HybridPhaseStarted = 0,
@@ -1731,6 +1732,23 @@ return function(context)
     ClaimAutoSection:AddButton({Name = "Claim Achievements Now", Callback = claimAvailableAchievements})
     ClaimAutoSection:AddButton({Name = "Claim Task Rewards Now", Callback = claimAvailableTasks})
 
+    automationControls.SmartBestEgg = FullAutoSection:AddToggle({
+        Name = "Best Affordable Egg",
+        Description = "With Full Progression, automatically targets the highest affordable unlocked Wins egg. Turn this off to keep hatching your manually selected egg.",
+        Flag = "dograce_smart_best_egg",
+        Default = true,
+        Callback = function(enabled)
+            state.SmartBestEgg = enabled == true
+            if state.FullProgression and state.SmartBestEgg then
+                retargetBestAffordableWinsEgg()
+            else
+                state.LastAction = state.SmartBestEgg
+                    and "Best affordable egg selection armed"
+                    or ("Manual egg target locked: " .. tostring(state.SelectedEgg))
+            end
+        end,
+    })
+
     automationControls.Full = FullAutoSection:AddToggle({
         Name = "FULL PROGRESSION",
         Description = "One switch: power/race cycle, eggs, rewards, tasks, shops, unlocks, pets, gear, chest, and rebirth.",
@@ -1739,7 +1757,7 @@ return function(context)
         Callback = function(enabled)
             state.FullProgression = enabled == true
             setFullProgressionMembers(enabled == true)
-            if enabled then
+            if enabled and state.SmartBestEgg then
                 retargetBestAffordableWinsEgg()
             end
             state.LastAction = enabled and "Full progression armed; locked systems will wait"
@@ -2156,7 +2174,8 @@ return function(context)
         end
         gearInventoryLabel.Text = string.format("Dog gear: %d equipped | %d stored", equippedGear, storedGear)
         fullAutoLabel.Text = state.FullProgression
-            and "Full progression: ON — locked systems are waiting"
+            and string.format("Full progression: ON — egg target %s",
+                state.SmartBestEgg and "BEST AFFORDABLE" or "MANUAL")
             or "Full progression: OFF"
         hybridLabel.Text = string.format("Hybrid: %s | %ss power window",
             state.HybridPhase, tostring(state.HybridTrainSeconds))
@@ -2209,6 +2228,7 @@ return function(context)
             gui:SetAttribute("DogRaceSelectedCrate", state.SelectedCrate)
             gui:SetAttribute("DogRaceSpeedMultiplier", state.SpeedMultiplier)
             gui:SetAttribute("DogRaceFullProgression", state.FullProgression)
+            gui:SetAttribute("DogRaceSmartBestEgg", state.SmartBestEgg)
             gui:SetAttribute("DogRaceHybridMode", state.HybridMode)
             gui:SetAttribute("DogRaceHybridPhase", state.HybridPhase)
             gui:SetAttribute("DogRaceAutoOnlineRewards", state.AutoOnlineRewards)
@@ -2308,7 +2328,9 @@ return function(context)
                 -- Profiles and individual toggles can be applied in any order. The master
                 -- switch owns its children and repairs any drift instead of silently lying.
                 setFullProgressionMembers(true)
-                retargetBestAffordableWinsEgg()
+                if state.SmartBestEgg then
+                    retargetBestAffordableWinsEgg()
+                end
             end
             updateHybrid(now)
             if state.AutoHatch then
