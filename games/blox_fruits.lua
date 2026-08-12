@@ -151,7 +151,7 @@ return function(context)
             RaidHitMargin = 0.5,
             RaidMaxHitHeight = 37.5,
             RaidRecoveryPercent = 70,
-            RaidRecoveryHeight = 250,
+            RaidRecoveryHeight = 1000,
             RaidTweenSpeed = 150,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
