@@ -951,6 +951,12 @@ return function(context)
         end
         local price = hatchPrice(data, eggId) or 0
         local balance = currencyAmount(data, config.Currency)
+        if state.FullProgression and state.AutoBird and config.Currency == "Wins" then
+            local reserve = Equipment.nextBirdWinsReserve(data)
+            if balance - price * count < reserve then
+                return false, string.format("Saving %s Wins for the next bird", compactNumber(reserve))
+            end
+        end
         if balance < price * count then
             return false, string.format("Need %s %s; have %s", compactNumber(price * count),
                 tostring(config.Currency), compactNumber(balance))
