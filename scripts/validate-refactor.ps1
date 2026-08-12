@@ -383,7 +383,7 @@ $raidRangeSafety = (
     $bloxText -match 'RaidHitMargin = 0\.5' -and
     $bloxText -match 'RaidMaxHitHeight = 37\.5' -and
     $bloxText -match 'RaidRecoveryPercent = 70' -and
-    $bloxText -match 'RaidRecoveryHeight = 1000' -and
+    $bloxText -match 'RaidRecoveryHeight = 2000' -and
     $bloxText -match 'RaidTweenSpeed = 150' -and
     $bloxText -match 'Flag\s*=\s*"blox_safe_tween"' -and
     $bloxText -match '(?s)Name\s*=\s*"Tween Speed".*?Max\s*=\s*300.*?Default\s*=\s*250' -and
@@ -406,6 +406,7 @@ $raidRangeSafety = (
     $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
     $bloxText -match 'local holdCFrame = island\.Part\.CFrame \+ Vector3\.new\(raidX, safeHeight, raidZ\)' -and
     $bloxText -match '(?s)if state\.RaidVoidActive then.*?state\.ActiveFarmTarget = nil.*?state\.RaidTargetName = nil.*?moveTo\(holdCFrame\).*?cancelMove\(false\)' -and
+    $bloxText -match '(?s)state\.RaidVoidFallbackActive and root and waitingRoot.*?fallbackTool:Activate\(\).*?island-5-stationary-fallback' -and
     $bloxText -notmatch 'Native fallback:' -and
     $bloxText -match 'BloxRaidSafeModeActive' -and
     $bloxText -match 'BloxRaidVoidFallbackActive' -and

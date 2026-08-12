@@ -151,7 +151,7 @@ return function(context)
             RaidHitMargin = 0.5,
             RaidMaxHitHeight = 37.5,
             RaidRecoveryPercent = 70,
-            RaidRecoveryHeight = 1000,
+            RaidRecoveryHeight = 2000,
             RaidTweenSpeed = 150,
         }
         -- The live Fruit LocalScript subtracts this Character attribute from
@@ -4086,6 +4086,24 @@ return function(context)
                     if root then
                         root.AssemblyLinearVelocity = Vector3.zero
                         root.AssemblyAngularVelocity = Vector3.zero
+                    end
+                    local waitingEnemy = state.RaidVoidFocus
+                    local waitingRoot = modelRoot(waitingEnemy)
+                    if state.RaidVoidFallbackActive and root and waitingRoot
+                        and modelAlive(waitingEnemy)
+                        and (waitingRoot.Position - root.Position).Magnitude <= state.AuraRange
+                        and os.clock() - state.LastRaidNativeFallback >= 0.22 then
+                        local fallbackTool = state.DoubleAttack
+                            and toolForSelection(state.DoubleAttackWeaponSelection()) or selectedTool()
+                        if fallbackTool then
+                            state.LastRaidNativeFallback = os.clock()
+                            equipTool(fallbackTool)
+                            if pcall(function() fallbackTool:Activate() end) then
+                                state.RaidNativeFallbackCount += 1
+                                state.AuraStage = "island-5-stationary-fallback"
+                                gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
+                            end
+                        end
                     end
                 end
                 raidLabel.Text = string.format(
