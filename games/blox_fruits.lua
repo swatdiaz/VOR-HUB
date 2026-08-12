@@ -221,6 +221,8 @@ return function(context)
             RaidHasEntered = false,
             RaidLastInactiveAt = os.clock(),
             RaidMovementReady = false,
+            RaidClusterAnchor = nil,
+            RaidClusterRadius = 7500,
             RaidCastleStart = CFrame.new(-5064, 314, -2938),
             SelectedRaid = "Flame",
             RaidIslandIndex = 0,
@@ -3781,7 +3783,40 @@ return function(context)
                 return nil
             end
             local islands = RaidRuntime.IslandParts()
-            return islands[#islands]
+            local root = rootPart()
+            if not root then
+                return nil
+            end
+            -- Island markers are server-wide. Lock this cycle to the Island 1
+            -- cluster the local character actually entered so a later-numbered
+            -- island from another player's raid cannot kidnap our farm.
+            if not state.RaidClusterAnchor then
+                local nearestEntry = nil
+                local nearestDistance = math.huge
+                for _, candidate in ipairs(islands) do
+                    if candidate.Index == 1 then
+                        local distance = (candidate.Part.Position - root.Position).Magnitude
+                        if distance < nearestDistance then
+                            nearestEntry = candidate
+                            nearestDistance = distance
+                        end
+                    end
+                end
+                if not nearestEntry or nearestDistance > 5000 then
+                    return nil
+                end
+                state.RaidClusterAnchor = nearestEntry.Part.Position
+            end
+            local latest = nil
+            for _, candidate in ipairs(islands) do
+                if (candidate.Part.Position - state.RaidClusterAnchor).Magnitude
+                    <= state.RaidClusterRadius then
+                    if not latest or candidate.Index > latest.Index then
+                        latest = candidate
+                    end
+                end
+            end
+            return latest
         end
 
         function RaidRuntime.NearestEnemy(island)
@@ -8241,12 +8276,14 @@ return function(context)
                 state.RaidHasEntered = true
                 state.RaidEnteredAt = freshRaid and now or 0
                 if freshRaid then
+                    state.RaidClusterAnchor = nil
                     state.RaidVoidKillCount = 0
                     state.LastRaidVoidStep = 0
                     table.clear(state.RaidVoidTargets)
                     table.clear(state.RaidVoidOriginalCFrames)
                 end
             else
+                state.RaidClusterAnchor = nil
                 state.RaidEnteredAt = 0
                 state.RaidLastInactiveAt = os.clock()
             end

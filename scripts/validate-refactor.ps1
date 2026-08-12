@@ -401,6 +401,7 @@ $raidRangeSafety = (
     $bloxText -match '(?s)local raidCombatActive = state\.AutoRaid and state\.RaidMovementReady.*?local doubleAttackActive = state\.DoubleAttack and not raidCombatActive.*?local plan = \{Double = doubleAttackActive\}' -and
     $bloxText -match '(?s)local raidCombatActive = state\.AutoRaid and RaidRuntime\.Active\(\).*?local enabled = not raidVoidActive and not raidCombatActive.*?and \(multiGrabEnabled or state\.AutoMagnet\)' -and
     $bloxText -match '(?s)if not island then.*?if not state\.AutoStartRaid then\s+cancelMove\(false\)\s+end.*?Dungeon / Raid: Waiting to start' -and
+    $bloxText -match '(?s)RaidClusterAnchor = nil.*?RaidClusterRadius = 7500.*?function RaidRuntime\.LatestIsland\(\).*?candidate\.Index == 1.*?nearestDistance > 5000.*?state\.RaidClusterAnchor = nearestEntry\.Part\.Position.*?candidate\.Part\.Position - state\.RaidClusterAnchor.*?state\.RaidClusterRadius' -and
     $bloxText -match '(?s)damaged > 0.*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?fallbackTool:Activate\(\).*?BloxRaidNativeFallbackCount' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
