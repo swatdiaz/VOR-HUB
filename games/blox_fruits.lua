@@ -2668,7 +2668,10 @@ return function(context)
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
             local attackTargets = {target}
-            if state.DoubleAttack then
+            local raidCombatActive = state.AutoRaid
+                and LocalPlayer:GetAttribute("IslandRaiding") == true
+            local doubleAttackActive = state.DoubleAttack and not raidCombatActive
+            if doubleAttackActive then
                 -- Double Attack mirrors the Dungeon engine: every eligible
                 -- nearby rig is part of the same Sword window even when Multi
                 -- Grab is off. Fruit independently covers its nearest three.
@@ -2693,9 +2696,9 @@ return function(context)
             end
             state.AuraMultiTargetCount = #attackTargets
             local extraDelay = math.max(tonumber(state.AttackInterval) or 0, 0)
-            local plan = {Double = state.DoubleAttack}
+            local plan = {Double = doubleAttackActive}
 
-            if state.DoubleAttack then
+            if doubleAttackActive then
                 plan.SwordSelection = state.DoubleAttackWeaponSelection()
                 plan.Sword = toolForSelection(plan.SwordSelection)
                 plan.Fruit = toolForSelection("M1 Fruit")
@@ -2779,7 +2782,7 @@ return function(context)
             state.AuraAttackPending = true
             state.AuraAttackPendingAt = os.clock()
             state.LastAttack = now
-            state.AuraStage = state.DoubleAttack and "double-queued" or "queued"
+            state.AuraStage = doubleAttackActive and "double-queued" or "queued"
             state.AuraLastRequestAt = now
             state.CurrentEnemyName = normalizeEnemyName(target.Enemy.Name)
             state.AuraLastDistance = target.Distance
@@ -4378,6 +4381,7 @@ return function(context)
             end
             local raidIsland = state.AutoRaid and RaidRuntime.LatestIsland() or nil
             local raidVoidActive = state.RaidVoidKill and raidIsland and raidIsland.Index >= 5
+            local raidCombatActive = state.AutoRaid and RaidRuntime.Active()
             local raidGatherEnabled = state.RaidMultiGrab and state.AutoRaid
                 and RaidRuntime.Active() and not raidVoidActive
             local multiGrabEnabled = state.GatherEnemies or raidGatherEnabled
@@ -4392,7 +4396,8 @@ return function(context)
             -- Solix keeps already-captured NPCs frozen while Auto Magnet stays
             -- enabled, even when the farm temporarily travels or turns off.
             -- New captures still require an active farm target.
-            local enabled = not raidVoidActive and (multiGrabEnabled or state.AutoMagnet)
+            local enabled = not raidVoidActive and not raidCombatActive
+                and (multiGrabEnabled or state.AutoMagnet)
             if not enabled then
                 state.Gathered = 0
                 state.RaidGathered = 0
@@ -7787,7 +7792,7 @@ return function(context)
         })
         RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
         RaidSection:AddLabel("Auto Farm Raid always tweens between NPCs at 150 studs/second; the global Tween Speed still controls travel outside raids.")
-        RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking; Island 5 Force Kill falls back to normal raid combat when ownership makes no progress.")
+        RaidSection:AddLabel("Raids temporarily suppress Double Attack and Auto Magnet for server-stable single-target hits; Island 5 Force Kill falls back when ownership stalls.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
             Description = "Attempts stationary ownership kills, then automatically resumes 150-speed close-range combat if enemy health stalls",

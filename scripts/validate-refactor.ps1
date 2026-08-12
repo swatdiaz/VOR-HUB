@@ -341,7 +341,7 @@ $fruitDoubleAttack = (
     $bloxText -match 'Flag\s*=\s*"blox_double_attack"' -and
     $bloxText -match 'Name\s*=\s*"Double Attack \(Weapon \+ Fruit M1\)"' -and
     $bloxText -match 'Options\s*=\s*\{"Sword", "Melee"\}' -and
-    $bloxText -match 'plan = \{Double = state\.DoubleAttack\}' -and
+    $bloxText -match 'plan = \{Double = doubleAttackActive\}' -and
     $bloxText -match 'DoubleAttackEngine\.SendSword\(' -and
     $bloxText -notmatch 'blox_dual_weapon_attack' -and
     $bloxText -notmatch 'DualWeaponAttack'
@@ -398,6 +398,8 @@ $raidRangeSafety = (
     $bloxText -match 'BloxRaidEffectivePositionY' -and
     $bloxText -match 'BloxRaidEffectivePositionZ' -and
     $bloxText -match 'LastRaidNativeFallback = -math\.huge' -and
+    $bloxText -match '(?s)local raidCombatActive = state\.AutoRaid.*?LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?local doubleAttackActive = state\.DoubleAttack and not raidCombatActive.*?local plan = \{Double = doubleAttackActive\}' -and
+    $bloxText -match '(?s)local raidCombatActive = state\.AutoRaid and RaidRuntime\.Active\(\).*?local enabled = not raidVoidActive and not raidCombatActive.*?and \(multiGrabEnabled or state\.AutoMagnet\)' -and
     $bloxText -match '(?s)damaged > 0.*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?fallbackTool:Activate\(\).*?BloxRaidNativeFallbackCount' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
