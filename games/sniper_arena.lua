@@ -98,7 +98,7 @@ return function(context)
         AimActivation = "While Aiming",
         AimPart = "Head",
         AimRadius = 2000,
-        AimSmoothness = 2,
+        AimSmoothness = 10,
         TeamCheck = true,
         WallCheck = false,
         ShowFov = false,
@@ -154,6 +154,18 @@ return function(context)
         return mode and tostring(mode.Value) or "Unknown"
     end
 
+    local function activeGameRoom()
+        local roomId = LocalPlayer:GetAttribute("GameRoom")
+        if roomId == nil or tostring(roomId) == "" then return nil end
+        local world = workspace:FindFirstChild("World")
+        local room = world and world:FindFirstChild(tostring(roomId))
+        return room and room:FindFirstChild("Entities") and room or nil
+    end
+
+    local function isActiveMatch()
+        return activeGameRoom() ~= nil and tonumber(LocalPlayer:GetAttribute("Health") or 0) > 0
+    end
+
     local function sameTeam(player)
         local mode = serverMode()
         if mode == "Arcade" or string.find(mode, "FFA", 1, true) then return false end
@@ -179,7 +191,7 @@ return function(context)
         local tempRoot = workspace:FindFirstChild("_Temp")
         if tempRoot and model:IsDescendantOf(tempRoot) then return end
         local humanoid = model:FindFirstChildOfClass("Humanoid")
-        local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        local root = model:FindFirstChild("HumanoidRootPart", true) or model.PrimaryPart
         if not humanoid or not root or modelHealth(model, humanoid) <= 0 then return end
         seen[model] = true
         records[#records + 1] = {
@@ -204,6 +216,10 @@ return function(context)
                 end
             end
         end
+        for _, tagged in ipairs(CollectionService:GetTagged("Bot")) do
+            local model = tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model")
+            addHostile(records, seen, model, model and (model:GetAttribute("DisplayName") or model.Name), "BOT")
+        end
         for _, player in ipairs(Players:GetPlayers()) do
             if isEnemy(player) then addHostile(records, seen, player.Character, player.DisplayName, "PLAYER") end
         end
@@ -212,9 +228,9 @@ return function(context)
 
     local function targetPart(model)
         if not model then return nil end
-        if state.AimPart == "Head" then return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart") end
-        if state.AimPart == "Torso" then return model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso") or model:FindFirstChild("HumanoidRootPart") end
-        return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+        if state.AimPart == "Head" then return model:FindFirstChild("Head", true) or model:FindFirstChild("HumanoidRootPart", true) end
+        if state.AimPart == "Torso" then return model:FindFirstChild("UpperTorso", true) or model:FindFirstChild("Torso", true) or model:FindFirstChild("HumanoidRootPart", true) end
+        return model:FindFirstChild("HumanoidRootPart", true) or model:FindFirstChild("Head", true)
     end
 
     local function lineOfSight(part)
@@ -248,7 +264,7 @@ return function(context)
     end
 
     local function aimActive()
-        if not state.AimAssist then return false end
+        if not state.AimAssist or not isActiveMatch() then return false end
         if state.AimActivation == "Always" then return true end
         if state.AimActivation == "While Firing" then return state.IsFiring end
         return state.IsAiming or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
@@ -263,12 +279,18 @@ return function(context)
         local point, visible = camera:WorldToViewportPoint(part.Position)
         if not visible or point.Z <= 0 then return end
         local mousePosition = UserInputService:GetMouseLocation()
-        local divisor = math.clamp(state.AimSmoothness, 1, 5)
+        local smoothness = math.clamp(state.AimSmoothness, 1, 30)
+        local delta = Vector2.new(point.X - mousePosition.X, point.Y - mousePosition.Y)
+        local distance = delta.Magnitude
+        if distance < 0.75 then return end
+        local response = 30 / smoothness
+        local alpha = 1 - math.exp(-response * math.max(deltaTime, 1 / 240))
+        local approach = math.clamp(distance / 24, 0.2, 1)
+        local step = delta * math.clamp(alpha * approach, 0.002, 0.65)
         if moveMouseRelative then
-            pcall(moveMouseRelative, (point.X - mousePosition.X) / divisor, (point.Y - mousePosition.Y) / divisor)
+            pcall(moveMouseRelative, step.X, step.Y)
         else
             local desired = CFrame.lookAt(camera.CFrame.Position, part.Position)
-            local alpha = 1 - math.exp(-80 * deltaTime / (7 * divisor))
             camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
         end
     end
@@ -340,7 +362,7 @@ return function(context)
     local function updateFovCircle()
         if not fovCircle then return end
         local camera = workspace.CurrentCamera
-        fovCircle.Visible = state.Alive and state.AimAssist and state.ShowFov and camera ~= nil
+        fovCircle.Visible = state.Alive and state.AimAssist and state.ShowFov and isActiveMatch() and camera ~= nil
         if camera then
             fovCircle.Position = UserInputService:GetMouseLocation()
             fovCircle.Radius = state.AimRadius
@@ -361,10 +383,10 @@ return function(context)
     end
 
     local function updateHitboxes()
-        if not state.HitboxExpand then restoreHitboxes() return end
+        if not state.HitboxExpand or not isActiveMatch() then restoreHitboxes() return end
         local active = {}
         for _, hostile in ipairs(hostileModels()) do
-            local head = hostile.Model:FindFirstChild("Head")
+            local head = hostile.Model:FindFirstChild("Head", true)
             if head and head:IsA("BasePart") then
                 active[head] = true
                 if not hitboxDefaults[head] then
@@ -394,6 +416,19 @@ return function(context)
         if not instance then return false end
         for _, hostile in ipairs(hostileModels()) do
             if instance:IsDescendantOf(hostile.Model) then return true end
+        end
+        return false
+    end
+
+    local function pointerOverVor()
+        if not gui or not gui.Enabled then return false end
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if not playerGui then return false end
+        local mousePosition = UserInputService:GetMouseLocation()
+        local ok, objects = pcall(playerGui.GetGuiObjectsAtPosition, playerGui, mousePosition.X, mousePosition.Y)
+        if not ok or type(objects) ~= "table" then return false end
+        for _, object in ipairs(objects) do
+            if object:IsDescendantOf(gui) then return true end
         end
         return false
     end
@@ -645,20 +680,20 @@ return function(context)
     state.SelectedFamily = bestOwnedPrimary() or families[1]
 
     AimSection:AddToggle({Name = "Cursor Aimbot", Description = "Uses the executor mouse mover like the proven Polo script. Hold right-click by default.", Flag = "sniper_arena_cursor_aimbot", Default = true, Callback = function(v) state.AimAssist = v == true end})
-    AimSection:AddToggle({Name = "Silent Aim", Description = "Redirects the native LocalShoot ray without moving your camera.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
+    AimSection:AddToggle({Name = "Silent Aim", Description = "Optional. Big Head is the simpler forgiving-shot alternative and now includes bots.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
     AimSection:AddSlider({Name = "Silent Hit Chance", Flag = "sniper_arena_silent_chance", Min = 1, Max = 100, Step = 1, Default = 100, Suffix = "%", Callback = function(v) state.SilentAimChance = tonumber(v) or 100 end})
     AimSection:AddSlider({Name = "Target Prediction", Flag = "sniper_arena_silent_prediction", Min = 0, Max = 0.3, Step = 0.01, Default = 0, Suffix = "s", Callback = function(v) state.SilentAimPrediction = tonumber(v) or 0 end})
     AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_cursor_activation", Options = {"While Aiming", "While Firing", "Always"}, Default = "While Aiming", Callback = function(v) state.AimActivation = v or "While Aiming" end})
     AimSection:AddDropdown({Name = "Target Part", Flag = "sniper_arena_target_part_v2", Options = {"Head", "Torso", "Root"}, Default = "Head", Callback = function(v) state.AimPart = v or "Head" end})
-    AimSection:AddSlider({Name = "Aimbot Smoothness", Flag = "sniper_arena_cursor_smoothness", Min = 1, Max = 5, Step = 1, Default = 2, Callback = function(v) state.AimSmoothness = tonumber(v) or 2 end})
+    AimSection:AddSlider({Name = "Aimbot Smoothness", Description = "Higher is slower and more human. The movement eases as it reaches the target.", Flag = "sniper_arena_cursor_smoothness", Min = 1, Max = 30, Step = 1, Default = 10, Callback = function(v) state.AimSmoothness = tonumber(v) or 10 end})
     AimSection:AddSlider({Name = "Aim Radius", Flag = "sniper_arena_cursor_radius", Min = 100, Max = 2000, Step = 50, Default = 2000, Suffix = "px", Callback = function(v) state.AimRadius = tonumber(v) or 2000 end})
     AimSection:AddToggle({Name = "Team Check", Flag = "sniper_arena_team_check", Default = true, Callback = function(v) state.TeamCheck = v == true end})
     AimSection:AddToggle({Name = "Wall Check", Description = "Off is aggressive; on only selects targets with a clear ray.", Flag = "sniper_arena_wall_check_v2", Default = false, Callback = function(v) state.WallCheck = v == true end})
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Default = false, Callback = function(v) state.ShowFov = v == true end})
 
-    CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Clicks when the cursor is over a live hostile model.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
+    CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Delay", Flag = "sniper_arena_trigger_delay", Min = 0.03, Max = 0.3, Step = 0.01, Default = 0.08, Suffix = "s", Callback = function(v) state.TriggerDelay = tonumber(v) or 0.08 end})
-    CombatStatusSection:AddToggle({Name = "Expand Enemy Heads", Description = "Client-side hitbox expansion with full restoration on toggle-off and cleanup.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
+    CombatStatusSection:AddToggle({Name = "Expand Enemy + Bot Heads", Description = "Forgiving-shot alternative to Silent Aim. Active-match only, including nested bot heads, with full restoration.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
     CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
@@ -788,6 +823,7 @@ return function(context)
             gui:SetAttribute("SniperArenaUniverseId", game.GameId)
             gui:SetAttribute("SniperArenaPlaceId", game.PlaceId)
             gui:SetAttribute("SniperArenaMode", serverMode())
+            gui:SetAttribute("SniperArenaMatchActive", isActiveMatch())
             gui:SetAttribute("SniperArenaCreditedKills", kills)
             gui:SetAttribute("SniperArenaOwnedWeapons", count)
             gui:SetAttribute("SniperArenaBestOwnedFamily", bestOwnedPrimary() or "")
@@ -796,6 +832,7 @@ return function(context)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
             gui:SetAttribute("SniperArenaAimRadius", state.AimRadius)
+            gui:SetAttribute("SniperArenaAimSmoothness", state.AimSmoothness)
             gui:SetAttribute("SniperArenaAimTarget", state.CurrentTarget and state.CurrentTarget:GetFullName() or "")
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
@@ -876,7 +913,10 @@ return function(context)
         if espClock >= 0.15 then espClock = 0 updateEsp() updateHitboxes() end
         if state.TriggerBot and clickMouseOne and triggerClock >= state.TriggerDelay then
             triggerClock = 0
-            if isHostileTarget(LocalMouse.Target) then pcall(clickMouseOne) end
+            if isActiveMatch() and not pointerOverVor() and UserInputService:GetFocusedTextBox() == nil
+                and isHostileTarget(LocalMouse.Target) then
+                pcall(clickMouseOne)
+            end
         end
         if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end

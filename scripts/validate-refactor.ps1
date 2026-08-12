@@ -942,7 +942,7 @@ $practicalBasketballSharedProfiles = (
     $profilesText -match 'migrateLegacyConfigs\(\)'
 )
 $practicalBasketballTimingMigration = (
-    $profilesText -match 'local PROFILE_VERSION\s*=\s*6' -and
+    $profilesText -match 'local PROFILE_VERSION\s*=\s*7' -and
     $profilesText -match 'local function normalizeProfileData\(metadata\)' -and
     $profilesText -match 'practical_basketball_vertical_perfect_offset\s*=\s*nil' -and
     $profilesText -match 'practical_basketball_release_delay\s*=\s*nil' -and
@@ -1094,14 +1094,21 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Default\s*=\s*true' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_smoothness"' -and
+    $sniperArenaText -match 'Max\s*=\s*30[^\r\n]*Default\s*=\s*10' -and
+    $sniperArenaText -match 'local response = 30 / smoothness' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_radius"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"' -and
     $sniperArenaText -match 'moveMouseRelative' -and
     $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
+    $sniperArenaText -match 'LocalPlayer:GetAttribute\("GameRoom"\)' -and
+    $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
+    $sniperArenaText -match 'isActiveMatch\(\) and not pointerOverVor\(\)' -and
     $sniperArenaText -match 'isHostileTarget\(LocalMouse\.Target\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
+    $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
+    $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and
     $sniperArenaText -match 'restoreHitboxes\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_spread"' -and
