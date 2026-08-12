@@ -205,6 +205,12 @@ return function(context)
             RaidVoidFocus = nil,
             RaidVoidFocusDistance = math.huge,
             RaidVoidFallbackActive = false,
+            RaidVoidCombatFallback = false,
+            RaidVoidFallbackIsland = 0,
+            RaidVoidFallbackHealth = math.huge,
+            RaidVoidFallbackEnemyCount = 0,
+            RaidVoidFallbackLastProgress = 0,
+            RaidVoidFallbackDelay = 3.5,
             RaidSafeModeActive = false,
             RaidVoidTargets = setmetatable({}, {__mode = "k"}),
             RaidVoidOriginalCFrames = setmetatable({}, {__mode = "k"}),
@@ -3183,6 +3189,7 @@ return function(context)
             gui:SetAttribute("BloxRaidVoidStaged", state.RaidVoidStaged)
             gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
             gui:SetAttribute("BloxRaidVoidFallbackActive", state.RaidVoidFallbackActive)
+            gui:SetAttribute("BloxRaidVoidCombatFallback", state.RaidVoidCombatFallback)
             gui:SetAttribute("BloxRaidVoidFocus", "")
             gui:SetAttribute("BloxRaidSafeModeActive", state.RaidSafeModeActive)
             gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)
@@ -3868,9 +3875,21 @@ return function(context)
                 state.RaidVoidFocus = nil
                 state.RaidVoidFocusDistance = math.huge
                 state.RaidVoidFallbackActive = false
+                state.RaidVoidCombatFallback = false
+                state.RaidVoidFallbackIsland = 0
+                state.RaidVoidFallbackHealth = math.huge
+                state.RaidVoidFallbackEnemyCount = 0
+                state.RaidVoidFallbackLastProgress = 0
                 return 0
             end
-            state.RaidVoidActive = true
+            if state.RaidVoidFallbackIsland ~= island.Index then
+                state.RaidVoidCombatFallback = false
+                state.RaidVoidFallbackIsland = island.Index
+                state.RaidVoidFallbackHealth = math.huge
+                state.RaidVoidFallbackEnemyCount = 0
+                state.RaidVoidFallbackLastProgress = os.clock()
+            end
+            state.RaidVoidActive = not state.RaidVoidCombatFallback
             if os.clock() - state.LastRaidVoidStep < 0.06 then
                 return state.RaidVoidMoved
             end
@@ -3894,11 +3913,15 @@ return function(context)
             local waitingForOwnership = 0
             local nearestWaiting = nil
             local nearestWaitingDistance = math.huge
+            local aliveEnemyCount = 0
+            local aliveEnemyHealth = 0
             for _, enemy in ipairs(loadedEnemies()) do
                 local enemyRoot = modelRoot(enemy)
                 local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
                 if enemyRoot and enemyBody and enemyBody.Health > 0
                     and (enemyRoot.Position - island.Part.Position).Magnitude <= 2500 then
+                    aliveEnemyCount += 1
+                    aliveEnemyHealth += enemyBody.Health
                     local owned = false
                     if type(isnetworkowner) == "function" then
                         local ownerOk, ownerResult = pcall(isnetworkowner, enemyRoot)
@@ -3930,6 +3953,23 @@ return function(context)
             state.RaidVoidFocus = nearestWaiting
             state.RaidVoidFocusDistance = nearestWaitingDistance
             state.RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil
+            local madeProgress = killed > 0
+                or aliveEnemyCount ~= state.RaidVoidFallbackEnemyCount
+                or aliveEnemyHealth < state.RaidVoidFallbackHealth - 1
+            if madeProgress then
+                state.RaidVoidFallbackLastProgress = os.clock()
+            elseif waitingForOwnership > 0
+                and os.clock() - state.RaidVoidFallbackLastProgress >= state.RaidVoidFallbackDelay then
+                -- Ownership-only Island 5 kills can sit forever while every NPC
+                -- remains server-owned. Stop parking in place once health/count
+                -- has made no progress and resume ordinary 150-speed raid combat.
+                state.RaidVoidCombatFallback = true
+            end
+            state.RaidVoidFallbackEnemyCount = aliveEnemyCount
+            state.RaidVoidFallbackHealth = aliveEnemyHealth
+            if state.RaidVoidCombatFallback then
+                state.RaidVoidActive = false
+            end
             state.RaidGathered = 0
             return killed
         end
@@ -7731,6 +7771,11 @@ return function(context)
                     state.RaidVoidFocus = nil
                     state.RaidVoidFocusDistance = math.huge
                     state.RaidVoidFallbackActive = false
+                    state.RaidVoidCombatFallback = false
+                    state.RaidVoidFallbackIsland = 0
+                    state.RaidVoidFallbackHealth = math.huge
+                    state.RaidVoidFallbackEnemyCount = 0
+                    state.RaidVoidFallbackLastProgress = 0
                     state.RaidSafeModeActive = false
                     cancelMove()
                 end
@@ -7742,10 +7787,10 @@ return function(context)
         })
         RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
         RaidSection:AddLabel("Auto Farm Raid always tweens between NPCs at 150 studs/second; the global Tween Speed still controls travel outside raids.")
-        RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking and yields to final-island Void Kill automatically.")
+        RaidSection:AddLabel("Auto Magnet in Combat handles raid NPC stacking; Island 5 Force Kill falls back to normal raid combat when ownership makes no progress.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Parks once on Island 5 and lets Overkill finish the wave without chasing individual enemies",
+            Description = "Attempts stationary ownership kills, then automatically resumes 150-speed close-range combat if enemy health stalls",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)
@@ -7756,6 +7801,11 @@ return function(context)
                 state.RaidVoidFocus = nil
                 state.RaidVoidFocusDistance = math.huge
                 state.RaidVoidFallbackActive = false
+                state.RaidVoidCombatFallback = false
+                state.RaidVoidFallbackIsland = 0
+                state.RaidVoidFallbackHealth = math.huge
+                state.RaidVoidFallbackEnemyCount = 0
+                state.RaidVoidFallbackLastProgress = 0
                 if enabled then
                     state.LastRaidVoidStep = 0
                     state.RaidVoidKillCount = 0
@@ -8610,6 +8660,7 @@ return function(context)
                         gui:SetAttribute("BloxRaidVoidKillCount", state.RaidVoidKillCount)
                         gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
                         gui:SetAttribute("BloxRaidVoidFallbackActive", state.RaidVoidFallbackActive)
+                        gui:SetAttribute("BloxRaidVoidCombatFallback", state.RaidVoidCombatFallback)
                         gui:SetAttribute(
                             "BloxRaidVoidFocus",
                             state.RaidVoidFocus and normalizeEnemyName(state.RaidVoidFocus.Name) or ""
@@ -8804,6 +8855,7 @@ return function(context)
             gui:SetAttribute("BloxRaidVoidKillCount", 0)
             gui:SetAttribute("BloxRaidNativeFallbackCount", state.RaidNativeFallbackCount)
             gui:SetAttribute("BloxRaidVoidFallbackActive", false)
+            gui:SetAttribute("BloxRaidVoidCombatFallback", false)
             gui:SetAttribute("BloxRaidVoidFocus", "")
             gui:SetAttribute("BloxRaidSafeModeActive", false)
             gui:SetAttribute("BloxRaidSafeHeight", state.RaidSafeHeight)

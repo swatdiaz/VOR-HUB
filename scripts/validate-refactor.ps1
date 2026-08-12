@@ -404,6 +404,10 @@ $raidRangeSafety = (
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?state\.RaidVoidKill and island\.Index >= 5.*?RaidRuntime\.VoidKillStep\(island\).*?retreatHeight = math\.max\(DoubleAttackEngine\.RaidRecoveryHeight, safeHeight \+ 100\).*?state\.FarmHoldY = retreatCFrame\.Position\.Y' -and
     $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
+    $bloxText -match 'RaidVoidFallbackDelay = 3\.5' -and
+    $bloxText -match '(?s)aliveEnemyHealth < state\.RaidVoidFallbackHealth - 1.*?os\.clock\(\) - state\.RaidVoidFallbackLastProgress >= state\.RaidVoidFallbackDelay.*?state\.RaidVoidCombatFallback = true' -and
+    $bloxText -match 'state\.RaidVoidActive = not state\.RaidVoidCombatFallback' -and
+    $bloxText -match 'BloxRaidVoidCombatFallback' -and
     $bloxText -match 'local holdCFrame = island\.Part\.CFrame \+ Vector3\.new\(raidX, safeHeight, raidZ\)' -and
     $bloxText -match '(?s)if state\.RaidVoidActive then.*?state\.ActiveFarmTarget = nil.*?state\.RaidTargetName = nil.*?moveTo\(holdCFrame\).*?cancelMove\(false\)' -and
     $bloxText -match '(?s)state\.RaidVoidFallbackActive and root and waitingRoot.*?fallbackTool:Activate\(\).*?island-5-stationary-fallback' -and
