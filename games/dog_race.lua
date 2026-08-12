@@ -143,7 +143,7 @@ return function(context)
     Equipment.HomeGuideSection = HomePage:AddSection("🧭 Dog Race Instructions", "Right")
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🤖 AFK everything",
-        Content = "Open Full Auto and enable FULL PROGRESSION. It trains between native races, hatches, claims rewards and tasks, buys eligible upgrades, and waits instead of disabling itself when a currency is short.",
+        Content = "Open Full Auto and enable FULL PROGRESSION. It trains between native races, hatches, claims rewards and tasks, buys eligible upgrades, crafts duplicate pets before storage blocks hatching, equips the best loadout, and waits when currency is short.",
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🥚 Smart or manual eggs",
@@ -169,6 +169,7 @@ return function(context)
         SpeedMultiplier = 1,
         AutoRebirth = false,
         AutoEquipBest = false,
+        AutoCraftPets = false,
         AutoDailyChest = false,
         FullProgression = false,
         SmartBestEgg = true,
@@ -214,6 +215,7 @@ return function(context)
         LastRaceRetry = 0,
         LastRebirth = 0,
         LastEquipBest = 0,
+        LastPetCraft = 0,
         LastDailyChest = 0,
         LastAction = "Ready",
         SpeedHumanoid = nil,
@@ -902,6 +904,42 @@ return function(context)
         return math.huge
     end
 
+    function Equipment.hasCraftablePets(data)
+        if not data or not PetsDataHelper or type(data.Pets) ~= "table" then
+            return false
+        end
+        for _, pet in pairs(data.Pets) do
+            if (tonumber(pet.Size) or 0) < 2 then
+                local ok, count = pcall(PetsDataHelper.GetSameSizeCount, pet, data)
+                if ok and (tonumber(count) or 0) >= 3 then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    function Equipment.craftAllPets(force)
+        local data = getData()
+        if not data or (not force and not Equipment.hasCraftablePets(data)) then
+            state.LastAction = "Pets: no duplicate set is ready to craft"
+            return false
+        end
+        local service = getService("PetService")
+        local remote = service and service.EnlargeAllPets
+        if not remote or type(remote.Fire) ~= "function" then
+            state.LastAction = "Craft All Pets remote unavailable"
+            return false
+        end
+        local ok, result = pcall(remote.Fire, remote)
+        state.LastAction = ok and "Craft All requested; refreshing best pet loadout"
+            or ("Craft All failed: " .. tostring(result))
+        if ok then
+            task.delay(2, equipBestPets)
+        end
+        return ok
+    end
+
     function Equipment.nextBirdWinsReserve(data)
         if not data or not Equipment.BirdsDataHelper then
             return 0
@@ -1027,6 +1065,18 @@ return function(context)
             return promptLockedPurchase and promptProduct(purchaseKey) or false
         end
         local data = getData()
+        if data and GameDataUtil and type(GameDataUtil.CheckStorageFull) == "function" then
+            local okFull, full = pcall(GameDataUtil.CheckStorageFull, data, count)
+            if okFull and full then
+                if state.AutoCraftPets then
+                    Equipment.craftAllPets(true)
+                    state.LastAction = "Pet storage full; crafting duplicates before hatching"
+                else
+                    state.LastAction = "Pet storage full; enable Auto Craft Pets"
+                end
+                return false
+            end
+        end
         if count == 3 and data and not (data.GamePasses and data.GamePasses.TripleHatch) then
             state.LastAction = "Triple Hatch gamepass required"
             if promptLockedPurchase then
@@ -1500,6 +1550,19 @@ return function(context)
                 end
             end
         end
+        for dayIndex = 1, 15 do
+            local reward = data.LongDailyRewards and data.LongDailyRewards[dayIndex]
+            if reward and reward.CompleteDate ~= nil and reward.IsClaimed ~= true then
+                local fired = fireServiceRemote(
+                    "LongDailyRewardService",
+                    "ClaimLongDailyReward",
+                    dayIndex
+                )
+                if fired then
+                    count = count + 1
+                end
+            end
+        end
         state.LastAction = count > 0 and string.format("Claimed %d task reward(s)", count)
             or "Tasks: progressing toward the next reward"
         return count
@@ -1865,6 +1928,7 @@ return function(context)
             autoHatchControl,
             automationControls.Rebirth,
             automationControls.EquipBest,
+            automationControls.CraftPets,
             automationControls.DailyChest,
             automationControls.OnlineRewards,
             automationControls.FreeEgg,
@@ -1977,6 +2041,21 @@ return function(context)
         end,
     })
     RewardsSection:AddButton({Name = "Equip Best Pets", Callback = equipBestPets})
+    automationControls.CraftPets = RewardsSection:AddToggle({
+        Name = "Auto Craft Pets",
+        Description = "Crafts every duplicate set, prevents full storage from blocking hatches, then equips the best pets again.",
+        Flag = "dograce_auto_craft_pets",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoCraftPets = enabled == true
+            if state.AutoCraftPets then
+                Equipment.craftAllPets(false)
+            end
+        end,
+    })
+    RewardsSection:AddButton({Name = "Craft All Duplicate Pets", Callback = function()
+        Equipment.craftAllPets(true)
+    end})
     automationControls.DailyChest = RewardsSection:AddToggle({
         Name = "Auto Daily Chest",
         Description = "Claims only when the replicated native cooldown has expired.",
@@ -2047,6 +2126,7 @@ return function(context)
     })
     automationControls.Tasks = ClaimAutoSection:AddToggle({
         Name = "Auto Tasks",
+        Description = "Claims both progress quests and the native 15-day Tasks rewards as soon as each becomes claimable.",
         Flag = "dograce_auto_tasks",
         Default = false,
         Callback = function(enabled) state.AutoTasks = enabled == true end,
@@ -2513,7 +2593,9 @@ return function(context)
             tostring(cost or "--")
         )
         areaLabel.Text = "Area: " .. tostring(area or "--")
-        petsLabel.Text = string.format("Pets: %d | Equipped: %d", petCount, equippedPets)
+        petsLabel.Text = string.format("Pets: %d / %s | Equipped: %d | Craft %s",
+            petCount, compactNumber(maxPetStorage(data or {})), equippedPets,
+            state.AutoCraftPets and "AUTO" or "OFF")
         local function accessText(ready, reason)
             local owned = string.find(reason, "already owned", 1, true)
                 or string.find(reason, "Owned;", 1, true)
@@ -2620,6 +2702,9 @@ return function(context)
             gui:SetAttribute("DogRaceFreeEggReady", freeEggReady == true)
             gui:SetAttribute("DogRaceAutoAchievements", state.AutoAchievements)
             gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
+            gui:SetAttribute("DogRaceAutoCraftPets", state.AutoCraftPets)
+            gui:SetAttribute("DogRacePetCount", petCount)
+            gui:SetAttribute("DogRacePetStorageMax", maxPetStorage(data or {}))
             gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
             gui:SetAttribute("DogRaceAutoBird", state.AutoBird)
             gui:SetAttribute("DogRaceAutoShoe", state.AutoShoe)
@@ -2653,6 +2738,7 @@ return function(context)
         state.AutoDash = false
         state.AutoRebirth = false
         state.AutoEquipBest = false
+        state.AutoCraftPets = false
         state.AutoDailyChest = false
         state.AutoHatch = false
         state.FullProgression = false
@@ -2748,7 +2834,13 @@ return function(context)
                     requestRebirth()
                 end
             end
-            if state.AutoEquipBest and now - state.LastEquipBest >= 10 then
+            if state.AutoCraftPets and now - state.LastPetCraft >= 5 then
+                state.LastPetCraft = now
+                if Equipment.hasCraftablePets(data) then
+                    Equipment.craftAllPets(false)
+                end
+            end
+            if state.AutoEquipBest and now - state.LastEquipBest >= 3 then
                 state.LastEquipBest = now
                 equipBestPets()
             end

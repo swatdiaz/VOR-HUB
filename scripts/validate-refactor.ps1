@@ -1232,6 +1232,11 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'claimButton\.MouseButton1Click' -and
     $dogRaceText -match '(?s)AchievementService.*?ClaimAchievementEvent' -and
     $dogRaceText -match 'QuestService.*ClaimQuestReward' -and
+    $dogRaceText -match '(?s)LongDailyRewardService.*ClaimLongDailyReward' -and
+    $dogRaceText -match 'PetService' -and
+    $dogRaceText -match 'EnlargeAllPets' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_auto_craft_pets"' -and
+    $dogRaceText -match 'DogRaceAutoCraftPets' -and
     $dogRaceText -match 'ItemCrateService.*BuyCrateWithDiamonds' -and
     $dogRaceText -match '(?s)ItemService.*?EquipItem' -and
     $dogRaceText -match '(?s)ItemService.*?MergeItems' -and
