@@ -1092,6 +1092,8 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
     $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_v2",\s*Default\s*=\s*true' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_aim_radius_v2"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and

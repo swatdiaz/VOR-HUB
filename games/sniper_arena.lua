@@ -85,16 +85,16 @@ return function(context)
     }
     local state = {
         Alive = true,
-        AimAssist = false,
+        AimAssist = true,
         SilentAim = false,
         SilentAimChance = 100,
         SilentAimPrediction = 0,
-        AimActivation = "While Aiming",
+        AimActivation = "Always",
         AimPart = "Head",
-        AimRadius = 180,
-        AimStrength = 24,
+        AimRadius = 650,
+        AimStrength = 80,
         TeamCheck = true,
-        WallCheck = true,
+        WallCheck = false,
         ShowFov = true,
         EnemyEsp = false,
         EspNameText = false,
@@ -524,16 +524,16 @@ return function(context)
     if #families == 0 then families = {"SSG"} end
     state.SelectedFamily = bestOwnedPrimary() or families[1]
 
-    AimSection:AddToggle({Name = "Aim Assist", Flag = "sniper_arena_aim", Default = false, Callback = function(v) state.AimAssist = v == true end})
+    AimSection:AddToggle({Name = "Aim Assist", Flag = "sniper_arena_aim_v2", Default = true, Callback = function(v) state.AimAssist = v == true end})
     AimSection:AddToggle({Name = "Silent Aim", Description = "Redirects the native LocalShoot ray without moving your camera.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
     AimSection:AddSlider({Name = "Silent Hit Chance", Flag = "sniper_arena_silent_chance", Min = 1, Max = 100, Step = 1, Default = 100, Suffix = "%", Callback = function(v) state.SilentAimChance = tonumber(v) or 100 end})
     AimSection:AddSlider({Name = "Target Prediction", Flag = "sniper_arena_silent_prediction", Min = 0, Max = 0.3, Step = 0.01, Default = 0, Suffix = "s", Callback = function(v) state.SilentAimPrediction = tonumber(v) or 0 end})
-    AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_aim_activation", Options = {"While Aiming", "While Firing", "Always"}, Default = "While Aiming", Callback = function(v) state.AimActivation = v or "While Aiming" end})
+    AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_aim_activation_v2", Options = {"While Aiming", "While Firing", "Always"}, Default = "Always", Callback = function(v) state.AimActivation = v or "Always" end})
     AimSection:AddDropdown({Name = "Target Part", Flag = "sniper_arena_aim_part", Options = {"Head", "Torso", "Root"}, Default = "Head", Callback = function(v) state.AimPart = v or "Head" end})
-    AimSection:AddSlider({Name = "Aim Strength", Flag = "sniper_arena_aim_strength", Min = 1, Max = 100, Step = 1, Default = 24, Suffix = "%", Callback = function(v) state.AimStrength = tonumber(v) or 24 end})
-    AimSection:AddSlider({Name = "Aim Radius", Flag = "sniper_arena_aim_radius", Min = 30, Max = 600, Step = 10, Default = 180, Suffix = "px", Callback = function(v) state.AimRadius = tonumber(v) or 180 end})
+    AimSection:AddSlider({Name = "Aim Strength", Flag = "sniper_arena_aim_strength_v2", Min = 1, Max = 100, Step = 1, Default = 80, Suffix = "%", Callback = function(v) state.AimStrength = tonumber(v) or 80 end})
+    AimSection:AddSlider({Name = "Aim Radius", Flag = "sniper_arena_aim_radius_v2", Min = 30, Max = 900, Step = 10, Default = 650, Suffix = "px", Callback = function(v) state.AimRadius = tonumber(v) or 650 end})
     AimSection:AddToggle({Name = "Team Check", Flag = "sniper_arena_team_check", Default = true, Callback = function(v) state.TeamCheck = v == true end})
-    AimSection:AddToggle({Name = "Wall Check", Flag = "sniper_arena_wall_check", Default = true, Callback = function(v) state.WallCheck = v == true end})
+    AimSection:AddToggle({Name = "Wall Check", Description = "Off is aggressive; on only selects targets with a clear ray.", Flag = "sniper_arena_wall_check_v2", Default = false, Callback = function(v) state.WallCheck = v == true end})
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov", Default = true, Callback = function(v) state.ShowFov = v == true end})
 
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
@@ -663,6 +663,8 @@ return function(context)
             gui:SetAttribute("SniperArenaBestOwnedFamily", bestOwnedPrimary() or "")
             gui:SetAttribute("SniperArenaAutoUnlock", state.AutoUnlock)
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
+            gui:SetAttribute("SniperArenaAimRadius", state.AimRadius)
+            gui:SetAttribute("SniperArenaAimTarget", state.CurrentTarget and state.CurrentTarget:GetFullName() or "")
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaEnemyEsp", state.EnemyEsp)
