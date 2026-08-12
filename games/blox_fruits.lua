@@ -3898,13 +3898,14 @@ return function(context)
                 and island
                 and island.Index >= 5
             if not enabled then
-                for enemy, originalCFrame in pairs(state.RaidVoidOriginalCFrames) do
+                for enemy, original in pairs(state.RaidVoidOriginalCFrames) do
                     local enemyRoot = modelRoot(enemy)
                     local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
                     if enemyRoot and enemyBody and enemyBody.Health > 0 then
                         pcall(function()
-                            enemyBody.PlatformStand = false
-                            enemyRoot.CFrame = originalCFrame
+                            enemyBody.PlatformStand = original.PlatformStand
+                            enemyRoot.CanCollide = original.CanCollide
+                            enemyRoot.CFrame = original.CFrame
                             enemyRoot.AssemblyLinearVelocity = Vector3.zero
                             enemyRoot.AssemblyAngularVelocity = Vector3.zero
                         end)
@@ -3947,10 +3948,10 @@ return function(context)
                 state.RaidVoidStaged = 0
                 return 0
             end
-            -- Solix's live Island 5 sequence is ownership-gated, not a raw void
-            -- teleport: a full-health raid boss becomes network-owned, Health
-            -- reaches server-visible zero, and the replicated corpse then falls
-            -- naturally for several seconds before removal.
+            -- Solix's Island 5 routine tries to reposition NPCs while parking
+            -- above the island, but a fresh-server probe showed that unowned
+            -- rigs merely moved locally and remained at full server health.
+            -- Treat ownership as a hard gate for any real physics void.
             local killed = 0
             local waitingForOwnership = 0
             local nearestWaiting = nil
@@ -3964,17 +3965,50 @@ return function(context)
                     and (enemyRoot.Position - island.Part.Position).Magnitude <= 2500 then
                     aliveEnemyCount += 1
                     aliveEnemyHealth += enemyBody.Health
+                    local owned = false
+                    if type(isnetworkowner) == "function" then
+                        local ownerOk, ownerResult = pcall(isnetworkowner, enemyRoot)
+                        owned = ownerOk and ownerResult == true
+                    end
                     -- Never write Humanoid.Health directly. Even with local
                     -- network ownership that can remove the replicated NPC
                     -- without awarding the raid server a credited kill, leaving
-                    -- a live timer and no enemy to finish. Stationary native
-                    -- attacks may make credited progress; otherwise the bounded
-                    -- fallback resumes ordinary close combat.
-                    waitingForOwnership += 1
-                    local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
-                    if distance < nearestWaitingDistance then
-                        nearestWaiting = enemy
-                        nearestWaitingDistance = distance
+                    -- a live timer and no enemy to finish. Solix's intended void
+                    -- route is physics-based: only an actually client-owned rig
+                    -- is moved below FallenPartsDestroyHeight. Unowned rigs stay
+                    -- untouched while the bounded credited-combat fallback waits.
+                    if owned and not state.RaidVoidCombatFallback then
+                        if not state.RaidVoidOriginalCFrames[enemy] then
+                            state.RaidVoidOriginalCFrames[enemy] = {
+                                CFrame = enemyRoot.CFrame,
+                                CanCollide = enemyRoot.CanCollide,
+                                PlatformStand = enemyBody.PlatformStand,
+                            }
+                        end
+                        local actionOk = pcall(function()
+                            enemyBody.PlatformStand = true
+                            enemyRoot.CanCollide = false
+                            enemyRoot.CFrame = CFrame.new(
+                                island.Part.Position.X,
+                                workspace.FallenPartsDestroyHeight - 250,
+                                island.Part.Position.Z
+                            )
+                            enemyRoot.AssemblyLinearVelocity = Vector3.new(0, -500, 0)
+                        end)
+                        if actionOk then
+                            if not state.RaidVoidTargets[enemy] then
+                                state.RaidVoidTargets[enemy] = true
+                                state.RaidVoidKillCount += 1
+                            end
+                            killed += 1
+                        end
+                    else
+                        waitingForOwnership += 1
+                        local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
+                        if distance < nearestWaitingDistance then
+                            nearestWaiting = enemy
+                            nearestWaitingDistance = distance
+                        end
                     end
                 end
             end
@@ -3983,8 +4017,7 @@ return function(context)
             state.RaidVoidFocus = nearestWaiting
             state.RaidVoidFocusDistance = nearestWaitingDistance
             state.RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil
-            local madeProgress = killed > 0
-                or aliveEnemyCount ~= state.RaidVoidFallbackEnemyCount
+            local madeProgress = aliveEnemyCount ~= state.RaidVoidFallbackEnemyCount
                 or aliveEnemyHealth < state.RaidVoidFallbackHealth - 1
             if madeProgress then
                 state.RaidVoidFallbackLastProgress = os.clock()
@@ -3994,6 +4027,19 @@ return function(context)
                 -- damage. Stop parking in place once health/count
                 -- has made no progress and resume ordinary 150-speed raid combat.
                 state.RaidVoidCombatFallback = true
+                for enemy, original in pairs(state.RaidVoidOriginalCFrames) do
+                    local enemyRoot = modelRoot(enemy)
+                    local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
+                    if enemyRoot and enemyBody and enemyBody.Health > 0 then
+                        pcall(function()
+                            enemyBody.PlatformStand = original.PlatformStand
+                            enemyRoot.CanCollide = original.CanCollide
+                            enemyRoot.CFrame = original.CFrame
+                            enemyRoot.AssemblyLinearVelocity = Vector3.zero
+                        end)
+                    end
+                end
+                table.clear(state.RaidVoidOriginalCFrames)
             end
             state.RaidVoidFallbackEnemyCount = aliveEnemyCount
             state.RaidVoidFallbackHealth = aliveEnemyHealth
@@ -7825,10 +7871,10 @@ return function(context)
         })
         RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
         RaidSection:AddLabel("Auto Farm Raid always tweens between NPCs at 150 studs/second; the global Tween Speed still controls travel outside raids.")
-        RaidSection:AddLabel("Raids temporarily suppress Double Attack and Auto Magnet for server-stable single-target hits; Island 5 Force Kill falls back when ownership stalls.")
+        RaidSection:AddLabel("Raids suppress Double Attack and Auto Magnet for stable credited hits. Island 5 voids only client-owned rigs, then falls back when ownership or damage stalls.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Attempts stationary credited hits, then automatically resumes 150-speed close-range combat if enemy health stalls",
+            Description = "Voids actually client-owned rigs below destroy height, then resumes 150-speed credited combat if ownership or health stalls",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)

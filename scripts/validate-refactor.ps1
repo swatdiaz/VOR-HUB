@@ -404,6 +404,8 @@ $raidRangeSafety = (
     $bloxText -match '(?s)RaidClusterAnchor = nil.*?RaidClusterRadius = 7500.*?function RaidRuntime\.LatestIsland\(\).*?local distance = \(candidate\.Part\.Position - root\.Position\)\.Magnitude.*?nearestDistance > 5000.*?state\.RaidClusterAnchor = nearestEntry\.Part\.Position.*?candidate\.Part\.Position - state\.RaidClusterAnchor.*?state\.RaidClusterRadius' -and
     $bloxText -match 'Never write Humanoid\.Health directly' -and
     $bloxText -notmatch 'enemyBody\.Health\s*=\s*-9e9' -and
+    $bloxText -match '(?s)isnetworkowner.*?owned and not state\.RaidVoidCombatFallback.*?workspace\.FallenPartsDestroyHeight - 250.*?enemyRoot\.AssemblyLinearVelocity = Vector3\.new\(0, -500, 0\)' -and
+    $bloxText -match '(?s)state\.RaidVoidCombatFallback = true.*?enemyBody\.PlatformStand = original\.PlatformStand.*?enemyRoot\.CanCollide = original\.CanCollide.*?enemyRoot\.CFrame = original\.CFrame.*?table\.clear\(state\.RaidVoidOriginalCFrames\)' -and
     $bloxText -match '(?s)damaged > 0.*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?fallbackTool:Activate\(\).*?BloxRaidNativeFallbackCount' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
