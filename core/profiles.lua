@@ -6,7 +6,7 @@ return function(context)
     local Utilities = assert(context.Utilities, "profiles requires Utilities")
     local HttpService = Utilities.Services.HttpService
     local COLORS = SETTINGS.COLORS
-    local PROFILE_VERSION = 6
+    local PROFILE_VERSION = 7
 
     local function hasFileApi()
         return type(isfolder) == "function"
@@ -34,6 +34,15 @@ return function(context)
             and (tonumber(metadata.version) or 0) < PROFILE_VERSION then
             metadata.values.practical_basketball_vertical_perfect_offset = nil
             metadata.values.practical_basketball_release_delay = nil
+            changed = true
+        end
+        if SETTINGS.ActiveGame ~= nil
+            and SETTINGS.ActiveGame.Key == "SniperArena"
+            and (tonumber(metadata.version) or 0) < PROFILE_VERSION then
+            local oldSmoothness = tonumber(metadata.values.sniper_arena_cursor_smoothness)
+            if oldSmoothness ~= nil and oldSmoothness <= 5 then
+                metadata.values.sniper_arena_cursor_smoothness = math.clamp(oldSmoothness * 5, 10, 25)
+            end
             changed = true
         end
         if tonumber(metadata.version) ~= PROFILE_VERSION then
