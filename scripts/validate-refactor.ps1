@@ -1103,12 +1103,18 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'local function sameTeamModel\(model\)' -and
     $sniperArenaText -match 'if sameTeamModel\(model\) then return end' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_trigger_delay_ms"' -and
+    $sniperArenaText -match 'track\(LocalMouse\.Move:Connect\(tryTrigger\)\)' -and
+    $sniperArenaText -match 'local firstHover = target ~= lastTriggerTarget' -and
     $sniperArenaText -match 'LocalPlayer:GetAttribute\("GameRoom"\)' -and
     $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
-    $sniperArenaText -match 'isActiveMatch\(\) and not pointerOverVor\(\)' -and
-    $sniperArenaText -match 'isHostileTarget\(LocalMouse\.Target\)' -and
+    $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or pointerOverVor\(\)' -and
+    $sniperArenaText -match 'isHostileTarget\(target\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
+    $sniperArenaText -match 'head\.CanQuery = true' -and
+    $sniperArenaText -match 'updateHitboxes\(\)\s*\r?\n\s*updateAim\(deltaTime\)' -and
+    $sniperArenaText -match 'acquireExpandedHitboxTarget\(\)' -and
     $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
     $sniperArenaText -match 'if model and not sameTeamModel\(model\) then expandModelHead\(model\) end' -and
     $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and

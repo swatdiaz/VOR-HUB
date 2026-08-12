@@ -103,7 +103,10 @@ return function(context)
         WallCheck = false,
         ShowFov = false,
         TriggerBot = false,
-        TriggerDelay = 0.08,
+        TriggerDelay = 0,
+        TriggerClicks = 0,
+        LastTriggerTarget = "",
+        HitboxAssistedShots = 0,
         HitboxExpand = false,
         HitboxSize = 5,
         NoRecoil = false,
@@ -247,9 +250,17 @@ return function(context)
         return records
     end
 
+    local function headPart(model)
+        if not model then return nil end
+        local collider = model:FindFirstChild("Collider")
+        local colliderHead = collider and collider:FindFirstChild("Head")
+        return colliderHead and colliderHead:IsA("BasePart") and colliderHead
+            or model:FindFirstChild("Head", true)
+    end
+
     local function targetPart(model)
         if not model then return nil end
-        if state.AimPart == "Head" then return model:FindFirstChild("Head", true) or model:FindFirstChild("HumanoidRootPart", true) end
+        if state.AimPart == "Head" then return headPart(model) or model:FindFirstChild("HumanoidRootPart", true) end
         if state.AimPart == "Torso" then return model:FindFirstChild("UpperTorso", true) or model:FindFirstChild("Torso", true) or model:FindFirstChild("HumanoidRootPart", true) end
         return model:FindFirstChild("HumanoidRootPart", true) or model:FindFirstChild("Head", true)
     end
@@ -278,6 +289,35 @@ return function(context)
                 if visible and point.Z > 0 then
                     local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
                     if distance < bestDistance and lineOfSight(part) then best, bestDistance = part, distance end
+                end
+            end
+        end
+        return best
+    end
+
+    local function acquireExpandedHitboxTarget()
+        if not state.HitboxExpand or not isActiveMatch() then return nil end
+        local camera = workspace.CurrentCamera
+        if not camera then return nil end
+        local pointer = UserInputService:GetMouseLocation()
+        local best, bestDistance = nil, math.huge
+        for _, hostile in ipairs(hostileModels()) do
+            local part = headPart(hostile.Model)
+            if part then
+                local center, visible = camera:WorldToViewportPoint(part.Position)
+                if visible and center.Z > 0 then
+                    local halfSize = math.clamp(state.HitboxSize, 1, 10) / 2
+                    local rightEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.RightVector * halfSize)
+                    local upEdge = camera:WorldToViewportPoint(part.Position + camera.CFrame.UpVector * halfSize)
+                    local radius = math.max(
+                        (Vector2.new(rightEdge.X, rightEdge.Y) - Vector2.new(center.X, center.Y)).Magnitude,
+                        (Vector2.new(upEdge.X, upEdge.Y) - Vector2.new(center.X, center.Y)).Magnitude,
+                        8
+                    )
+                    local distance = (Vector2.new(center.X, center.Y) - pointer).Magnitude
+                    if distance <= radius and distance < bestDistance and lineOfSight(part) then
+                        best, bestDistance = part, distance
+                    end
                 end
             end
         end
@@ -332,6 +372,9 @@ return function(context)
                 cachedAt, cachedTarget = now, nil
                 if state.Alive and state.SilentAim and math.random(1, 100) <= state.SilentAimChance then
                     cachedTarget = acquireTarget()
+                elseif state.Alive and state.HitboxExpand then
+                    cachedTarget = acquireExpandedHitboxTarget()
+                    if cachedTarget then state.HitboxAssistedShots += 1 end
                 end
                 return cachedTarget
             end
@@ -397,6 +440,7 @@ return function(context)
                     head.Size = original.Size
                     head.Transparency = original.Transparency
                     head.CanCollide = original.CanCollide
+                    head.CanQuery = original.CanQuery
                 end)
             end
             hitboxDefaults[head] = nil
@@ -408,16 +452,17 @@ return function(context)
         local active = {}
         local function expandModelHead(model)
             if not model or not model:IsA("Model") then return end
-            local head = model:FindFirstChild("Head", true)
+            local head = headPart(model)
             if not head or not head:IsA("BasePart") then return end
             active[head] = true
             if not hitboxDefaults[head] then
-                hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide}
+                hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide, CanQuery = head.CanQuery}
             end
             local size = math.clamp(state.HitboxSize, 1, 10)
             head.Size = Vector3.new(size, size, size)
             head.Transparency = 0.5
             head.CanCollide = false
+            head.CanQuery = true
         end
         for _, hostile in ipairs(hostileModels()) do
             expandModelHead(hostile.Model)
@@ -433,6 +478,7 @@ return function(context)
                         head.Size = original.Size
                         head.Transparency = original.Transparency
                         head.CanCollide = original.CanCollide
+                        head.CanQuery = original.CanQuery
                     end)
                 end
                 hitboxDefaults[head] = nil
@@ -459,6 +505,35 @@ return function(context)
             if object:IsDescendantOf(gui) then return true end
         end
         return false
+    end
+
+    local lastTriggerTarget, lastTriggerAt = nil, -math.huge
+    local function tryTrigger()
+        if not state.Alive or not state.TriggerBot or not clickMouseOne or not isActiveMatch()
+            or pointerOverVor() or UserInputService:GetFocusedTextBox() ~= nil then
+            lastTriggerTarget = nil
+            return false
+        end
+        local target = LocalMouse.Target
+        if not isHostileTarget(target) and state.HitboxExpand then
+            target = acquireExpandedHitboxTarget()
+        end
+        if not target or not isHostileTarget(target) then
+            lastTriggerTarget = nil
+            return false
+        end
+        local now = os.clock()
+        local firstHover = target ~= lastTriggerTarget
+        local repeatDelay = math.max(tonumber(state.TriggerDelay) or 0, 1 / 240)
+        if not firstHover and now - lastTriggerAt < repeatDelay then return false end
+        lastTriggerTarget = target
+        lastTriggerAt = now
+        local clicked = pcall(clickMouseOne)
+        if clicked then
+            state.TriggerClicks += 1
+            state.LastTriggerTarget = target:GetFullName()
+        end
+        return clicked
     end
 
     local function restoreWeaponValues()
@@ -720,7 +795,7 @@ return function(context)
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Default = false, Callback = function(v) state.ShowFov = v == true end})
 
     CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
-    CombatStatusSection:AddSlider({Name = "Trigger Delay", Flag = "sniper_arena_trigger_delay", Min = 0.03, Max = 0.3, Step = 0.01, Default = 0.08, Suffix = "s", Callback = function(v) state.TriggerDelay = tonumber(v) or 0.08 end})
+    CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
     CombatStatusSection:AddToggle({Name = "Expand Enemy + Bot Heads", Description = "Forgiving-shot alternative to Silent Aim. Active-match only, including nested bot heads, with full restoration.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
     CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
@@ -867,9 +942,12 @@ return function(context)
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
+            gui:SetAttribute("SniperArenaTriggerClicks", state.TriggerClicks)
+            gui:SetAttribute("SniperArenaLastTriggerTarget", state.LastTriggerTarget)
             gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
             gui:SetAttribute("SniperArenaHitboxExpand", state.HitboxExpand)
             gui:SetAttribute("SniperArenaHitboxSize", state.HitboxSize)
+            gui:SetAttribute("SniperArenaHitboxAssistedShots", state.HitboxAssistedShots)
             gui:SetAttribute("SniperArenaNoRecoil", state.NoRecoil)
             gui:SetAttribute("SniperArenaNoSpread", state.NoSpread)
             gui:SetAttribute("SniperArenaFastReload", state.FastReload)
@@ -926,28 +1004,24 @@ return function(context)
     renderStepBound = pcall(function()
         RunService:BindToRenderStep(renderStepName, Enum.RenderPriority.Last.Value - 1, function(deltaTime)
             if not state.Alive then return end
+            updateHitboxes()
             updateAim(deltaTime)
             updateFovCircle()
             updateEnvironment()
         end)
     end)
 
-    local automationClock, statusClock, espClock, triggerClock, weaponClock = 0, 0, 0, 0, 0
+    track(LocalMouse.Move:Connect(tryTrigger))
+
+    local automationClock, statusClock, espClock, weaponClock = 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
-        triggerClock = triggerClock + deltaTime
         weaponClock = weaponClock + deltaTime
         automationClock = automationClock + deltaTime
-        if espClock >= 0.15 then espClock = 0 updateEsp() updateHitboxes() end
-        if state.TriggerBot and clickMouseOne and triggerClock >= state.TriggerDelay then
-            triggerClock = 0
-            if isActiveMatch() and not pointerOverVor() and UserInputService:GetFocusedTextBox() == nil
-                and isHostileTarget(LocalMouse.Target) then
-                pcall(clickMouseOne)
-            end
-        end
+        if espClock >= 0.15 then espClock = 0 updateEsp() end
+        tryTrigger()
         if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end
         if automationClock >= 5 then
