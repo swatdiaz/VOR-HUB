@@ -1066,7 +1066,8 @@ return function(context)
     local renderStepName = "VORSniperArenaCamera_" .. tostring(LocalPlayer.UserId)
     local renderStepBound = false
 
-    runtimeEnvironment.__VORSniperArenaCleanup = function()
+    local ownedCleanup
+    ownedCleanup = function()
         if not state.Alive then return end
         state.Alive = false
         state.AimAssist = false
@@ -1104,10 +1105,14 @@ return function(context)
         local camera = workspace.CurrentCamera
         if camera then camera.FieldOfView = defaults.CameraFov end
     end
+    runtimeEnvironment.__VORSniperArenaCleanup = ownedCleanup
     if gui then track(gui.Destroying:Connect(function()
-        local cleanup = runtimeEnvironment.__VORSniperArenaCleanup
-        runtimeEnvironment.__VORSniperArenaCleanup = nil
-        if type(cleanup) == "function" then cleanup() end
+        -- A stale GUI can be destroyed after a replacement adapter is already
+        -- running. It must never steal and invoke the replacement's cleanup.
+        if runtimeEnvironment.__VORSniperArenaCleanup == ownedCleanup then
+            runtimeEnvironment.__VORSniperArenaCleanup = nil
+        end
+        ownedCleanup()
     end)) end
 
     renderStepBound = pcall(function()

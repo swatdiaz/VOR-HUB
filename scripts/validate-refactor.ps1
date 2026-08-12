@@ -1078,6 +1078,9 @@ $sniperArenaRouting = (
 )
 $sniperArenaNativeBehavior = (
     $sniperArenaText -match '__VORSniperArenaCleanup' -and
+    $sniperArenaText -match 'local ownedCleanup' -and
+    $sniperArenaText -match '__VORSniperArenaCleanup == ownedCleanup' -and
+    $sniperArenaText -notmatch 'local cleanup = runtimeEnvironment\.__VORSniperArenaCleanup' -and
     $sniperArenaText -match 'WeaponService' -and
     $sniperArenaText -match 'StatusService\.GetStatus,\s*"Killed"' -and
     $sniperArenaText -match 'KilledUnlock' -and
@@ -1125,6 +1128,9 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'valueObject\.Value = replacement' -and
     $sniperArenaText -match 'restoreWeaponValues\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_open_cases"' -and
+    $sniperArenaText -match 'GachaService\.Gacha' -and
+    $sniperArenaText -notmatch 'sniper_arena_movement_boost' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Default\s*=\s*false' -and
