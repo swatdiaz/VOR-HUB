@@ -1108,6 +1108,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
     $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
+    $sniperArenaText -match 'expandModelHead\(tagged:IsA\("Model"\)' -and
     $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and
     $sniperArenaText -match 'restoreHitboxes\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and

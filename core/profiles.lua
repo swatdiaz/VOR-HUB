@@ -41,7 +41,7 @@ return function(context)
             and (tonumber(metadata.version) or 0) < PROFILE_VERSION then
             local oldSmoothness = tonumber(metadata.values.sniper_arena_cursor_smoothness)
             if oldSmoothness ~= nil and oldSmoothness <= 5 then
-                metadata.values.sniper_arena_cursor_smoothness = math.clamp(oldSmoothness * 5, 5, 25)
+                metadata.values.sniper_arena_cursor_smoothness = math.clamp(oldSmoothness * 5, 10, 25)
             end
             changed = true
         end

@@ -385,18 +385,24 @@ return function(context)
     local function updateHitboxes()
         if not state.HitboxExpand or not isActiveMatch() then restoreHitboxes() return end
         local active = {}
-        for _, hostile in ipairs(hostileModels()) do
-            local head = hostile.Model:FindFirstChild("Head", true)
-            if head and head:IsA("BasePart") then
-                active[head] = true
-                if not hitboxDefaults[head] then
-                    hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide}
-                end
-                local size = math.clamp(state.HitboxSize, 1, 10)
-                head.Size = Vector3.new(size, size, size)
-                head.Transparency = 0.5
-                head.CanCollide = false
+        local function expandModelHead(model)
+            if not model or not model:IsA("Model") then return end
+            local head = model:FindFirstChild("Head", true)
+            if not head or not head:IsA("BasePart") then return end
+            active[head] = true
+            if not hitboxDefaults[head] then
+                hitboxDefaults[head] = {Size = head.Size, Transparency = head.Transparency, CanCollide = head.CanCollide}
             end
+            local size = math.clamp(state.HitboxSize, 1, 10)
+            head.Size = Vector3.new(size, size, size)
+            head.Transparency = 0.5
+            head.CanCollide = false
+        end
+        for _, hostile in ipairs(hostileModels()) do
+            expandModelHead(hostile.Model)
+        end
+        for _, tagged in ipairs(CollectionService:GetTagged("Bot")) do
+            expandModelHead(tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model"))
         end
         for head, original in pairs(hitboxDefaults) do
             if not active[head] then
