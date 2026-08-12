@@ -131,6 +131,7 @@ return function(context)
     local TrailSection = ShopsPage:AddSection("Trail Shop", "Right")
     local UpgradeSection = ShopsPage:AddSection("Bone Upgrades", "Left")
     local GearSection = ShopsPage:AddSection("Gear Crates", "Right")
+    Equipment.PotionSection = ShopsPage:AddSection("Owned Potions", "Left")
     local DogSection = UnlocksPage:AddSection("Dogs", "Left")
     local PartnerSection = UnlocksPage:AddSection("Partners", "Right")
     Equipment.BirdSection = Equipment.Page:AddSection("Birds", "Left")
@@ -143,7 +144,7 @@ return function(context)
     Equipment.HomeGuideSection = HomePage:AddSection("🧭 Dog Race Instructions", "Right")
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🤖 AFK everything",
-        Content = "Open Full Auto and enable FULL PROGRESSION. It trains between native races, hatches, claims rewards and tasks, buys eligible upgrades, crafts duplicate pets before storage blocks hatching, equips the best loadout, and waits when currency is short.",
+        Content = "Open Full Auto and enable FULL PROGRESSION. It trains between native races, hatches, claims rewards and tasks, uses every owned potion, buys eligible upgrades, crafts duplicate pets before storage blocks hatching, equips the best loadout, and waits when currency is short.",
     })
     Equipment.HomeGuideSection:AddParagraph({
         Title = "🥚 Smart or manual eggs",
@@ -170,6 +171,9 @@ return function(context)
         AutoRebirth = false,
         AutoEquipBest = false,
         AutoCraftPets = false,
+        AutoPotions = false,
+        PotionUsing = false,
+        PotionRunId = 0,
         AutoDailyChest = false,
         FullProgression = false,
         SmartBestEgg = true,
@@ -216,6 +220,7 @@ return function(context)
         LastRebirth = 0,
         LastEquipBest = 0,
         LastPetCraft = 0,
+        LastPotionSweep = 0,
         LastDailyChest = 0,
         LastAction = "Ready",
         SpeedHumanoid = nil,
@@ -938,6 +943,73 @@ return function(context)
             task.delay(2, equipBestPets)
         end
         return ok
+    end
+
+    function Equipment.useAllPotions()
+        if state.PotionUsing then
+            state.LastAction = "Owned potions are already being consumed"
+            return false
+        end
+        local data = getData()
+        local service = getService("PotionService")
+        local remote = service and service.UsePotion
+        if not data or not remote or type(remote.Fire) ~= "function" then
+            state.LastAction = "Potion service unavailable"
+            return false
+        end
+        local queue = {}
+        for potionId, potion in pairs(data.Potions or {}) do
+            for _ = 1, math.max(0, tonumber(potion.Count) or 0) do
+                table.insert(queue, potionId)
+            end
+        end
+        if #queue == 0 then
+            state.LastAction = "Potions: owned inventory is empty"
+            return false
+        end
+        state.PotionRunId = state.PotionRunId + 1
+        local runId = state.PotionRunId
+        state.PotionUsing = true
+        state.LastAction = string.format("Using all %d owned potion(s)", #queue)
+        task.spawn(function()
+            local used = 0
+            for _, potionId in ipairs(queue) do
+                if not state.Alive or state.PotionRunId ~= runId then
+                    break
+                end
+                if pcall(remote.Fire, remote, potionId) then
+                    used = used + 1
+                end
+                task.wait(0.2)
+            end
+            if state.PotionRunId == runId then
+                state.PotionUsing = false
+                state.LastAction = string.format("Used %d owned potion(s)", used)
+            end
+        end)
+        return true
+    end
+
+    function Equipment.updatePotionStatus(data)
+        local count, active = 0, 0
+        for _, potion in pairs(data and data.Potions or {}) do
+            count = count + math.max(0, tonumber(potion.Count) or 0)
+            if (tonumber(potion.LastTime) or 0) > os.time() then
+                active = active + 1
+            end
+        end
+        if Equipment.PotionStatusLabel then
+            Equipment.PotionStatusLabel.Text = string.format(
+                "Owned: %d | Active types: %d | Auto %s",
+                count,
+                active,
+                state.AutoPotions and "ON" or "OFF"
+            )
+        end
+        if gui then
+            gui:SetAttribute("DogRaceOwnedPotionCount", count)
+            gui:SetAttribute("DogRaceActivePotionTypes", active)
+        end
     end
 
     function Equipment.nextBirdWinsReserve(data)
@@ -1904,6 +1976,8 @@ return function(context)
     local partnerAccessLabel = PartnerSection:AddLabel("Partner: scanning...")
     local crateAccessLabel = GearSection:AddLabel("Gear crate: scanning...")
     local gearInventoryLabel = GearSection:AddLabel("Dog gear: scanning...")
+    Equipment.PotionStatusLabel = Equipment.PotionSection:AddLabel("Potions: scanning...")
+    Equipment.PotionSection:AddLabel("Uses owned quantities only. It never opens a Robux purchase prompt.")
     Equipment.BirdAccessLabel = Equipment.BirdSection:AddLabel("Bird: scanning...")
     Equipment.ShoeAccessLabel = Equipment.ShoeSection:AddLabel("Shoes: scanning...")
     Equipment.ShoeSection:AddLabel("Bones come from native race rewards. The game calls them Diamonds internally.")
@@ -1929,6 +2003,7 @@ return function(context)
             automationControls.Rebirth,
             automationControls.EquipBest,
             automationControls.CraftPets,
+            automationControls.Potions,
             automationControls.DailyChest,
             automationControls.OnlineRewards,
             automationControls.FreeEgg,
@@ -2368,6 +2443,23 @@ return function(context)
         Callback = function(enabled) state.AutoMergeGear = enabled == true end,
     })
 
+    Equipment.PotionSection:AddButton({Name = "Use All Owned Potions", Callback = Equipment.useAllPotions})
+    automationControls.Potions = Equipment.PotionSection:AddToggle({
+        Name = "Auto Use All Owned Potions",
+        Description = "Consumes every owned potion quantity through the native Use button. Never buys Robux potions.",
+        Flag = "dograce_auto_potions",
+        Default = false,
+        Callback = function(enabled)
+            state.AutoPotions = enabled == true
+            if state.AutoPotions then
+                Equipment.useAllPotions()
+            else
+                state.PotionRunId = state.PotionRunId + 1
+                state.PotionUsing = false
+            end
+        end,
+    })
+
     DogSection:AddDropdown({
         Name = "Dog",
         Description = "Wins, Jurassic-token, area, and Robux gates stay server-authoritative.",
@@ -2637,6 +2729,7 @@ return function(context)
             storedGear = okStored and tonumber(stored) or 0
         end
         gearInventoryLabel.Text = string.format("Dog gear: %d equipped | %d stored", equippedGear, storedGear)
+        Equipment.updatePotionStatus(data)
         fullAutoLabel.Text = state.FullProgression
             and string.format("Full progression: ON — egg target %s",
                 state.SmartBestEgg and "BEST AFFORDABLE" or "MANUAL")
@@ -2703,6 +2796,7 @@ return function(context)
             gui:SetAttribute("DogRaceAutoAchievements", state.AutoAchievements)
             gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
             gui:SetAttribute("DogRaceAutoCraftPets", state.AutoCraftPets)
+            gui:SetAttribute("DogRaceAutoPotions", state.AutoPotions)
             gui:SetAttribute("DogRacePetCount", petCount)
             gui:SetAttribute("DogRacePetStorageMax", maxPetStorage(data or {}))
             gui:SetAttribute("DogRaceAutoGearCrate", state.AutoGearCrate)
@@ -2739,6 +2833,9 @@ return function(context)
         state.AutoRebirth = false
         state.AutoEquipBest = false
         state.AutoCraftPets = false
+        state.AutoPotions = false
+        state.PotionRunId = state.PotionRunId + 1
+        state.PotionUsing = false
         state.AutoDailyChest = false
         state.AutoHatch = false
         state.FullProgression = false
@@ -2839,6 +2936,11 @@ return function(context)
                 if Equipment.hasCraftablePets(data) then
                     Equipment.craftAllPets(false)
                 end
+            end
+            if state.AutoPotions and not state.PotionUsing
+                and now - state.LastPotionSweep >= 5 then
+                state.LastPotionSweep = now
+                Equipment.useAllPotions()
             end
             if state.AutoEquipBest and now - state.LastEquipBest >= 3 then
                 state.LastEquipBest = now
