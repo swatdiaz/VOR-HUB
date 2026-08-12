@@ -404,17 +404,18 @@ $raidRangeSafety = (
     $bloxText -match '(?s)RaidClusterAnchor = nil.*?RaidClusterRadius = 7500.*?function RaidRuntime\.LatestIsland\(\).*?local distance = \(candidate\.Part\.Position - root\.Position\)\.Magnitude.*?nearestDistance > 5000.*?state\.RaidClusterAnchor = nearestEntry\.Part\.Position.*?candidate\.Part\.Position - state\.RaidClusterAnchor.*?state\.RaidClusterRadius' -and
     $bloxText -match 'Never write Humanoid\.Health directly' -and
     $bloxText -notmatch 'enemyBody\.Health\s*=\s*-9e9' -and
-    $bloxText -match '(?s)isnetworkowner.*?owned and not state\.RaidVoidCombatFallback.*?workspace\.FallenPartsDestroyHeight - 250.*?enemyRoot\.AssemblyLinearVelocity = Vector3\.new\(0, -500, 0\)' -and
-    $bloxText -match '(?s)state\.RaidVoidCombatFallback = true.*?enemyBody\.PlatformStand = original\.PlatformStand.*?enemyRoot\.CanCollide = original\.CanCollide.*?enemyRoot\.CFrame = original\.CFrame.*?table\.clear\(state\.RaidVoidOriginalCFrames\)' -and
+    $bloxText -match 'Never perform that destructive' -and
+    $bloxText -match '(?s)state\.RaidOverkillActive = function\(\).*?RaidIslandIndex.*?state\.RegisteredHitDelay = function\(\).*?0\.05' -and
+    $bloxText -match '(?s)state\.RaidOverkillActive\(\) and #targets > 1.*?DoubleAttackEngine\.SwordTargetLimit' -and
+    $bloxText -notmatch 'workspace\.FallenPartsDestroyHeight - 250' -and
     $bloxText -match '(?s)damaged > 0.*?state\.AutoRaid and LocalPlayer:GetAttribute\("IslandRaiding"\) == true.*?fallbackTool:Activate\(\).*?BloxRaidNativeFallbackCount' -and
     $bloxText -match 'healthPercent\(\) <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match 'local safeModeRecovery = state\.SafeMode and currentHealth <= state\.SafeHealthPercent' -and
     $bloxText -match 'local emergencyRecovery = currentHealth <= DoubleAttackEngine\.RaidRecoveryPercent' -and
     $bloxText -match '(?s)if state\.RaidSafeModeActive then.*?state\.RaidVoidKill and island\.Index >= 5.*?RaidRuntime\.VoidKillStep\(island\).*?retreatHeight = math\.max\(DoubleAttackEngine\.RaidRecoveryHeight, safeHeight \+ 100\).*?state\.FarmHoldY = retreatCFrame\.Position\.Y' -and
-    $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
+    $bloxText -match 'RaidVoidFallbackActive = nearbyEnemyCount > 0 and nearestEnemy ~= nil' -and
     $bloxText -match 'RaidVoidFallbackDelay = 3\.5' -and
-    $bloxText -match '(?s)aliveEnemyHealth < state\.RaidVoidFallbackHealth - 1.*?os\.clock\(\) - state\.RaidVoidFallbackLastProgress >= state\.RaidVoidFallbackDelay.*?state\.RaidVoidCombatFallback = true' -and
-    $bloxText -match 'state\.RaidVoidActive = not state\.RaidVoidCombatFallback' -and
+    $bloxText -match '(?s)state\.RaidVoidActive = false\s+state\.RaidVoidCombatFallback = true' -and
     $bloxText -match 'BloxRaidVoidCombatFallback' -and
     $bloxText -match 'local holdCFrame = island\.Part\.CFrame \+ Vector3\.new\(raidX, safeHeight, raidZ\)' -and
     $bloxText -match '(?s)if state\.RaidVoidActive then.*?state\.ActiveFarmTarget = nil.*?state\.RaidTargetName = nil.*?moveTo\(holdCFrame\).*?cancelMove\(false\)' -and

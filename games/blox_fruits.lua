@@ -1998,13 +1998,24 @@ return function(context)
             }
         end
 
+        state.RaidOverkillActive = function()
+            return state.RaidVoidKill
+                and state.AutoRaid
+                and state.RaidMovementReady
+                and (tonumber(state.RaidIslandIndex) or 0) >= 5
+        end
+
+        state.RegisteredHitDelay = function()
+            return (state.ThirdSeaBossMode or state.RaidOverkillActive()) and 0.05 or AURA_KILL_HIT_DELAY
+        end
+
         local function registeredAttackCadence(attackProfile)
             if state.FastAttack then
                 -- The RegisterAttack -> RegisterHit window itself already
                 -- consumes AURA_KILL_HIT_DELAY. Adding half the animation
                 -- length here made the "Turbo" toggle visibly pause even with
                 -- Extra Aura Delay at zero.
-                return state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY
+                return state.RegisteredHitDelay()
             end
             return math.max(AURA_KILL_HIT_DELAY, attackProfile.NativeCadence)
         end
@@ -2057,7 +2068,7 @@ return function(context)
             -- Zero is rejected by the server.
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "attack-started"
-            task.wait(state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY)
+            task.wait(state.RegisteredHitDelay())
             if state.AuraAttackGeneration ~= attackGeneration
                 or not state.Alive or not state.AuraKill then
                 return false, "the target left before the hit window"
@@ -2148,7 +2159,7 @@ return function(context)
 
             RegisterAttackEvent:FireServer(attackProfile.Duration)
             state.AuraStage = "double-sword-started"
-            task.wait(state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY)
+            task.wait(state.RegisteredHitDelay())
             if state.AuraAttackGeneration ~= attackGeneration
                 or not state.Alive or not state.AuraKill
                 or not state.DoubleAttack then
@@ -2683,6 +2694,14 @@ return function(context)
                 -- Grab is off. Fruit independently covers its nearest three.
                 attackTargets = DoubleAttackEngine.Targets(DoubleAttackEngine.SwordTargetLimit)
                 target = attackTargets[1] or target
+            elseif state.RaidOverkillActive() and #targets > 1 then
+                attackTargets = {}
+                local overkillLimit = math.min(#targets, DoubleAttackEngine.SwordTargetLimit)
+                for offset = 0, overkillLimit - 1 do
+                    local index = ((state.AuraTargetCursor - 1 + offset) % #targets) + 1
+                    table.insert(attackTargets, targets[index])
+                end
+                target = attackTargets[1]
             elseif (state.GatherEnemies or (
                 state.RaidMultiGrab
                 and state.AutoRaid
@@ -2733,7 +2752,7 @@ return function(context)
                 plan.FruitData = weaponDataForTool(plan.Fruit)
                 plan.FruitRegistered = isFruitWeaponType(weaponTypeForTool(plan.Fruit, plan.FruitData))
                     and hasRegisteredBasicMoveset(plan.FruitData)
-                plan.Cadence = (state.ThirdSeaBossMode and 0.05 or AURA_KILL_HIT_DELAY) + extraDelay
+                plan.Cadence = state.RegisteredHitDelay() + extraDelay
                 state.AuraWeaponName = plan.Sword.Name .. " + " .. plan.Fruit.Name
                 state.AuraWeaponType = plan.SwordSelection .. " + Blox Fruit"
                 state.AuraAttackMode = "Double Attack: " .. plan.SwordSelection
@@ -3926,36 +3945,34 @@ return function(context)
                 return 0
             end
             if state.RaidVoidFallbackIsland ~= island.Index then
-                state.RaidVoidCombatFallback = false
                 state.RaidVoidFallbackIsland = island.Index
                 state.RaidVoidFallbackHealth = math.huge
                 state.RaidVoidFallbackEnemyCount = 0
                 state.RaidVoidFallbackLastProgress = os.clock()
             end
-            state.RaidVoidActive = not state.RaidVoidCombatFallback
+            -- Never write Humanoid.Health directly; that creates the same
+            -- uncredited local-only death as a destructive physics void.
+            -- Live Sand testing proved that moving even client-owned raid rigs
+            -- below FallenPartsDestroyHeight removes their local replicas but
+            -- does not award a server kill. That leaves IslandRaiding true with
+            -- an empty island: a ghost raid. Never perform that destructive
+            -- local void. Island 5 instead enables the fastest server-credited
+            -- RegisterAttack/RegisterHit cadence and bundles every nearby rig.
+            state.RaidVoidActive = false
+            state.RaidVoidCombatFallback = true
             if os.clock() - state.LastRaidVoidStep < 0.06 then
                 return state.RaidVoidMoved
             end
             state.LastRaidVoidStep = os.clock()
-            pcall(function()
-                if type(sethiddenproperty) == "function" then
-                    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
-                end
-            end)
             local playerRoot = rootPart()
             if not playerRoot then
                 state.RaidVoidMoved = 0
                 state.RaidVoidStaged = 0
                 return 0
             end
-            -- Solix's Island 5 routine tries to reposition NPCs while parking
-            -- above the island, but a fresh-server probe showed that unowned
-            -- rigs merely moved locally and remained at full server health.
-            -- Treat ownership as a hard gate for any real physics void.
-            local killed = 0
-            local waitingForOwnership = 0
-            local nearestWaiting = nil
-            local nearestWaitingDistance = math.huge
+            local nearbyEnemyCount = 0
+            local nearestEnemy = nil
+            local nearestEnemyDistance = math.huge
             local aliveEnemyCount = 0
             local aliveEnemyHealth = 0
             for _, enemy in ipairs(loadedEnemies()) do
@@ -3965,89 +3982,23 @@ return function(context)
                     and (enemyRoot.Position - island.Part.Position).Magnitude <= 2500 then
                     aliveEnemyCount += 1
                     aliveEnemyHealth += enemyBody.Health
-                    local owned = false
-                    if type(isnetworkowner) == "function" then
-                        local ownerOk, ownerResult = pcall(isnetworkowner, enemyRoot)
-                        owned = ownerOk and ownerResult == true
-                    end
-                    -- Never write Humanoid.Health directly. Even with local
-                    -- network ownership that can remove the replicated NPC
-                    -- without awarding the raid server a credited kill, leaving
-                    -- a live timer and no enemy to finish. Solix's intended void
-                    -- route is physics-based: only an actually client-owned rig
-                    -- is moved below FallenPartsDestroyHeight. Unowned rigs stay
-                    -- untouched while the bounded credited-combat fallback waits.
-                    if owned and not state.RaidVoidCombatFallback then
-                        if not state.RaidVoidOriginalCFrames[enemy] then
-                            state.RaidVoidOriginalCFrames[enemy] = {
-                                CFrame = enemyRoot.CFrame,
-                                CanCollide = enemyRoot.CanCollide,
-                                PlatformStand = enemyBody.PlatformStand,
-                            }
-                        end
-                        local actionOk = pcall(function()
-                            enemyBody.PlatformStand = true
-                            enemyRoot.CanCollide = false
-                            enemyRoot.CFrame = CFrame.new(
-                                island.Part.Position.X,
-                                workspace.FallenPartsDestroyHeight - 250,
-                                island.Part.Position.Z
-                            )
-                            enemyRoot.AssemblyLinearVelocity = Vector3.new(0, -500, 0)
-                        end)
-                        if actionOk then
-                            if not state.RaidVoidTargets[enemy] then
-                                state.RaidVoidTargets[enemy] = true
-                                state.RaidVoidKillCount += 1
-                            end
-                            killed += 1
-                        end
-                    else
-                        waitingForOwnership += 1
-                        local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
-                        if distance < nearestWaitingDistance then
-                            nearestWaiting = enemy
-                            nearestWaitingDistance = distance
-                        end
+                    nearbyEnemyCount += 1
+                    local distance = (enemyRoot.Position - playerRoot.Position).Magnitude
+                    if distance < nearestEnemyDistance then
+                        nearestEnemy = enemy
+                        nearestEnemyDistance = distance
                     end
                 end
             end
-            state.RaidVoidMoved = killed
-            state.RaidVoidStaged = waitingForOwnership
-            state.RaidVoidFocus = nearestWaiting
-            state.RaidVoidFocusDistance = nearestWaitingDistance
-            state.RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil
-            local madeProgress = aliveEnemyCount ~= state.RaidVoidFallbackEnemyCount
-                or aliveEnemyHealth < state.RaidVoidFallbackHealth - 1
-            if madeProgress then
-                state.RaidVoidFallbackLastProgress = os.clock()
-            elseif waitingForOwnership > 0
-                and os.clock() - state.RaidVoidFallbackLastProgress >= state.RaidVoidFallbackDelay then
-                -- Stationary Island 5 attacks can sit forever without credited
-                -- damage. Stop parking in place once health/count
-                -- has made no progress and resume ordinary 150-speed raid combat.
-                state.RaidVoidCombatFallback = true
-                for enemy, original in pairs(state.RaidVoidOriginalCFrames) do
-                    local enemyRoot = modelRoot(enemy)
-                    local enemyBody = enemy:FindFirstChildOfClass("Humanoid")
-                    if enemyRoot and enemyBody and enemyBody.Health > 0 then
-                        pcall(function()
-                            enemyBody.PlatformStand = original.PlatformStand
-                            enemyRoot.CanCollide = original.CanCollide
-                            enemyRoot.CFrame = original.CFrame
-                            enemyRoot.AssemblyLinearVelocity = Vector3.zero
-                        end)
-                    end
-                end
-                table.clear(state.RaidVoidOriginalCFrames)
-            end
+            state.RaidVoidMoved = 0
+            state.RaidVoidStaged = nearbyEnemyCount
+            state.RaidVoidFocus = nearestEnemy
+            state.RaidVoidFocusDistance = nearestEnemyDistance
+            state.RaidVoidFallbackActive = nearbyEnemyCount > 0 and nearestEnemy ~= nil
             state.RaidVoidFallbackEnemyCount = aliveEnemyCount
             state.RaidVoidFallbackHealth = aliveEnemyHealth
-            if state.RaidVoidCombatFallback then
-                state.RaidVoidActive = false
-            end
             state.RaidGathered = 0
-            return killed
+            return 0
         end
 
         local function fireRaidButton()
@@ -7871,10 +7822,10 @@ return function(context)
         })
         RaidSection:AddLabel("Raids use the shared X/Y/Z farm position. Double Attack clamps only offsets outside its credited hit sphere.")
         RaidSection:AddLabel("Auto Farm Raid always tweens between NPCs at 150 studs/second; the global Tween Speed still controls travel outside raids.")
-        RaidSection:AddLabel("Raids suppress Double Attack and Auto Magnet for stable credited hits. Island 5 voids only client-owned rigs, then falls back when ownership or damage stalls.")
+        RaidSection:AddLabel("Raids suppress Double Attack and Auto Magnet for stable credited hits. Island 5 overkill bundles nearby rigs at the fastest validated server-hit cadence; unsafe local voids are bypassed.")
         RaidSection:AddToggle({
             Name = "Force Kill Aura [Island 5]",
-            Description = "Voids actually client-owned rigs below destroy height, then resumes 150-speed credited combat if ownership or health stalls",
+            Description = "Uses rapid multi-target server-credited hits; local physics voids are blocked because they can leave an empty ghost raid",
             Flag = "blox_raid_void_kill",
             Default = false,
             Callback = function(enabled)
