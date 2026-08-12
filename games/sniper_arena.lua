@@ -168,10 +168,30 @@ return function(context)
 
     local function sameTeam(player)
         local mode = serverMode()
-        if mode == "Arcade" or string.find(mode, "FFA", 1, true) then return false end
+        if string.find(mode, "FFA", 1, true) then return false end
         local mine, theirs = LocalPlayer:GetAttribute("Team"), player:GetAttribute("Team")
-        if mine ~= nil and theirs ~= nil then return mine == theirs end
+        if mine ~= nil and theirs ~= nil then return tostring(mine) == tostring(theirs) end
         return LocalPlayer.Team ~= nil and LocalPlayer.Team == player.Team
+    end
+
+    local function playerForModel(model)
+        if not model then return nil end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character == model then return player end
+        end
+        return nil
+    end
+
+    local function sameTeamModel(model)
+        if not state.TeamCheck or not model then return false end
+        local mode = serverMode()
+        if string.find(mode, "FFA", 1, true) then return false end
+        local mine = LocalPlayer:GetAttribute("Team")
+        local theirs = model:GetAttribute("Team")
+        local player = playerForModel(model)
+        if theirs == nil and player then theirs = player:GetAttribute("Team") end
+        if mine ~= nil and theirs ~= nil then return tostring(mine) == tostring(theirs) end
+        return player ~= nil and sameTeam(player)
     end
 
     local function isEnemy(player)
@@ -188,6 +208,7 @@ return function(context)
 
     local function addHostile(records, seen, model, displayName, kind)
         if not model or not model:IsA("Model") or seen[model] or model == LocalPlayer.Character then return end
+        if sameTeamModel(model) then return end
         local tempRoot = workspace:FindFirstChild("_Temp")
         if tempRoot and model:IsDescendantOf(tempRoot) then return end
         local humanoid = model:FindFirstChildOfClass("Humanoid")
@@ -402,7 +423,8 @@ return function(context)
             expandModelHead(hostile.Model)
         end
         for _, tagged in ipairs(CollectionService:GetTagged("Bot")) do
-            expandModelHead(tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model"))
+            local model = tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model")
+            if model and not sameTeamModel(model) then expandModelHead(model) end
         end
         for head, original in pairs(hitboxDefaults) do
             if not active[head] then
@@ -839,6 +861,8 @@ return function(context)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
             gui:SetAttribute("SniperArenaAimRadius", state.AimRadius)
             gui:SetAttribute("SniperArenaAimSmoothness", state.AimSmoothness)
+            gui:SetAttribute("SniperArenaTeamCheck", state.TeamCheck)
+            gui:SetAttribute("SniperArenaHostileCount", #hostileModels())
             gui:SetAttribute("SniperArenaAimTarget", state.CurrentTarget and state.CurrentTarget:GetFullName() or "")
             gui:SetAttribute("SniperArenaSilentAim", state.SilentAim)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)

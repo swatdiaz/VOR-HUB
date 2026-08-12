@@ -1086,7 +1086,6 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'MailboxService' -and
     $sniperArenaText -match 'OnlineRewardClaim' -and
     $sniperArenaText -match 'MatchmakingService\.Match' -and
-    $sniperArenaText -match 'mode\s*==\s*"Arcade"' -and
     $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*2,\s*silentCameraGetter' -and
     $sniperArenaText -match 'debug\.setupvalue,\s*originalLocalShoot,\s*4,\s*silentTargetResolver' -and
     $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
@@ -1100,6 +1099,9 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"' -and
     $sniperArenaText -match 'moveMouseRelative' -and
     $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
+    $sniperArenaText -notmatch 'mode == "Arcade" or string\.find\(mode, "FFA"' -and
+    $sniperArenaText -match 'local function sameTeamModel\(model\)' -and
+    $sniperArenaText -match 'if sameTeamModel\(model\) then return end' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
     $sniperArenaText -match 'LocalPlayer:GetAttribute\("GameRoom"\)' -and
     $sniperArenaText -match 'room:FindFirstChild\("Entities"\)' -and
@@ -1108,7 +1110,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
     $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
-    $sniperArenaText -match 'expandModelHead\(tagged:IsA\("Model"\)' -and
+    $sniperArenaText -match 'if model and not sameTeamModel\(model\) then expandModelHead\(model\) end' -and
     $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and
     $sniperArenaText -match 'restoreHitboxes\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and
