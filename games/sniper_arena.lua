@@ -48,6 +48,7 @@ return function(context)
     local MatchmakingService = safeRequire(Remote and Remote:FindFirstChild("MatchmakingService"))
     local CareerStore = safeRequire(Remote and Remote:FindFirstChild("CareerStatsService") and Remote.CareerStatsService:FindFirstChild("LocalCareerStatsStore"))
     local CombatController = Client and Client:FindFirstChild("CombatController")
+    local CombatControllerApi = safeRequire(CombatController)
     local ClientComponent = CombatController and CombatController:FindFirstChild("ClientComponent")
     local ClientShootableComponent = safeRequire(ClientComponent and ClientComponent:FindFirstChild("ClientShootableComponent"))
     local WeaponConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Weapon")) or {}
@@ -105,6 +106,8 @@ return function(context)
         TriggerBot = false,
         TriggerDelay = 0,
         TriggerClicks = 0,
+        TriggerNativeShots = 0,
+        TriggerMouseFallbacks = 0,
         LastTriggerTarget = "",
         HitboxAssistedShots = 0,
         HitboxExpand = false,
@@ -507,9 +510,44 @@ return function(context)
         return false
     end
 
+    local triggerInputToken = "VOR_TRIGGER_" .. tostring(LocalPlayer.UserId)
+    local triggerInputHeld = false
+
+    local function releaseTriggerInput()
+        if not triggerInputHeld then return end
+        triggerInputHeld = false
+        local primaryAction = CombatControllerApi and CombatControllerApi.PrimaryAction
+        if primaryAction and type(primaryAction.End) == "function" then
+            pcall(primaryAction.End, triggerInputToken)
+        end
+    end
+
+    local function fireTriggerInput()
+        local primaryAction = CombatControllerApi and CombatControllerApi.PrimaryAction
+        if primaryAction and type(primaryAction.Begin) == "function" and not triggerInputHeld then
+            triggerInputHeld = true
+            local ok, fired = pcall(primaryAction.Begin, triggerInputToken)
+            task.spawn(function()
+                RunService.Heartbeat:Wait()
+                releaseTriggerInput()
+            end)
+            if ok and fired then
+                state.TriggerNativeShots += 1
+                return true
+            end
+            return false
+        end
+        if clickMouseOne then
+            local ok = pcall(clickMouseOne)
+            if ok then state.TriggerMouseFallbacks += 1 end
+            return ok
+        end
+        return false
+    end
+
     local lastTriggerTarget, lastTriggerAt = nil, -math.huge
     local function tryTrigger()
-        if not state.Alive or not state.TriggerBot or not clickMouseOne or not isActiveMatch()
+        if not state.Alive or not state.TriggerBot or not isActiveMatch()
             or pointerOverVor() or UserInputService:GetFocusedTextBox() ~= nil then
             lastTriggerTarget = nil
             return false
@@ -528,7 +566,7 @@ return function(context)
         if not firstHover and now - lastTriggerAt < repeatDelay then return false end
         lastTriggerTarget = target
         lastTriggerAt = now
-        local clicked = pcall(clickMouseOne)
+        local clicked = fireTriggerInput()
         if clicked then
             state.TriggerClicks += 1
             state.LastTriggerTarget = target:GetFullName()
@@ -943,8 +981,11 @@ return function(context)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
             gui:SetAttribute("SniperArenaTriggerClicks", state.TriggerClicks)
+            gui:SetAttribute("SniperArenaTriggerNativeShots", state.TriggerNativeShots)
+            gui:SetAttribute("SniperArenaTriggerMouseFallbacks", state.TriggerMouseFallbacks)
             gui:SetAttribute("SniperArenaLastTriggerTarget", state.LastTriggerTarget)
             gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
+            gui:SetAttribute("SniperArenaNativeTriggerAvailable", CombatControllerApi ~= nil)
             gui:SetAttribute("SniperArenaHitboxExpand", state.HitboxExpand)
             gui:SetAttribute("SniperArenaHitboxSize", state.HitboxSize)
             gui:SetAttribute("SniperArenaHitboxAssistedShots", state.HitboxAssistedShots)
@@ -970,6 +1011,7 @@ return function(context)
         state.NoRecoil = false
         state.NoSpread = false
         state.FastReload = false
+        releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
         if renderStepBound then
