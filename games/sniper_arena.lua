@@ -97,6 +97,8 @@ return function(context)
         WallCheck = true,
         ShowFov = true,
         EnemyEsp = false,
+        EspNameText = false,
+        EspNameRange = 350,
         EspMaxDistance = 2000,
         EspColor = Color3.fromRGB(72, 205, 255),
         EspAccent = Color3.fromRGB(155, 103, 255),
@@ -355,12 +357,31 @@ return function(context)
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                         highlight.Adornee = model
                         highlight.Parent = model
-                        entry = {Highlight = highlight}
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Name = "VORSniperLabel"
+                        billboard.AlwaysOnTop = true
+                        billboard.Size = UDim2.fromOffset(160, 20)
+                        billboard.StudsOffset = Vector3.new(0, 2.85, 0)
+                        billboard.Adornee = model:FindFirstChild("Head") or root
+                        billboard.Parent = model
+                        local label = Instance.new("TextLabel")
+                        label.BackgroundTransparency = 1
+                        label.Size = UDim2.fromScale(1, 1)
+                        label.Font = Enum.Font.GothamMedium
+                        label.TextColor3 = state.EspColor
+                        label.TextStrokeColor3 = Color3.fromRGB(5, 8, 14)
+                        label.TextStrokeTransparency = 0.35
+                        label.TextSize = 11
+                        label.Parent = billboard
+                        entry = {Highlight = highlight, Billboard = billboard, Label = label}
                         highlights[model] = entry
                     end
                     entry.Highlight.FillColor = state.EspColor
                     entry.Highlight.OutlineColor = state.EspAccent
                     entry.Highlight.FillTransparency = state.EspFillTransparency
+                    entry.Billboard.Enabled = state.EspNameText and distance <= state.EspNameRange
+                    entry.Label.TextColor3 = state.EspColor
+                    entry.Label.Text = hostile.Kind == "BOT" and "BOT" or (hostile.Kind == "BOSS" and "BOSS" or hostile.Name)
                 else clearEsp(model) end
             else clearEsp(model) end
         end
@@ -541,6 +562,8 @@ return function(context)
     local actionLabel = CoachSection:AddLabel("Last action: Ready")
 
     EspSection:AddToggle({Name = "Enemy ESP", Flag = "sniper_arena_esp", Default = false, Callback = function(v) state.EnemyEsp = v == true if not state.EnemyEsp then for p in pairs(highlights) do clearEsp(p) end end end})
+    EspSection:AddToggle({Name = "Minimal Name Text", Description = "Optional transparent text only. Bots show BOT and bosses show BOSS.", Flag = "sniper_arena_esp_names", Default = false, Callback = function(v) state.EspNameText = v == true end})
+    EspSection:AddSlider({Name = "Name Text Range", Flag = "sniper_arena_esp_name_range", Min = 50, Max = 1500, Step = 50, Default = 350, Suffix = "m", Callback = function(v) state.EspNameRange = tonumber(v) or 350 end})
     EspSection:AddColorPicker({Name = "Outline Color", Flag = "sniper_arena_esp_color", Default = state.EspColor, Callback = function(v) if typeof(v) == "Color3" then state.EspColor = v end end})
     EspSection:AddColorPicker({Name = "Body Accent", Flag = "sniper_arena_esp_accent", Default = state.EspAccent, Callback = function(v) if typeof(v) == "Color3" then state.EspAccent = v end end})
     EspSection:AddSlider({Name = "Body Fill", Flag = "sniper_arena_esp_fill", Min = 0, Max = 100, Step = 1, Default = 22, Suffix = "%", Callback = function(v) state.EspFillTransparency = 1 - math.clamp(tonumber(v) or 22, 0, 100) / 100 end})
