@@ -3931,8 +3931,18 @@ return function(context)
                 yellow.Position + Vector3.new(0, yellow.Size.Y * 0.5 + 2.8, 0)
             )
             if distance > 7 then
-                moveRaidLeg(standingCFrame)
-                return true, "Moving to the nearest yellow raid pad"
+                if distance > 300 then
+                    moveRaidLeg(standingCFrame)
+                    return true, "Moving to the nearest yellow raid pad"
+                end
+                -- Finish the short vertical leg and press the button before
+                -- gravity drops the unanchored character back below the room.
+                moveTo(standingCFrame)
+                task.wait(math.clamp(distance / math.max(state.MoveEffectiveSpeed, 1) + 0.04, 0.08, 1.2))
+                root = rootPart()
+                if not root or (root.Position - standingCFrame.Position).Magnitude > 12 then
+                    return true, "Finishing the yellow raid pad approach"
+                end
             end
             cancelMove(false)
             root.AssemblyLinearVelocity = Vector3.zero
