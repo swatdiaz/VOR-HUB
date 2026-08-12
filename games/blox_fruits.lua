@@ -2668,8 +2668,10 @@ return function(context)
             state.AuraTargetCursor = (state.AuraTargetCursor % #targets) + 1
             local target = targets[state.AuraTargetCursor]
             local attackTargets = {target}
-            local raidCombatActive = state.AutoRaid
-                and LocalPlayer:GetAttribute("IslandRaiding") == true
+            -- The game's IslandRaiding player attribute is intermittent on
+            -- several raid maps. Our movement-ready state is set only after a
+            -- concrete raid island is detected, so use that as the combat gate.
+            local raidCombatActive = state.AutoRaid and state.RaidMovementReady
             local doubleAttackActive = state.DoubleAttack and not raidCombatActive
             if doubleAttackActive then
                 -- Double Attack mirrors the Dungeon engine: every eligible
