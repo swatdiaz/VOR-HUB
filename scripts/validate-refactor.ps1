@@ -1228,6 +1228,9 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'most expensive unlocked egg' -and
     $dogRaceText -match 'OriginalShowHatchResult' -and
     $dogRaceText -match 'Silently hatched' -and
+    $dogRaceText -match 'RaceBodyVelocity' -and
+    $dogRaceText -match 'dograce_race_speed_multiplier_v2' -and
+    $dogRaceText -match 'DogRaceSilentHatchCount' -and
     $dogRaceText -match 'Flag\s*=\s*"dograce_hybrid_progress"' -and
     $dogRaceText -match 'updateHybrid' -and
     $dogRaceText -match 'fightService\.EndContest:Connect' -and
@@ -1270,7 +1273,7 @@ $dogRaceNativeBehavior = (
     $dogRaceText -match 'Flag\s*=\s*"dograce_auto_free_egg"' -and
     $dogRaceText -match 'DogRaceFullProgression' -and
     $dogRaceText -match 'DogRaceHybridPhase' -and
-    $dogRaceText -match 'Flag\s*=\s*"dograce_speed_multiplier"' -and
+    $dogRaceText -match 'Flag\s*=\s*"dograce_race_speed_multiplier_v2"' -and
     $dogRaceText -match 'clearSpeedOverride\(\)'
 )
 if (-not ($dogRaceRouting -and $dogRaceNativeBehavior)) {

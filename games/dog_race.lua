@@ -170,7 +170,7 @@ return function(context)
         AutoRace = false,
         AutoDash = false,
         DashInterval = 1,
-        SpeedMultiplier = 1,
+        SpeedMultiplier = 5,
         AutoRebirth = false,
         AutoEquipBest = false,
         AutoCraftPets = false,
@@ -219,6 +219,9 @@ return function(context)
         SelectedDog = "Dog_101",
         SelectedPartner = "Partner_1",
         LastHatch = 0,
+        SilentHatchCount = 0,
+        LastSilentHatchAt = 0,
+        LastSilentHatchEgg = "None",
         LastHybridHatchPhase = -1,
         LastHybridFruitPhase = -1,
         LastFruit = 0,
@@ -238,6 +241,9 @@ return function(context)
         SpeedHumanoid = nil,
         NativeWalkSpeed = nil,
         AppliedWalkSpeed = nil,
+        RaceBodyVelocity = nil,
+        NativeRaceVelocityZ = nil,
+        AppliedRaceVelocityZ = nil,
         OwnsAutoTrain = false,
         OwnsAutoRace = false,
         OwnsContest = false,
@@ -246,9 +252,21 @@ return function(context)
         Equipment.OriginalShowHatchResult = EggHatchGuiController.ShowHatchResult
         EggHatchGuiController.ShowHatchResult = function(controller, eggId, pets)
             if state.Alive and state.AutoHatch then
+                local petCount = 0
+                if type(pets) == "table" then
+                    petCount = #pets
+                    if petCount == 0 then
+                        for _ in pairs(pets) do
+                            petCount = petCount + 1
+                        end
+                    end
+                end
+                state.SilentHatchCount = state.SilentHatchCount + petCount
+                state.LastSilentHatchAt = os.time()
+                state.LastSilentHatchEgg = tostring(eggId)
                 state.LastAction = string.format(
                     "Silently hatched %d pet(s) from %s",
-                    type(pets) == "table" and #pets or 0,
+                    petCount,
                     tostring(eggId)
                 )
                 return
@@ -580,17 +598,64 @@ return function(context)
         state.AppliedWalkSpeed = nil
     end
 
+    local function clearRaceSpeedOverride()
+        local bodyVelocity = state.RaceBodyVelocity
+        if bodyVelocity and bodyVelocity.Parent and isFiniteNumber(state.NativeRaceVelocityZ)
+            and isFiniteNumber(state.AppliedRaceVelocityZ)
+            and math.abs(bodyVelocity.Velocity.Z - state.AppliedRaceVelocityZ) <= 0.25 then
+            pcall(function()
+                local velocity = bodyVelocity.Velocity
+                bodyVelocity.Velocity = Vector3.new(velocity.X, velocity.Y, state.NativeRaceVelocityZ)
+            end)
+        end
+        state.RaceBodyVelocity = nil
+        state.NativeRaceVelocityZ = nil
+        state.AppliedRaceVelocityZ = nil
+    end
+
     local function updateSpeedOverride()
         local multiplier = parseMultiplier(state.SpeedMultiplier) or 1
         if multiplier <= 1 then
             clearSpeedOverride()
+            clearRaceSpeedOverride()
             return
         end
-        local _, humanoid = getCharacter()
+        local character, humanoid, root = getCharacter()
         if not humanoid then
             clearSpeedOverride()
+            clearRaceSpeedOverride()
             return
         end
+        if isFighting() then
+            clearSpeedOverride()
+            local bodyVelocity = root and root:FindFirstChild("BodyVelocity")
+            if not bodyVelocity or not bodyVelocity:IsA("BodyVelocity") then
+                clearRaceSpeedOverride()
+                return
+            end
+            if bodyVelocity ~= state.RaceBodyVelocity then
+                clearRaceSpeedOverride()
+                state.RaceBodyVelocity = bodyVelocity
+            end
+            local velocity = bodyVelocity.Velocity
+            local nativeZ = velocity.Z
+            if isFiniteNumber(state.AppliedRaceVelocityZ)
+                and math.abs(velocity.Z - state.AppliedRaceVelocityZ) <= 0.25 then
+                nativeZ = state.NativeRaceVelocityZ or velocity.Z
+            end
+            local appliedZ = nativeZ * multiplier
+            if not isFiniteNumber(appliedZ) then
+                state.SpeedMultiplier = 1
+                state.LastAction = "Race speed multiplier overflow; reset to 1x"
+                clearRaceSpeedOverride()
+                return
+            end
+            state.NativeRaceVelocityZ = nativeZ
+            state.AppliedRaceVelocityZ = appliedZ
+            bodyVelocity.Velocity = Vector3.new(velocity.X, velocity.Y, appliedZ)
+            return
+        end
+        clearRaceSpeedOverride()
         if humanoid ~= state.SpeedHumanoid then
             clearSpeedOverride()
             state.SpeedHumanoid = humanoid
@@ -2201,6 +2266,7 @@ return function(context)
     local speedLabel = MovementStatusSection:AddLabel("Speed: --")
     local eggAccessLabel = EggStatusSection:AddLabel("Egg: scanning...")
     local eggInventoryLabel = EggStatusSection:AddLabel("Pet storage: scanning...")
+    Equipment.SilentHatchLabel = EggStatusSection:AddLabel("Silent hatch receipt: none this session")
     EggStatusSection:AddLabel("Three-at-once uses the native Triple Hatch gamepass gate.")
     EggStatusSection:AddLabel("Robux eggs open an official purchase prompt only.")
     local fruitAccessLabel = FruitSection:AddLabel("Fruit: scanning...")
@@ -2838,10 +2904,10 @@ return function(context)
     })
 
     speedInputControl = MovementSection:AddInput({
-        Name = "Speed Multiplier",
-        Description = "Multiplies native lobby and race WalkSpeed; 1 restores the exact native value.",
-        Flag = "dograce_speed_multiplier",
-        Default = "1",
+        Name = "Race Speed Multiplier",
+        Description = "Multiplies the race's real BodyVelocity and lobby WalkSpeed. Defaults to 5x; 1 restores native speed. No artificial upper cap.",
+        Flag = "dograce_race_speed_multiplier_v2",
+        Default = "5",
         Placeholder = "Example: 2, 10, 100",
         Callback = function(value)
             local multiplier = parseMultiplier(value)
@@ -2961,6 +3027,18 @@ return function(context)
             or accessText(eggReady, eggReason)
         eggInventoryLabel.Text = string.format("Pet storage: %s / %s", compactNumber(storedPetCount(data or {})),
             compactNumber(maxPetStorage(data or {})))
+        if state.LastSilentHatchAt > 0 then
+            Equipment.SilentHatchLabel.Text = string.format(
+                "Silent hatch receipt: %s | %ds ago | %d pet(s) this session",
+                state.LastSilentHatchEgg,
+                math.max(0, os.time() - state.LastSilentHatchAt),
+                state.SilentHatchCount
+            )
+        else
+            Equipment.SilentHatchLabel.Text = state.AutoHatch
+                and "Silent hatch receipt: armed; next hatch is once per training cycle"
+                or "Silent hatch receipt: auto hatch is OFF"
+        end
         local fruitReady, fruitReason = fruitAccess()
         fruitAccessLabel.Text = accessText(fruitReady, fruitReason)
         local trailReady, trailReason = trailAccess(false)
@@ -3005,7 +3083,8 @@ return function(context)
             state.AutoTasks and "AUTO" or "OFF",
             state.AutoAchievements and "AUTO" or "OFF")
         speedLabel.Text = string.format(
-            "WalkSpeed: %.1f | %.3gx | Velocity: %.1f",
+            "%s speed: %.1f | %.3gx | Velocity: %.1f",
+            isFighting() and "Race" or "Walk",
             humanoid and humanoid.WalkSpeed or 0,
             state.SpeedMultiplier,
             root and root.AssemblyLinearVelocity.Magnitude or 0
@@ -3059,6 +3138,9 @@ return function(context)
             gui:SetAttribute("DogRaceAutoTasks", state.AutoTasks)
             gui:SetAttribute("DogRaceAutoWheel", state.AutoWheel)
             gui:SetAttribute("DogRaceSilentHatch", true)
+            gui:SetAttribute("DogRaceSilentHatchCount", state.SilentHatchCount)
+            gui:SetAttribute("DogRaceLastSilentHatchEgg", state.LastSilentHatchEgg)
+            gui:SetAttribute("DogRaceLastSilentHatchAt", state.LastSilentHatchAt)
             gui:SetAttribute("DogRaceAutoCraftPets", state.AutoCraftPets)
             gui:SetAttribute("DogRaceAutoPotions", state.AutoPotions)
             gui:SetAttribute("DogRacePetCount", petCount)
@@ -3130,6 +3212,7 @@ return function(context)
             stopHybrid()
         end
         clearSpeedOverride()
+        clearRaceSpeedOverride()
         if DashController and type(DashController.StopDash) == "function" then
             pcall(DashController.StopDash, DashController)
         end
