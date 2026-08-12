@@ -62,6 +62,7 @@ return function(context)
 
     local AimSection = CombatPage:AddSection("Aim Assist", "Left")
     local CombatStatusSection = CombatPage:AddSection("Combat Status", "Right")
+    local WeaponModsSection = CombatPage:AddSection("Weapon Mods", "Left")
     local WeaponSection = InventoryPage:AddSection("Owned Snipers", "Left")
     local UnlockSection = InventoryPage:AddSection("Server Unlock Progress", "Right")
     local ClaimSection = ProgressPage:AddSection("Claims", "Left")
@@ -76,7 +77,7 @@ return function(context)
         Content = "VOR uses the game's owned weapon store, kill-gated unlock service, loadouts, tasks, mailbox, queues, and match state. Locked inventory is never presented as owned.",
     })
     local guide = HomePage:AddSection("Quick Start", "Right")
-    guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Aim Assist visibly tracks targets; both share the radius, target-part, team, and wall checks."})
+    guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Cursor Aimbot visibly tracks targets. Trigger Assist, hitbox expansion, recoil, spread, and reload controls are separate toggles."})
     guide:AddParagraph({Title = "Progress", Content = "Use Auto Unlock Earned Snipers and Auto Claim. The server still enforces kill requirements and reward readiness."})
     guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("Combat") end})
     guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("Progress") end})
@@ -105,6 +106,10 @@ return function(context)
         TriggerDelay = 0.08,
         HitboxExpand = false,
         HitboxSize = 5,
+        NoRecoil = false,
+        NoSpread = false,
+        FastReload = false,
+        ModifiedWeaponValues = 0,
         EnemyEsp = false,
         EspNameText = false,
         EspNameRange = 350,
@@ -131,6 +136,7 @@ return function(context)
     local drawings = {}
     local highlights = {}
     local hitboxDefaults = setmetatable({}, {__mode = "k"})
+    local weaponValueDefaults = setmetatable({}, {__mode = "k"})
 
     local function notify(message, color)
         Window:Notify("Sniper Arena", tostring(message), 4, color or COLORS.accentBright)
@@ -392,6 +398,56 @@ return function(context)
         return false
     end
 
+    local function restoreWeaponValues()
+        for valueObject, original in pairs(weaponValueDefaults) do
+            if valueObject and valueObject.Parent then
+                pcall(function() valueObject.Value = original end)
+            end
+            weaponValueDefaults[valueObject] = nil
+        end
+        state.ModifiedWeaponValues = 0
+    end
+
+    local function updateWeaponModifiers()
+        if not (state.NoRecoil or state.NoSpread or state.FastReload) then
+            restoreWeaponValues()
+            return
+        end
+        local character = LocalPlayer.Character
+        local tool = character and character:FindFirstChildOfClass("Tool")
+        if not tool then
+            restoreWeaponValues()
+            return
+        end
+        local active, modified = {}, 0
+        for _, valueObject in ipairs(tool:GetDescendants()) do
+            if valueObject:IsA("NumberValue") or valueObject:IsA("IntValue") or valueObject:IsA("DoubleConstrainedValue") then
+                local name = valueObject.Name:lower()
+                local replacement
+                if state.NoRecoil and (name:find("recoil", 1, true) or name:find("kick", 1, true)) then
+                    replacement = 0
+                elseif state.NoSpread and (name:find("spread", 1, true) or name:find("accuracy", 1, true)) then
+                    replacement = 0
+                elseif state.FastReload and (name:find("reload", 1, true) or name:find("time", 1, true)) then
+                    replacement = 0.05
+                end
+                if replacement ~= nil then
+                    active[valueObject] = true
+                    if weaponValueDefaults[valueObject] == nil then weaponValueDefaults[valueObject] = valueObject.Value end
+                    valueObject.Value = replacement
+                    modified = modified + 1
+                end
+            end
+        end
+        for valueObject, original in pairs(weaponValueDefaults) do
+            if not active[valueObject] then
+                if valueObject and valueObject.Parent then pcall(function() valueObject.Value = original end) end
+                weaponValueDefaults[valueObject] = nil
+            end
+        end
+        state.ModifiedWeaponValues = modified
+    end
+
     local function clearEsp(player)
         local entry = highlights[player]
         if entry then
@@ -600,12 +656,17 @@ return function(context)
     AimSection:AddToggle({Name = "Wall Check", Description = "Off is aggressive; on only selects targets with a clear ray.", Flag = "sniper_arena_wall_check_v2", Persist = false, Default = false, Callback = function(v) state.WallCheck = v == true end})
     AimSection:AddToggle({Name = "Show Aim Radius", Flag = "sniper_arena_show_fov_v2", Persist = false, Default = false, Callback = function(v) state.ShowFov = v == true end})
 
-    CombatStatusSection:AddToggle({Name = "Triggerbot", Description = "Clicks when the cursor is over a live hostile model.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
+    CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Clicks when the cursor is over a live hostile model.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Delay", Flag = "sniper_arena_trigger_delay", Min = 0.03, Max = 0.3, Step = 0.01, Default = 0.08, Suffix = "s", Callback = function(v) state.TriggerDelay = tonumber(v) or 0.08 end})
     CombatStatusSection:AddToggle({Name = "Expand Enemy Heads", Description = "Client-side hitbox expansion with full restoration on toggle-off and cleanup.", Flag = "sniper_arena_hitbox", Default = false, Callback = function(v) state.HitboxExpand = v == true if not state.HitboxExpand then restoreHitboxes() end end})
     CombatStatusSection:AddSlider({Name = "Head Hitbox Size", Flag = "sniper_arena_hitbox_size", Min = 1, Max = 10, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = tonumber(v) or 5 end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
+
+    WeaponModsSection:AddToggle({Name = "No Recoil", Description = "Zeros recoil and kick values on the equipped tool.", Flag = "sniper_arena_no_recoil", Default = false, Callback = function(v) state.NoRecoil = v == true if not state.NoRecoil then updateWeaponModifiers() end end})
+    WeaponModsSection:AddToggle({Name = "No Spread", Description = "Zeros spread and accuracy values on the equipped tool.", Flag = "sniper_arena_no_spread", Default = false, Callback = function(v) state.NoSpread = v == true if not state.NoSpread then updateWeaponModifiers() end end})
+    WeaponModsSection:AddToggle({Name = "Fast Reload", Description = "Sets equipped-tool reload/time values to 0.05 and restores them on toggle-off.", Flag = "sniper_arena_fast_reload", Default = false, Callback = function(v) state.FastReload = v == true if not state.FastReload then updateWeaponModifiers() end end})
+    local weaponModsLabel = WeaponModsSection:AddLabel("Modified weapon values: 0")
 
     WeaponSection:AddDropdown({Name = "Owned Family", Flag = "sniper_arena_family", Options = families, Default = state.SelectedFamily, Callback = function(v) state.SelectedFamily = v or state.SelectedFamily end})
     WeaponSection:AddButton({Name = "Equip Selected Family", Callback = function() if not equipFamily(state.SelectedFamily) then notify(state.LastAction, COLORS.warning) end end})
@@ -720,6 +781,7 @@ return function(context)
         careerLabel.Text = string.format("Played %s | Kills %s | Deaths %s | Wins %s", tostring(stats.Played or 0), tostring(stats.Kill or 0), tostring(stats.Death or 0), tostring(stats.Win or 0))
         combatLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.Parent and state.CurrentTarget.Parent.Name or "none")
         ammoLabel.Text = string.format("Team %s | Health %s | Ping %sms", tostring(LocalPlayer:GetAttribute("Team") or "--"), tostring(LocalPlayer:GetAttribute("Health") or "--"), tostring(LocalPlayer:GetAttribute("Ping") or "--"))
+        weaponModsLabel.Text = string.format("Modified weapon values: %d", state.ModifiedWeaponValues)
         actionLabel.Text = "Last action: " .. state.LastAction
         pcall(function()
             gui:SetAttribute("SniperArenaModuleReady", true)
@@ -741,6 +803,10 @@ return function(context)
             gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
             gui:SetAttribute("SniperArenaHitboxExpand", state.HitboxExpand)
             gui:SetAttribute("SniperArenaHitboxSize", state.HitboxSize)
+            gui:SetAttribute("SniperArenaNoRecoil", state.NoRecoil)
+            gui:SetAttribute("SniperArenaNoSpread", state.NoSpread)
+            gui:SetAttribute("SniperArenaFastReload", state.FastReload)
+            gui:SetAttribute("SniperArenaModifiedWeaponValues", state.ModifiedWeaponValues)
             gui:SetAttribute("SniperArenaEnemyEsp", state.EnemyEsp)
         end)
     end
@@ -756,7 +822,11 @@ return function(context)
         state.EnemyEsp = false
         state.TriggerBot = false
         state.HitboxExpand = false
+        state.NoRecoil = false
+        state.NoSpread = false
+        state.FastReload = false
         restoreHitboxes()
+        restoreWeaponValues()
         if renderStepBound then
             pcall(RunService.UnbindFromRenderStep, RunService, renderStepName)
             renderStepBound = false
@@ -795,18 +865,20 @@ return function(context)
         end)
     end)
 
-    local automationClock, statusClock, espClock, triggerClock = 0, 0, 0, 0
+    local automationClock, statusClock, espClock, triggerClock, weaponClock = 0, 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
         espClock = espClock + deltaTime
         triggerClock = triggerClock + deltaTime
+        weaponClock = weaponClock + deltaTime
         automationClock = automationClock + deltaTime
         if espClock >= 0.15 then espClock = 0 updateEsp() updateHitboxes() end
         if state.TriggerBot and clickMouseOne and triggerClock >= state.TriggerDelay then
             triggerClock = 0
             if isHostileTarget(LocalMouse.Target) then pcall(clickMouseOne) end
         end
+        if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
         if statusClock >= 0.5 then statusClock = 0 updateStatus() end
         if automationClock >= 5 then
             automationClock = 0

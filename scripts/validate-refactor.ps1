@@ -1103,6 +1103,11 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox"' -and
     $sniperArenaText -match 'head\.Size = Vector3\.new\(size, size, size\)' -and
     $sniperArenaText -match 'restoreHitboxes\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_spread"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fast_reload"' -and
+    $sniperArenaText -match 'valueObject\.Value = replacement' -and
+    $sniperArenaText -match 'restoreWeaponValues\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
@@ -1340,7 +1345,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, triggerbot, enemy-head hitbox, optional ESP, server-checked unlocks, loadouts, claims, queues)"
+Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, auto-fire trigger, enemy-head hitbox, recoil/spread/reload controls, optional ESP, server-checked unlocks, loadouts, claims, queues)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
