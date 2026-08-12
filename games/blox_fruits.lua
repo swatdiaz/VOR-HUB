@@ -3910,16 +3910,28 @@ return function(context)
             if not chip then
                 return false, "No raid microchip found; buy one first"
             end
+            local function moveRaidLeg(targetCFrame)
+                local currentRoot = rootPart()
+                if not currentRoot then
+                    return false
+                end
+                local delta = targetCFrame.Position - currentRoot.Position
+                if delta.Magnitude > 300 then
+                    local legPosition = currentRoot.Position + delta.Unit * 280
+                    return moveTo(CFrame.lookAt(legPosition, legPosition + delta.Unit))
+                end
+                return moveTo(targetCFrame)
+            end
             local yellow, detector, distance = RaidRuntime.StartStation()
             if not yellow or not detector then
-                moveTo(state.RaidCastleStart)
+                moveRaidLeg(state.RaidCastleStart)
                 return true, "Moving to Castle on the Sea raid room"
             end
             local standingCFrame = CFrame.new(
                 yellow.Position + Vector3.new(0, yellow.Size.Y * 0.5 + 2.8, 0)
             )
             if distance > 7 then
-                moveTo(standingCFrame)
+                moveRaidLeg(standingCFrame)
                 return true, "Moving to the nearest yellow raid pad"
             end
             cancelMove(false)
@@ -8447,7 +8459,7 @@ return function(context)
                             and "One purchase reserved for this raid cycle"
                             or ("Purchase request failed safely: " .. tostring(purchaseResult)))
                     end
-                    if state.AutoStartRaid and not RaidRuntime.Active() and os.clock() - lastRaidStart >= 5 then
+                    if state.AutoStartRaid and not RaidRuntime.Active() and os.clock() - lastRaidStart >= 1.35 then
                         lastRaidStart = os.clock()
                         fireRaidButton()
                     end
