@@ -2953,6 +2953,8 @@ return function(context)
         local function flushAuraTelemetry()
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
             gui:SetAttribute("BloxAuraKillTargets", state.AuraTargetCount)
+            gui:SetAttribute("BloxSafeMode", state.SafeMode)
+            gui:SetAttribute("BloxSafeHealthPercent", state.SafeHealthPercent)
             gui:SetAttribute("BloxAuraMultiTargetCount", state.AuraMultiTargetCount)
             gui:SetAttribute("BloxAuraKillStage", state.AuraStage)
             gui:SetAttribute("BloxAuraKillRequestCount", state.AuraRequests)
@@ -6480,6 +6482,7 @@ return function(context)
             Default = false,
             Callback = function(enabled)
                 state.SafeMode = enabled
+                gui:SetAttribute("BloxSafeMode", enabled)
             end,
         })
         FarmSettingsSection:AddSlider({
@@ -6491,6 +6494,7 @@ return function(context)
             Default = 30,
             Callback = function(value)
                 state.SafeHealthPercent = value
+                gui:SetAttribute("BloxSafeHealthPercent", value)
             end,
         })
         WorldFarmSection:AddButton({
@@ -7428,6 +7432,7 @@ return function(context)
             Default = "Flame",
             Callback = function(value)
                 state.SelectedRaid = tostring(value)
+                gui:SetAttribute("BloxSelectedRaid", state.SelectedRaid)
             end,
         })
         RaidSection:AddButton({
@@ -8498,6 +8503,9 @@ return function(context)
             gui:SetAttribute("BloxTravelGoal", Vector3.zero)
             gui:SetAttribute("BloxAuraKill", state.AuraKill)
             gui:SetAttribute("BloxAuraKillRange", state.AuraRange)
+            gui:SetAttribute("BloxSafeMode", state.SafeMode)
+            gui:SetAttribute("BloxSafeHealthPercent", state.SafeHealthPercent)
+            gui:SetAttribute("BloxSelectedRaid", state.SelectedRaid)
             gui:SetAttribute("BloxAuraKillTargets", 0)
             gui:SetAttribute("BloxAuraMultiTargetCount", 0)
             gui:SetAttribute("BloxAuraKillHitCount", state.AuraHits)

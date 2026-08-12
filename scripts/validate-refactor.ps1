@@ -389,7 +389,10 @@ $raidRangeSafety = (
     $bloxText -match 'RaidVoidFallbackActive = waitingForOwnership > 0 and nearestWaiting ~= nil' -and
     $bloxText -match '(?s)state\.RaidVoidFallbackActive and modelAlive\(fallbackEnemy\).*?moveToFarmPosition\(targetCFrame\)' -and
     $bloxText -match 'BloxRaidSafeModeActive' -and
-    $bloxText -match 'BloxRaidVoidFallbackActive'
+    $bloxText -match 'BloxRaidVoidFallbackActive' -and
+    $bloxText -match 'BloxSafeMode' -and
+    $bloxText -match 'BloxSafeHealthPercent' -and
+    $bloxText -match 'BloxSelectedRaid'
 )
 if (-not $raidRangeSafety) {
     throw "Raid farming must stay just inside registered hit range and retreat before burst damage becomes lethal"
