@@ -364,9 +364,12 @@ if (-not $fruitGachaRewardClose) {
 
 $raidPurchaseGuards = (
     $bloxText -match 'RaidChipPurchaseReserved\s*=\s*false' -and
+    $bloxText -match 'RaidChipPurchaseVerifyToken\s*=\s*0' -and
     $bloxText -match 'RaidChipSawActive\s*=\s*false' -and
     $bloxText -match 'not state\.RaidChipPurchaseReserved' -and
-    $bloxText -match 'state\.RaidChipPurchaseReserved = true\s+local purchaseOk, purchaseResult = invoke\("RaidsNpc", "Select", state\.SelectedRaid\)' -and
+    $bloxText -match 'state\.RaidChipPurchaseReserved = true\s+state\.RaidChipPurchaseVerifyToken \+= 1' -and
+    $bloxText -match 'local granted = RaidRuntime\.RaidChip\(\) ~= nil or RaidRuntime\.Active\(\)' -and
+    $bloxText -match 'state\.RaidChipPurchaseReserved = granted' -and
     $parityText -match 'LawChipReserved\s*=\s*false' -and
     $parityText -match 'LawPurchaseBusy\s*=\s*false' -and
     $parityText -match 'not runtime\.LawChipReserved and not runtime\.LawPurchaseBusy' -and

@@ -190,6 +190,7 @@ return function(context)
             AutoStartRaid = false,
             AutoBuyRaidChip = false,
             RaidChipPurchaseReserved = false,
+            RaidChipPurchaseVerifyToken = 0,
             RaidChipSawActive = false,
             AutoAwaken = false,
             RaidMultiGrab = false,
@@ -8464,10 +8465,22 @@ return function(context)
                         and os.clock() - lastRaidPurchase >= 15 then
                         lastRaidPurchase = os.clock()
                         state.RaidChipPurchaseReserved = true
-                        local purchaseOk, purchaseResult = invoke("RaidsNpc", "Select", state.SelectedRaid)
-                        gui:SetAttribute("BloxRaidChipPurchaseStatus", purchaseOk
-                            and "One purchase reserved for this raid cycle"
-                            or ("Purchase request failed safely: " .. tostring(purchaseResult)))
+                        state.RaidChipPurchaseVerifyToken += 1
+                        local verifyToken = state.RaidChipPurchaseVerifyToken
+                        task.spawn(function()
+                            local purchaseOk, purchaseResult = invoke("RaidsNpc", "Select", state.SelectedRaid)
+                            task.wait(1.2)
+                            if not state.Alive or verifyToken ~= state.RaidChipPurchaseVerifyToken then
+                                return
+                            end
+                            local granted = RaidRuntime.RaidChip() ~= nil or RaidRuntime.Active()
+                            state.RaidChipPurchaseReserved = granted
+                            gui:SetAttribute("BloxRaidChipPurchaseStatus", granted
+                                and "Raid chip verified for this cycle"
+                                or (purchaseOk
+                                    and ("Server granted no chip: " .. tostring(purchaseResult))
+                                    or ("Purchase request failed safely: " .. tostring(purchaseResult))))
+                        end)
                     end
                     if state.AutoStartRaid and not RaidRuntime.Active() and os.clock() - lastRaidStart >= 1.35 then
                         lastRaidStart = os.clock()
