@@ -15,7 +15,7 @@ games do not require users to replace their loadstring.
 ## Current immutable loader
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/0ff59f02142ffef690260890fde569005cabbf36/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/swatdiaz/VOR-HUB/bb51007f4a1d12f0e1a70fe1e3465243756bbfce/loader.lua"))()
 ```
 
 Use this only when you intentionally want the current release frozen forever.
