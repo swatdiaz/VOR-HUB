@@ -6,6 +6,7 @@ return function(context)
     local createCategoryHomePage = assert(context.CreateCategoryHomePage, "Sniper Arena: category builder is required")
     local CATEGORY_DECALS = context.CategoryDecals or context.CATEGORY_DECALS or {}
     local COLORS = context.Colors or context.COLORS or {}
+    local SETTINGS = context.SETTINGS or context.Settings or {}
     local track = context.Track or function(connection) return connection end
     local gui = context.Gui
 
@@ -15,6 +16,7 @@ return function(context)
     local UserInputService = game:GetService("UserInputService")
     local Lighting = game:GetService("Lighting")
     local CollectionService = game:GetService("CollectionService")
+    local HttpService = game:GetService("HttpService")
     local LocalPlayer = Players.LocalPlayer
     local LocalMouse = LocalPlayer:GetMouse()
     local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
@@ -22,6 +24,43 @@ return function(context)
         or (type(mousemoverel) == "function" and mousemoverel or nil)
     local clickMouseOne = type(runtimeEnvironment.mouse1click) == "function" and runtimeEnvironment.mouse1click
         or (type(mouse1click) == "function" and mouse1click or nil)
+
+    local function installSniperArenaBackground()
+        local requestFunction = runtimeEnvironment.request or runtimeEnvironment.http_request
+            or (type(runtimeEnvironment.syn) == "table" and runtimeEnvironment.syn.request)
+        local writeFile = runtimeEnvironment.writefile
+        local isFile = runtimeEnvironment.isfile
+        local makeFolder = runtimeEnvironment.makefolder
+        local isFolder = runtimeEnvironment.isfolder
+        local customAsset = runtimeEnvironment.getcustomasset or runtimeEnvironment.getsynasset
+        if type(requestFunction) ~= "function" or type(writeFile) ~= "function"
+            or type(customAsset) ~= "function" then return false end
+
+        local assetFolder = "VORHub/Assets"
+        local assetPath = assetFolder .. "/sniper_arena_9534705677.png"
+        local ok = pcall(function()
+            if type(makeFolder) == "function" then
+                if type(isFolder) ~= "function" or not isFolder("VORHub") then makeFolder("VORHub") end
+                if type(isFolder) ~= "function" or not isFolder(assetFolder) then makeFolder(assetFolder) end
+            end
+            if type(isFile) ~= "function" or not isFile(assetPath) then
+                local metadataJson = game:HttpGet("https://thumbnails.roblox.com/v1/games/icons?universeIds=9534705677&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false")
+                local metadata = HttpService:JSONDecode(metadataJson)
+                local imageUrl = metadata and metadata.data and metadata.data[1] and metadata.data[1].imageUrl
+                assert(type(imageUrl) == "string" and imageUrl ~= "", "Sniper Arena thumbnail URL unavailable")
+                local response = requestFunction({Url = imageUrl, Method = "GET"})
+                local body = response and (response.Body or response.body)
+                assert(type(body) == "string" and #body > 0, "Sniper Arena thumbnail download failed")
+                writeFile(assetPath, body)
+            end
+            SETTINGS.PanelBackgrounds = SETTINGS.PanelBackgrounds or {}
+            SETTINGS.PanelBackgrounds["🎯 Sniper Arena"] = customAsset(assetPath)
+            SETTINGS.DefaultPanelBackground = "🎯 Sniper Arena"
+        end)
+        return ok
+    end
+
+    installSniperArenaBackground()
 
     local previousCleanup = runtimeEnvironment.__VORSniperArenaCleanup
     runtimeEnvironment.__VORSniperArenaCleanup = nil
@@ -59,11 +98,11 @@ return function(context)
     local MatchConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Matchmaking")) or {}
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
-    local CombatPage = addHomeCategory("Combat", 1, CATEGORY_DECALS.Combat)
-    local InventoryPage = addHomeCategory("Inventory", 2, CATEGORY_DECALS.Mastery or CATEGORY_DECALS.Progress)
-    local ProgressPage = addHomeCategory("Progress", 3, CATEGORY_DECALS.Progress)
-    local VisualsPage = addHomeCategory("Visuals", 4, CATEGORY_DECALS.Visuals)
-    local WorldPage = addHomeCategory("World", 5, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
+    local CombatPage = addHomeCategory("🎯 Combat", 1, CATEGORY_DECALS.Combat)
+    local InventoryPage = addHomeCategory("🎒 Inventory", 2, CATEGORY_DECALS.Mastery or CATEGORY_DECALS.Progress)
+    local ProgressPage = addHomeCategory("🏆 Progress", 3, CATEGORY_DECALS.Progress)
+    local VisualsPage = addHomeCategory("👁️ Visuals", 4, CATEGORY_DECALS.Visuals)
+    local WorldPage = addHomeCategory("🌍 World", 5, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
 
     local AimSection = CombatPage:AddSection("Aim Assist", "Left")
     local CombatStatusSection = CombatPage:AddSection("Combat Status", "Right")
@@ -86,8 +125,8 @@ return function(context)
     local guide = HomePage:AddSection("Quick Start", "Right")
     guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Cursor Aimbot visibly tracks targets. Trigger Assist, hitbox expansion, recoil, spread, and reload controls are separate toggles."})
     guide:AddParagraph({Title = "Progress", Content = "Use Auto Unlock Earned Snipers and Auto Claim. The server still enforces kill requirements and reward readiness."})
-    guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("Combat") end})
-    guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("Progress") end})
+    guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("🎯 Combat") end})
+    guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("🏆 Progress") end})
 
     local defaults = {
         Brightness = Lighting.Brightness,
@@ -307,8 +346,7 @@ return function(context)
         return model:FindFirstChild("HumanoidRootPart", true) or model:FindFirstChild("Head", true)
     end
 
-    local function lineOfSight(part)
-        if not state.WallCheck then return true end
+    local function rayVisible(part, model)
         local camera = workspace.CurrentCamera
         if not camera or not part then return false end
         local params = RaycastParams.new()
@@ -316,7 +354,25 @@ return function(context)
         params.FilterDescendantsInstances = LocalPlayer.Character and {LocalPlayer.Character} or {}
         params.IgnoreWater = true
         local result = workspace:Raycast(camera.CFrame.Position, part.Position - camera.CFrame.Position, params)
-        return result == nil or result.Instance:IsDescendantOf(part.Parent)
+        return result == nil or result.Instance:IsDescendantOf(model or part.Parent)
+    end
+
+    local function lineOfSight(part)
+        if not state.WallCheck then return true end
+        local model = part and part:FindFirstAncestorOfClass("Model")
+        return rayVisible(part, model)
+    end
+
+    local function visibleBodyPart(model)
+        if not model then return nil end
+        return model:FindFirstChild("UpperTorso", true)
+            or model:FindFirstChild("Torso", true)
+            or model:FindFirstChild("HumanoidRootPart", true)
+    end
+
+    local function hasVisibleBody(model)
+        local body = visibleBodyPart(model)
+        return body ~= nil and rayVisible(body, model)
     end
 
     local function acquireTarget()
@@ -357,7 +413,7 @@ return function(context)
                         8
                     )
                     local distance = (Vector2.new(center.X, center.Y) - pointer).Magnitude
-                    if distance <= radius and distance < bestDistance and lineOfSight(part) then
+                    if distance <= radius and distance < bestDistance and hasVisibleBody(hostile.Model) then
                         best, bestDistance = part, distance
                     end
                 end
@@ -528,12 +584,12 @@ return function(context)
         end
     end
 
-    local function isHostileTarget(instance)
-        if not instance then return false end
+    local function hostileForTarget(instance)
+        if not instance then return nil end
         for _, hostile in ipairs(hostileModels()) do
-            if instance:IsDescendantOf(hostile.Model) then return true end
+            if instance:IsDescendantOf(hostile.Model) then return hostile end
         end
-        return false
+        return nil
     end
 
     local function pointerOverVor()
@@ -594,10 +650,15 @@ return function(context)
             return false
         end
         local target = LocalMouse.Target
-        if not isHostileTarget(target) and state.HitboxExpand then
-            target = acquireExpandedHitboxTarget()
+        local hostile = hostileForTarget(target)
+        if hostile and state.HitboxExpand and not hasVisibleBody(hostile.Model) then
+            target, hostile = nil, nil
         end
-        if not target or not isHostileTarget(target) then
+        if not hostile and state.HitboxExpand then
+            target = acquireExpandedHitboxTarget()
+            hostile = hostileForTarget(target)
+        end
+        if not target or not hostile then
             lastTriggerTarget = nil
             return false
         end
@@ -918,7 +979,11 @@ return function(context)
 
     CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Only clicks inside an active match, on a live hostile, and never through the VOR menu.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
-    CombatStatusSection:AddLabel("VOR Big Head is disabled while Apollo/Polo hit registration is being compared.")
+    CombatStatusSection:AddToggle({Name = "Big Head (Visible Body Required)", Description = "Manual and session-only. The enlarged head is assisted only while the enemy's real torso or root has a clear camera ray.", Flag = "sniper_arena_hitbox_visible_body_v3", Persist = false, Default = false, Callback = function(v)
+        state.HitboxExpand = v == true
+        if not state.HitboxExpand then restoreHitboxes() end
+    end})
+    CombatStatusSection:AddSlider({Name = "Big Head Size (Experimental)", Description = "Expands enemy and bot heads. Very large values are intentionally ridiculous and may not register every server-checked shot.", Flag = "sniper_arena_hitbox_size_v3", Persist = false, Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
 

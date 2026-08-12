@@ -2715,8 +2715,9 @@ return function(context)
     end
 
     function Window:SetHubTransparency(value)
-        value = math.clamp(tonumber(value) or 0.24, 0.04, 0.80)
+        value = math.clamp(tonumber(value) or 0.24, 0, 0.80)
         self.HubTransparency = value
+        local lowEndSolidify = math.clamp((0.15 - value) / 0.15, 0, 1)
         for _, object in ipairs(gui:GetDescendants()) do
             if object:IsA("GuiObject") and object ~= panelBackground then
                 local base = self.TransparencyBases[object]
@@ -2725,12 +2726,14 @@ return function(context)
                     self.TransparencyBases[object] = base
                 end
                 if base < 1 then
-                    object.BackgroundTransparency = base + (1 - base) * value
+                    local adjustedBase = base * (1 - 0.35 * lowEndSolidify)
+                    object.BackgroundTransparency = adjustedBase + (1 - adjustedBase) * value
                 end
             end
         end
         local imageBase = self.ThemeImageTransparency or 0.68
-        panelBackground.ImageTransparency = imageBase + (1 - imageBase) * value
+        local adjustedImageBase = math.max(0, imageBase - 0.10 * lowEndSolidify)
+        panelBackground.ImageTransparency = adjustedImageBase + (1 - adjustedImageBase) * value
         gui:SetAttribute("VORHubTransparency", value)
     end
 
