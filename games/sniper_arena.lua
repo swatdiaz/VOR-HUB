@@ -106,6 +106,7 @@ return function(context)
         TriggerBot = false,
         TriggerDelay = 0,
         TriggerClicks = 0,
+        TriggerNativeAttempts = 0,
         TriggerNativeShots = 0,
         TriggerMouseFallbacks = 0,
         LastTriggerTarget = "",
@@ -524,8 +525,10 @@ return function(context)
 
     local function fireTriggerInput()
         local primaryAction = CombatControllerApi and CombatControllerApi.PrimaryAction
-        if primaryAction and type(primaryAction.Begin) == "function" and not triggerInputHeld then
+        if primaryAction and type(primaryAction.Begin) == "function" then
+            if triggerInputHeld then return false end
             triggerInputHeld = true
+            state.TriggerNativeAttempts += 1
             local ok, fired = pcall(primaryAction.Begin, triggerInputToken)
             task.spawn(function()
                 RunService.Heartbeat:Wait()
@@ -981,6 +984,7 @@ return function(context)
             gui:SetAttribute("SniperArenaSilentAimHooked", silentAimHooked)
             gui:SetAttribute("SniperArenaTriggerBot", state.TriggerBot)
             gui:SetAttribute("SniperArenaTriggerClicks", state.TriggerClicks)
+            gui:SetAttribute("SniperArenaTriggerNativeAttempts", state.TriggerNativeAttempts)
             gui:SetAttribute("SniperArenaTriggerNativeShots", state.TriggerNativeShots)
             gui:SetAttribute("SniperArenaTriggerMouseFallbacks", state.TriggerMouseFallbacks)
             gui:SetAttribute("SniperArenaLastTriggerTarget", state.LastTriggerTarget)
