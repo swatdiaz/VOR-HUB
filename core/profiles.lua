@@ -98,7 +98,7 @@ return function(context)
             end
         end
         if migrated > 0 then
-            warn(string.format("[VOR Hub] Migrated %d Practical Basketball profile(s) into the shared universe scope", migrated))
+            warn(string.format("[VOR Hub] Migrated %d profile(s) into the shared universe scope", migrated))
         end
         return migrated
     end

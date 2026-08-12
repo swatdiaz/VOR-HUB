@@ -1092,10 +1092,10 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'CFrame\.lookAt\(cameraFrame\.Position,\s*predictedPosition\(part\)\)' -and
     $sniperArenaText -match 'BindToRenderStep\(renderStepName,\s*Enum\.RenderPriority\.Last\.Value - 1' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*true' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_aimbot"[^\r\n]*Default\s*=\s*true' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_smoothness"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_cursor_radius"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"[^\r\n]*Persist\s*=\s*false' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_target_part_v2"' -and
     $sniperArenaText -match 'moveMouseRelative' -and
     $sniperArenaText -match 'UserInputService:GetMouseLocation\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_triggerbot"' -and
@@ -1111,7 +1111,8 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
-    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_minimal_names"[^\r\n]*Default\s*=\s*false' -and
+    $settingsText -match 'activeGame\.Key == "SniperArena"' -and
     $sniperArenaText -match 'hostile\.Kind == "BOT" and "BOT"' -and
     $sniperArenaText -match 'HighlightHolder' -and
     $sniperArenaText -notmatch 'GetTagged\("Boss"\)' -and

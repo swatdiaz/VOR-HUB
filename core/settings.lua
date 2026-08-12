@@ -240,12 +240,13 @@ return function(runtime)
 
     local sharesUniverseProfiles = settings.IsBloxFruits
         or activeGame ~= nil and activeGame.Key == "PracticalBasketball"
+        or activeGame ~= nil and activeGame.Key == "SniperArena"
     settings.ConfigScopeId = sharesUniverseProfiles and universeId or placeId
     settings.ConfigRoot = "VORHub/Configs/" .. tostring(settings.ConfigScopeId)
     settings.ProfileFolder = settings.ConfigRoot .. "/Profiles"
     settings.AutoLoadFile = settings.ConfigRoot .. "/autoload.json"
     settings.LegacyConfigRoots = {}
-    if activeGame ~= nil and activeGame.Key == "PracticalBasketball" then
+    if activeGame ~= nil and (activeGame.Key == "PracticalBasketball" or activeGame.Key == "SniperArena") then
         local seenLegacyRoots = {}
         local function addLegacyRoot(legacyPlaceId)
             local root = "VORHub/Configs/" .. tostring(legacyPlaceId)
