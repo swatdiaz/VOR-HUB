@@ -14,6 +14,7 @@ return function(context)
     local RunService = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
     local Lighting = game:GetService("Lighting")
+    local CollectionService = game:GetService("CollectionService")
     local LocalPlayer = Players.LocalPlayer
     local runtimeEnvironment = type(getgenv) == "function" and getgenv() or _G
 
@@ -100,6 +101,9 @@ return function(context)
         EspDistance = true,
         EspHealth = true,
         EspMaxDistance = 2000,
+        EspColor = Color3.fromRGB(72, 205, 255),
+        EspAccent = Color3.fromRGB(155, 103, 255),
+        EspFillTransparency = 0.78,
         Fullbright = false,
         FovOverride = false,
         CameraFov = 80,
@@ -149,6 +153,51 @@ return function(context)
             and (not state.TeamCheck or not sameTeam(player))
     end
 
+    local function modelHealth(model, humanoid)
+        local attributed = model and tonumber(model:GetAttribute("Health"))
+        if attributed ~= nil then return attributed end
+        return humanoid and humanoid.Health or 0
+    end
+
+    local function addHostile(records, seen, model, displayName, kind)
+        if not model or not model:IsA("Model") or seen[model] or model == LocalPlayer.Character then return end
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        if not humanoid or not root or modelHealth(model, humanoid) <= 0 then return end
+        seen[model] = true
+        records[#records + 1] = {
+            Model = model,
+            Humanoid = humanoid,
+            Root = root,
+            Name = tostring(displayName or model:GetAttribute("DisplayName") or model.Name),
+            Kind = kind or "ENEMY",
+        }
+    end
+
+    local function hostileModels()
+        local records, seen = {}, {}
+        local highlightRoot = workspace:FindFirstChild("Highlight")
+        local enemyRoot = highlightRoot and highlightRoot:FindFirstChild("Enemy")
+        local holder = enemyRoot and enemyRoot:FindFirstChild("HighlightHolder")
+        if holder then
+            for _, model in ipairs(holder:GetChildren()) do
+                if model:IsA("Model") then
+                    local role = tostring(model:GetAttribute("Role") or "")
+                    local kind = role == "Boss" and "BOSS" or (CollectionService:HasTag(model, "Bot") and "BOT" or "ENEMY")
+                    addHostile(records, seen, model, model:GetAttribute("DisplayName") or model.Name, kind)
+                end
+            end
+        end
+        for _, tagged in ipairs(CollectionService:GetTagged("Boss")) do
+            local model = tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model")
+            addHostile(records, seen, model, model and (model:GetAttribute("DisplayName") or model.Name), "BOSS")
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if isEnemy(player) then addHostile(records, seen, player.Character, player.DisplayName, "PLAYER") end
+        end
+        return records
+    end
+
     local function targetPart(model)
         if not model then return nil end
         if state.AimPart == "Head" then return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart") end
@@ -173,15 +222,13 @@ return function(context)
         if not camera then return nil end
         local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
         local best, bestDistance = nil, state.AimRadius
-        for _, player in ipairs(Players:GetPlayers()) do
-            if isEnemy(player) then
-                local part = targetPart(player.Character)
-                if part then
-                    local point, visible = camera:WorldToViewportPoint(part.Position)
-                    if visible and point.Z > 0 then
-                        local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
-                        if distance < bestDistance and lineOfSight(part) then best, bestDistance = part, distance end
-                    end
+        for _, hostile in ipairs(hostileModels()) do
+            local part = targetPart(hostile.Model)
+            if part then
+                local point, visible = camera:WorldToViewportPoint(part.Position)
+                if visible and point.Z > 0 then
+                    local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+                    if distance < bestDistance and lineOfSight(part) then best, bestDistance = part, distance end
                 end
             end
         end
@@ -266,19 +313,21 @@ return function(context)
 
     local function updateEsp()
         local _, _, localRoot = character()
-        for _, player in ipairs(Players:GetPlayers()) do
-            if state.EnemyEsp and isEnemy(player) then
-                local model, humanoid, root = character(player)
-                local distance = localRoot and root and (root.Position - localRoot.Position).Magnitude or math.huge
+        local active = {}
+        for _, hostile in ipairs(hostileModels()) do
+            local model, humanoid, root = hostile.Model, hostile.Humanoid, hostile.Root
+            active[model] = true
+            if state.EnemyEsp then
+                local distance = localRoot and (root.Position - localRoot.Position).Magnitude or math.huge
                 if distance <= state.EspMaxDistance then
-                    local entry = highlights[player]
+                    local entry = highlights[model]
                     if not entry or not entry.Highlight.Parent then
-                        clearEsp(player)
+                        clearEsp(model)
                         local highlight = Instance.new("Highlight")
                         highlight.Name = "VORSniperEnemy"
-                        highlight.FillColor = Color3.fromRGB(255, 20, 65)
-                        highlight.OutlineColor = Color3.fromRGB(255, 235, 90)
-                        highlight.FillTransparency = 0.18
+                        highlight.FillColor = state.EspColor
+                        highlight.OutlineColor = state.EspAccent
+                        highlight.FillTransparency = state.EspFillTransparency
                         highlight.OutlineTransparency = 0
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                         highlight.Adornee = model
@@ -286,29 +335,75 @@ return function(context)
                         local billboard = Instance.new("BillboardGui")
                         billboard.Name = "VORSniperLabel"
                         billboard.AlwaysOnTop = true
-                        billboard.Size = UDim2.fromOffset(300, 46)
-                        billboard.StudsOffset = Vector3.new(0, 3.8, 0)
-                        billboard.Adornee = model:FindFirstChild("Head") or root
+                        billboard.Size = UDim2.fromOffset(250, 52)
+                        billboard.StudsOffset = Vector3.new(2.7, 1.15, 0)
+                        billboard.Adornee = root
                         billboard.Parent = model
+                        local panel = Instance.new("Frame")
+                        panel.BackgroundColor3 = Color3.fromRGB(8, 12, 22)
+                        panel.BackgroundTransparency = 0.16
+                        panel.BorderSizePixel = 0
+                        panel.Size = UDim2.fromScale(1, 1)
+                        panel.Parent = billboard
+                        local panelCorner = Instance.new("UICorner")
+                        panelCorner.CornerRadius = UDim.new(0, 8)
+                        panelCorner.Parent = panel
+                        local panelStroke = Instance.new("UIStroke")
+                        panelStroke.Color = state.EspColor
+                        panelStroke.Thickness = 1.25
+                        panelStroke.Transparency = 0.12
+                        panelStroke.Parent = panel
                         local label = Instance.new("TextLabel")
-                        label.BackgroundColor3 = Color3.fromRGB(20, 0, 8)
-                        label.BackgroundTransparency = 0.2
-                        label.Size = UDim2.fromScale(1, 1)
-                        label.Font = Enum.Font.GothamBold
-                        label.TextColor3 = Color3.new(1, 1, 1)
-                        label.TextStrokeTransparency = 0
-                        label.TextSize = 16
-                        label.Parent = billboard
-                        entry = {Highlight = highlight, Billboard = billboard, Label = label}
-                        highlights[player] = entry
+                        label.BackgroundTransparency = 1
+                        label.Position = UDim2.fromOffset(10, 4)
+                        label.Size = UDim2.new(1, -20, 0, 30)
+                        label.Font = Enum.Font.GothamMedium
+                        label.TextColor3 = Color3.fromRGB(235, 245, 255)
+                        label.TextStrokeTransparency = 1
+                        label.TextSize = 14
+                        label.TextXAlignment = Enum.TextXAlignment.Left
+                        label.Parent = panel
+                        local healthBack = Instance.new("Frame")
+                        healthBack.BackgroundColor3 = Color3.fromRGB(28, 34, 48)
+                        healthBack.BorderSizePixel = 0
+                        healthBack.Position = UDim2.new(0, 10, 1, -12)
+                        healthBack.Size = UDim2.new(1, -20, 0, 4)
+                        healthBack.Parent = panel
+                        local healthBackCorner = Instance.new("UICorner")
+                        healthBackCorner.CornerRadius = UDim.new(1, 0)
+                        healthBackCorner.Parent = healthBack
+                        local healthFill = Instance.new("Frame")
+                        healthFill.BackgroundColor3 = state.EspColor
+                        healthFill.BorderSizePixel = 0
+                        healthFill.Size = UDim2.fromScale(1, 1)
+                        healthFill.Parent = healthBack
+                        local healthFillCorner = Instance.new("UICorner")
+                        healthFillCorner.CornerRadius = UDim.new(1, 0)
+                        healthFillCorner.Parent = healthFill
+                        entry = {Highlight = highlight, Billboard = billboard, Label = label, Stroke = panelStroke, HealthBack = healthBack, HealthFill = healthFill}
+                        highlights[model] = entry
                     end
+                    entry.Highlight.FillColor = state.EspColor
+                    entry.Highlight.OutlineColor = state.EspAccent
+                    entry.Highlight.FillTransparency = state.EspFillTransparency
+                    entry.Stroke.Color = state.EspColor
                     local parts = {}
-                    if state.EspNames then parts[#parts + 1] = player.DisplayName end
-                    if state.EspHealth then parts[#parts + 1] = string.format("%d HP", math.max(0, math.floor(humanoid.Health))) end
+                    local health = modelHealth(model, humanoid)
+                    local maxHealth = tonumber(model:GetAttribute("MaxHealth")) or humanoid.MaxHealth
+                    if state.EspNames then parts[#parts + 1] = hostile.Name end
+                    parts[#parts + 1] = hostile.Kind
+                    if state.EspHealth then parts[#parts + 1] = string.format("%d HP", math.max(0, math.floor(health))) end
                     if state.EspDistance then parts[#parts + 1] = string.format("%dm", math.floor(distance)) end
-                    entry.Label.Text = table.concat(parts, " | ")
-                else clearEsp(player) end
-            else clearEsp(player) end
+                    entry.Label.Text = table.concat(parts, "  /  ")
+                    local healthRatio = math.clamp(health / math.max(1, maxHealth), 0, 1)
+                    entry.HealthBack.Visible = state.EspHealth
+                    entry.HealthFill.Size = UDim2.fromScale(healthRatio, 1)
+                    entry.HealthFill.BackgroundColor3 = Color3.fromHSV(healthRatio * 0.34, 0.72, 1)
+                else clearEsp(model) end
+            else clearEsp(model) end
+        end
+        for model in pairs(highlights) do
+            if not active[model] then clearEsp(model) end
         end
     end
 
@@ -487,6 +582,9 @@ return function(context)
     EspSection:AddToggle({Name = "Names", Flag = "sniper_arena_esp_names", Default = true, Callback = function(v) state.EspNames = v == true end})
     EspSection:AddToggle({Name = "Health", Flag = "sniper_arena_esp_health", Default = true, Callback = function(v) state.EspHealth = v == true end})
     EspSection:AddToggle({Name = "Distance", Flag = "sniper_arena_esp_distance", Default = true, Callback = function(v) state.EspDistance = v == true end})
+    EspSection:AddColorPicker({Name = "Outline Color", Flag = "sniper_arena_esp_color", Default = state.EspColor, Callback = function(v) if typeof(v) == "Color3" then state.EspColor = v end end})
+    EspSection:AddColorPicker({Name = "Body Accent", Flag = "sniper_arena_esp_accent", Default = state.EspAccent, Callback = function(v) if typeof(v) == "Color3" then state.EspAccent = v end end})
+    EspSection:AddSlider({Name = "Body Fill", Flag = "sniper_arena_esp_fill", Min = 0, Max = 100, Step = 1, Default = 22, Suffix = "%", Callback = function(v) state.EspFillTransparency = 1 - math.clamp(tonumber(v) or 22, 0, 100) / 100 end})
     EspSection:AddSlider({Name = "ESP Range", Flag = "sniper_arena_esp_range", Min = 100, Max = 5000, Step = 100, Default = 2000, Suffix = "m", Callback = function(v) state.EspMaxDistance = tonumber(v) or 2000 end})
 
     VisibilitySection:AddToggle({Name = "Fullbright", Flag = "sniper_arena_fullbright", Default = false, Callback = function(v)

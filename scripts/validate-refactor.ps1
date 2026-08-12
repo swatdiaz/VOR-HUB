@@ -1093,6 +1093,10 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_silent_aim"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_auto_unlock"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
+    $sniperArenaText -match 'HealthFill' -and
+    $sniperArenaText -match 'HighlightHolder' -and
+    $sniperArenaText -match 'GetTagged\("Boss"\)' -and
     $sniperArenaText -match 'SniperArenaModuleReady'
 )
 if (-not ($sniperArenaRouting -and $sniperArenaNativeBehavior)) {
