@@ -1275,6 +1275,8 @@ $duckNativeBehavior = (
     $duckText -match 'Upgrades_Purchase' -and
     $duckText -match 'Gacha_BuyCrate' -and
     $duckText -match 'Achievements_ClaimReward' -and
+    $duckText -match 'FreezerSkins\.Equip' -and
+    $duckText -match 'BossController_GetSkipVoteState' -and
     $duckText -match 'Respawn_Controller_ClaimLastSession' -and
     $duckText -match 'DailyQuests_GetState' -and
     $duckText -match 'Queue\.ChooseSize\(1\)' -and
@@ -1286,6 +1288,7 @@ $duckNativeBehavior = (
     $duckText -match 'queue_on_teleport|queueonteleport' -and
     $duckText -match 'KillsAtStart\s*=\s*nil' -and
     $duckText -match '__VORCatchBillionDucksCleanup' -and
+    $duckText -notmatch 'VirtualInputManager' -and
     $duckText -notmatch 'CurrentCamera\.CFrame\s*='
 )
 $duckPages = @("Hunt", "Progress", "Dogs", "Rewards", "Status")
