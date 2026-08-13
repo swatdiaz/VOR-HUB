@@ -30,7 +30,7 @@ admin permission can update the original VOR Hub repository.
 
 - `loader.lua` - small immutable game router; it compiles only the detected game module
 - `core/` - shared luxury UI, settings, profiles, access gate, and utilities
-- `games/` - isolated Grow a Garden 2, Capybaras VS Plants, Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Sniper Arena, Iron Man: Reimagined, Dog Race, Dragon Ball Legendary Powers, Blox Fruits, and Dungeon builders
+- `games/` - isolated Grow a Garden 2, Capybaras VS Plants, Murder Mystery 2, MyPark, Practical Basketball, Anime Expeditions, Bid for Anime, Mine a Mountain, Bee Swarm Simulator, Gunfight Arena, Sniper Arena, Iron Man: Reimagined, Dog Race, Catch 1 Billion Ducks, Dragon Ball Legendary Powers, Blox Fruits, and Dungeon builders
 - Sniper Arena includes optional native shot-path silent aim, humanized cursor aimbot, zero-delay event-driven trigger assist, late-frame player-and-bot collider expansion with native hitbox targeting, recoil/spread/reload controls, team-filtered optional ESP, server-checked sniper unlock progression, best-owned loadouts, ready reward claims, matchmaking controls, and universe-wide profiles shared by every sub-place.
 - Dog Race includes guided AFK progression, smart/manual egg targeting, fruit/trail/bone shops, birds, race-earned bone shoes, dog and partner unlocks, race/training automation, movement, rewards, and live currency/rebirth/Robux gates.
 - `VOR_HUB.lua` - compatibility bootstrap pinned to the audited loader

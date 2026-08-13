@@ -144,6 +144,17 @@ return function(runtime)
             },
             Module = "games/dog_race.lua",
         },
+        CatchOneBillionDucks = {
+            Key = "CatchOneBillionDucks",
+            DisplayName = "Catch 1 Billion Ducks",
+            UniverseId = 10516888336,
+            RootPlaceId = 100293509865504,
+            PlaceIds = {
+                [100293509865504] = true,
+                [120617974337690] = true,
+            },
+            Module = "games/catch_1_billion_ducks.lua",
+        },
         DragonBallLegendaryPowers = {
             Key = "DragonBallLegendaryPowers",
             DisplayName = "Dragon Ball Legendary Powers",
@@ -241,6 +252,7 @@ return function(runtime)
     local sharesUniverseProfiles = settings.IsBloxFruits
         or activeGame ~= nil and activeGame.Key == "PracticalBasketball"
         or activeGame ~= nil and activeGame.Key == "SniperArena"
+        or activeGame ~= nil and activeGame.Key == "CatchOneBillionDucks"
     settings.ConfigScopeId = sharesUniverseProfiles and universeId or placeId
     settings.ConfigRoot = "VORHub/Configs/" .. tostring(settings.ConfigScopeId)
     settings.ProfileFolder = settings.ConfigRoot .. "/Profiles"

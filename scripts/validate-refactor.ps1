@@ -25,6 +25,7 @@ $required = @(
     "games/sniper_arena.lua",
     "games/iron_man_reimagined.lua",
     "games/dog_race.lua",
+    "games/catch_1_billion_ducks.lua",
     "games/dragon_ball_legendary_powers.lua",
     "games/blox_fruits.lua",
     "games/blox_fruits_experimental.lua",
@@ -1257,6 +1258,62 @@ if (-not ($sniperArenaRouting -and $sniperArenaNativeBehavior)) {
     throw "Sniper Arena routing/native adapter contract failed"
 }
 
+$duckText = Get-Content -LiteralPath (Join-Path $repo "games/catch_1_billion_ducks.lua") -Raw
+$duckRouting = (
+    $settingsText -match 'Key\s*=\s*"CatchOneBillionDucks"' -and
+    $settingsText -match 'UniverseId\s*=\s*10516888336' -and
+    $settingsText -match 'RootPlaceId\s*=\s*100293509865504' -and
+    $settingsText -match '\[120617974337690\]\s*=\s*true' -and
+    $settingsText -match 'Module\s*=\s*"games/catch_1_billion_ducks\.lua"' -and
+    $settingsText -match 'activeGame\.Key\s*==\s*"CatchOneBillionDucks"'
+)
+$duckNativeBehavior = (
+    $duckText -match 'WeaponController_Shoot' -and
+    $duckText -match 'WeaponController_Reload' -and
+    $duckText -match 'WeaponController_HitConfirm' -and
+    $duckText -match 'DuckController_SellDucks|SellDucks' -and
+    $duckText -match 'Upgrades_Purchase' -and
+    $duckText -match 'Gacha_BuyCrate' -and
+    $duckText -match 'Achievements_ClaimReward' -and
+    $duckText -match 'Respawn_Controller_ClaimLastSession' -and
+    $duckText -match 'DailyQuests_GetState' -and
+    $duckText -match 'Queue\.ChooseSize\(1\)' -and
+    $duckText -match 'Queue\.CreateParty\(\)' -and
+    $duckText -match 'DuckSnapshotById' -and
+    $duckText -match 'BossSnapshotById' -and
+    $duckText -match 'GetWeaponState' -and
+    $duckText -match 'RefreshCapabilities' -and
+    $duckText -match 'queue_on_teleport|queueonteleport' -and
+    $duckText -match 'KillsAtStart\s*=\s*nil' -and
+    $duckText -match '__VORCatchBillionDucksCleanup' -and
+    $duckText -notmatch 'CurrentCamera\.CFrame\s*='
+)
+$duckPages = @("Hunt", "Progress", "Dogs", "Rewards", "Status")
+foreach ($page in $duckPages) {
+    $pageMatches = [regex]::Matches($duckText, ('addHomeCategory\("[^"\r\n]*' + [regex]::Escape($page) + '"'))
+    if ($pageMatches.Count -ne 1) {
+        throw "Catch 1 Billion Ducks page is missing or duplicated: $page"
+    }
+}
+$duckFlags = @([regex]::Matches($duckText, $flagPattern) | ForEach-Object {
+    $_.Groups[1].Value
+})
+$duckUniqueFlags = @($duckFlags | Sort-Object -Unique)
+$expectedDuckFlags = @(
+    "duckb_full_progression", "duckb_anti_afk", "duckb_auto_hunt", "duckb_target_mode",
+    "duckb_visibility_check", "duckb_prediction", "duckb_auto_sell", "duckb_sell_interval",
+    "duckb_auto_weapons", "duckb_auto_upgrades", "duckb_cash_reserve", "duckb_feather_reserve",
+    "duckb_auto_dogs", "duckb_auto_crates", "duckb_auto_achievements", "duckb_auto_freezer",
+    "duckb_auto_last_session", "duckb_auto_daily_quests", "duckb_auto_skip_day", "duckb_auto_queue"
+)
+$duckFlagDiff = @(Compare-Object ($expectedDuckFlags | Sort-Object) $duckUniqueFlags)
+if ($duckFlags.Count -ne $expectedDuckFlags.Count -or $duckUniqueFlags.Count -ne $duckFlags.Count -or $duckFlagDiff.Count -ne 0) {
+    throw "Catch 1 Billion Ducks persistent flags are missing or duplicated"
+}
+if (-not ($duckRouting -and $duckNativeBehavior)) {
+    throw "Catch 1 Billion Ducks routing/native automation contract failed"
+}
+
 $dragonBallText = Get-Content -LiteralPath (Join-Path $repo "games/dragon_ball_legendary_powers.lua") -Raw
 $dragonBallRouting = (
     $settingsText -match 'Key\s*=\s*"DragonBallLegendaryPowers"' -and
@@ -1474,7 +1531,7 @@ if (-not ($dogRaceRouting -and $dogRaceNativeBehavior)) {
 }
 
 Write-Host "Luau compile: PASS ($($compileFiles.Count) Lua files)"
-Write-Host "Game builder contract: PASS (16/16)"
+Write-Host "Game builder contract: PASS (17/17)"
 Write-Host "Persistent flag parity: PASS ($($baselineFlags.Count)/$($baselineFlags.Count))"
 Write-Host "Revive removal: PASS (routing, module, and standalone builder removed)"
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
@@ -1483,6 +1540,7 @@ Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, moveme
 Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, auto-fire trigger, enemy-head hitbox, recoil/spread/reload controls, optional ESP, server-checked unlocks, loadouts, claims, queues)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
+Write-Host "Catch 1 Billion Ducks support: PASS (static native-route contract for lobby chores, cross-place resume, hunt, sell, weapons, upgrades, dogs, and rewards)"
 Write-Host "Dragon Ball Legendary Powers support: PASS (power ladder, rapid training, persistent gravity, milestones, proper Shenron flow)"
 Write-Host "Capybaras VS Plants support: PASS (native shops, bosses, sequential hatching, rewards, placement, and shovel adapter)"
 Write-Host "Grow a Garden 2 support: PASS (live catalogs, natural pets, event seeds, planting, shops, and anti-steal defense)"
