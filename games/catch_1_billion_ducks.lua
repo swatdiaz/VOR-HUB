@@ -1244,18 +1244,24 @@ local function createRuntime(context)
                 local callOk, result = pcall(self.RollDailyQuests, self, false)
                 dailyReady = callOk and result == true
             end
+            local weaponReady = true
             if self.FullProgression or self.AutoWeapons then
                 local beforePurchases = self.Purchases
-                pcall(self.BuyAndEquipBestWeapon, self, false)
+                local callOk, result = pcall(self.BuyAndEquipBestWeapon, self, false)
+                weaponReady = callOk and result == true
                 changed = changed or self.Purchases > beforePurchases
             end
+            local dogsReady = true
             if self.FullProgression or self.AutoDogs then
-                pcall(self.ManageDogs, self, false)
+                local callOk, result = pcall(self.ManageDogs, self, false)
+                dogsReady = callOk and result == true
             end
+            local freezerReady = true
             if self.FullProgression or self.AutoFreezer then
-                pcall(self.EquipBestFreezer, self, false)
+                local callOk, result = pcall(self.EquipBestFreezer, self, false)
+                freezerReady = callOk and result == true
             end
-            self.LobbyChoresReady = lastSessionReady and dailyReady
+            self.LobbyChoresReady = lastSessionReady and dailyReady and weaponReady and dogsReady and freezerReady
         end, function(message)
             return type(debug) == "table" and type(debug.traceback) == "function"
                 and debug.traceback(message, 2) or tostring(message)
@@ -1322,12 +1328,10 @@ local function createRuntime(context)
     end
 
     function runtime:IsLocallyQueued()
-        if self.QueueToken ~= nil or self:IsQueueWidgetOpen() then
-            return true
-        end
         local root = self:CharacterRoot()
         local zone = self.QueueZone
-        return root ~= nil and zone ~= nil and zone.Parent ~= nil and zone.PrimaryPart ~= nil
+        return (self.QueueToken ~= nil or self:IsQueueWidgetOpen())
+            and root ~= nil and zone ~= nil and zone.Parent ~= nil and zone.PrimaryPart ~= nil
             and (root.Position - zone.PrimaryPart.Position).Magnitude <= 8
             and toNumber(zone:GetAttribute("Queue_PlayersIn")) > 0
     end
@@ -1442,7 +1446,9 @@ local function createRuntime(context)
         if self.QueueBusy or not self:IsLobby() or not self.Capabilities.Queue then
             return false
         end
-        if self:IsLocallyQueued() then
+        if self:IsLocallyQueued() and self.QueueZone
+            and tostring(self.QueueZone:GetAttribute("Queue_State")) == "Party"
+            and toNumber(self.QueueZone:GetAttribute("Queue_PartySize")) == 1 then
             return true
         end
         local root = self:CharacterRoot()
@@ -1512,8 +1518,8 @@ local function createRuntime(context)
         repeat
             task.wait(0.1)
             verified = self:IsLocallyQueued()
-                and (toNumber(queueZone:GetAttribute("Queue_PartySize")) == 1
-                    or queueZone:GetAttribute("Queue_TimerActive") == true)
+                and tostring(queueZone:GetAttribute("Queue_State")) == "Party"
+                and toNumber(queueZone:GetAttribute("Queue_PartySize")) == 1
         until verified or os.clock() >= deadline or not self.Alive
         self.QueueBusy = false
         if not verified then
