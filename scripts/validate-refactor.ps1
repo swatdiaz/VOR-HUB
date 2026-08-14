@@ -1299,6 +1299,7 @@ $duckNativeBehavior = (
     $duckText -match 'BossKiteActive' -and
     $duckText -match 'BossPanicSpeed\s*=\s*240' -and
     $duckText -match 'closest\(threats\)' -and
+    $duckText -match 'bossThreat or self:Visible' -and
     $duckText -match 'stat == "Dexterity" and 0 or 1' -and
     $duckText -match 'root\.AssemblyLinearVelocity = Vector3\.new' -and
     $duckText -match 'FindFirstChild\("SafetyPart", true\)' -and

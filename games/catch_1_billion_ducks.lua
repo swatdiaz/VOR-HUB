@@ -894,13 +894,15 @@ local function createRuntime(context)
                 local isDuck = string.find(model.Name, "DuckController_Client_", 1, true) ~= nil
                 if isBoss or isDuck then
                     local part = model:FindFirstChild("Hitbox", true) or model.PrimaryPart
-                    if part and part:IsA("BasePart") and self:Visible(origin, part, model) then
+                    if part and part:IsA("BasePart") then
                         local distance = (part.Position - origin).Magnitude
                         if distance <= 1000 then
                             if isBoss then
                                 local bossName, bossState, bossHealth = self:BossInfoByModel(model)
                                 local bossAlive = bossHealth == nil or toNumber(bossHealth) > 0
-                                if bossAlive and (bossState == "Flying" or bossState == "Attacking") then
+                                local bossThreat = bossState == "Attacking"
+                                if bossAlive and (bossState == "Flying" or bossThreat)
+                                    and (bossThreat or self:Visible(origin, part, model)) then
                                     local item = {
                                         Part = part,
                                         Model = model,
@@ -915,7 +917,9 @@ local function createRuntime(context)
                                 end
                             else
                                 local duckId, duckState = self:DuckInfoByModel(model)
-                                if duckState == nil or duckState == "Flying" or duckState == "Attacking" then
+                                local duckThreat = duckState == "Attacking"
+                                if (duckState == nil or duckState == "Flying" or duckThreat)
+                                    and (duckThreat or self:Visible(origin, part, model)) then
                                     local item = {
                                         Part = part,
                                         Model = model,
