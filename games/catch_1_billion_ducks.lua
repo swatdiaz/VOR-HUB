@@ -495,6 +495,7 @@ local function createRuntime(context)
         BossSnapshotById = {},
         BossSnapshotAt = 0,
         BossPhase = nil,
+        CurrentDay = 0,
         BossKiteActive = false,
         BossKiteSide = 1,
         BossKiteSpeed = 180,
@@ -664,6 +665,7 @@ local function createRuntime(context)
         self.BossSnapshotAt = os.clock()
         local ok, snapshot = pcall(self.Invoke, self, "BossController_GetSnapshot")
         self.BossPhase = ok and type(snapshot) == "table" and snapshot.Phase or nil
+        self.CurrentDay = ok and type(snapshot) == "table" and toNumber(snapshot.Day) or self.CurrentDay
         local list = {}
         local byId = {}
         local fallback
@@ -1201,12 +1203,19 @@ local function createRuntime(context)
         local function add(category, stat, entry, uuid)
             if type(entry) == "table" and toNumber(entry.Level) < toNumber(entry.MaxLevel)
                 and toNumber(entry.Price) > 0 then
+                local priority = 2
+                if category == "Dog" and stat == "Dexterity" then
+                    priority = 0
+                elseif category == "Weapon" and stat == "ReloadSpeed"
+                    and (self.CurrentDay == 5 or self.CurrentDay == 6 or self.CurrentDay >= 9) then
+                    priority = 1
+                end
                 candidates[#candidates + 1] = {
                     Category = category,
                     Stat = stat,
                     Price = toNumber(entry.Price),
                     UUID = uuid,
-                    Priority = category == "Dog" and stat == "Dexterity" and 0 or 1,
+                    Priority = priority,
                 }
             end
         end
@@ -1238,10 +1247,14 @@ local function createRuntime(context)
     function runtime:BuyCheapestUpgrade(manual)
         local spendable = self:Currency("Cash") - self.CashReserve
         local candidates = self:UpgradeCandidates()
-        local dexterity = candidates[1]
-        if dexterity and dexterity.Priority == 0 and dexterity.Price > spendable then
+        local priorityUpgrade = candidates[1]
+        if priorityUpgrade and priorityUpgrade.Priority < 2 and priorityUpgrade.Price > spendable then
             if manual then
-                self:SetStatus("Saving cash to max Dog Dexterity first")
+                self:SetStatus(string.format(
+                    "Saving cash for priority %s %s",
+                    priorityUpgrade.Category,
+                    priorityUpgrade.Stat
+                ))
             end
             return false
         end
@@ -2624,7 +2637,7 @@ local function buildInterface(runtime)
 
     UpgradeSection:AddToggle({
         Name = "⚙️ Smart Auto Upgrades",
-        Description = "Maxes Dog Dexterity first, then buys the cheapest useful stat without breaking the reserve",
+        Description = "Maxes Dexterity first; reload leads on days 5-6 and locks until max from day 9 onward",
         Flag = "duckb_auto_upgrades",
         Default = false,
         Callback = function(enabled) runtime.AutoUpgrades = enabled end,
