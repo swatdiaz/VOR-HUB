@@ -1315,9 +1315,9 @@ $duckNativeBehavior = (
     $duckText -match 'BossKiteActive' -and
     $duckText -match 'SurvivalStartDay\s*=\s*5' -and
     $duckText -match 'SurvivalAltitude\s*=\s*420' -and
-    $duckText -match 'SurvivalDaySpeed\s*=\s*280' -and
-    $duckText -match 'BossKiteSpeed\s*=\s*340' -and
-    $duckText -match 'BossPanicSpeed\s*=\s*420' -and
+    $duckText -match 'SurvivalDaySpeed\s*=\s*180' -and
+    $duckText -match 'BossKiteSpeed\s*=\s*180' -and
+    $duckText -match 'BossPanicSpeed\s*=\s*240' -and
     $duckText -match 'lateDayHalo = self\.CurrentDay >= self\.SurvivalStartDay' -and
     $duckText -match 'for _, model in ipairs\(ume:GetDescendants\(\)\)' -and
     $duckText -match 'NormalDuckThreat = true' -and
