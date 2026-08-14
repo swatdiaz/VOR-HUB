@@ -1213,7 +1213,8 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'updateHitboxes\(\)\s*\r?\n\s*updateAim\(deltaTime\)' -and
     $sniperArenaText -match 'acquireExpandedHitboxTarget\(\)' -and
     $sniperArenaText -match 'CollectionService:GetTagged\("Bot"\)' -and
-    $sniperArenaText -match 'if model and not sameTeamModel\(model\) then expandModelHead\(model\) end' -and
+    $sniperArenaText -match 'hostile\.Kind == "PLAYER" and headPart\(hostile\.Model\)' -and
+    $sniperArenaText -match 'if hostile\.Kind == "PLAYER" then expandModelHead\(hostile\.Model\) end' -and
     $sniperArenaText -match 'FindFirstChild\("Head", true\)' -and
     $sniperArenaText -match 'restoreHitboxes\(\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_no_recoil"' -and
@@ -1229,6 +1230,21 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'SlideHelper\.Slide = boostedSlide' -and
     $sniperArenaText -match 'GameConfig\.Movement\.SlideSpeed' -and
     $sniperArenaText -match 'adjusted\.Speed = .*\* multiplier' -and
+    $sniperArenaText -match 'addHomeCategory\("[^"]* Player"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_jump_override"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_jump_height"' -and
+    $sniperArenaText -match 'humanoid\.JumpHeight = math\.clamp' -and
+    $sniperArenaText -match 'restoreJumpBoost\(\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_unlock_all"' -and
+    $sniperArenaText -match 'CosmeticConfig\s*=\s*safeRequire\(Config and Config:FindFirstChild\("WeaponConfig"\)\)' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_sniper_skin"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_melee_skin"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_glove"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_charm"' -and
+    $sniperArenaText -match 'weapon\.Name = cosmeticKey or realName' -and
+    $sniperArenaText -match 'weapon\.Name = realName' -and
+    $sniperArenaText -match 'restoreFECosmetics\(\)' -and
+    $sniperArenaText -match 'playerHealth ~= nil and playerHealth <= 0' -and
     $sniperArenaText -notmatch 'root\.CFrame = root\.CFrame \+' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_esp_color"' -and
@@ -1593,7 +1609,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Sniper Arena support: PASS (silent aim shot-ray hook, cursor aimbot, auto-fire trigger, enemy-head hitbox, recoil/spread/reload controls, optional ESP, server-checked unlocks, loadouts, claims, queues)"
+Write-Host "Sniper Arena support: PASS (dead-target rejection, silent aim/cursor/trigger, player-only big head, FE local cosmetics, native jump/slide, weapon modifiers, ESP, server progression)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Catch 1 Billion Ducks support: PASS (static native-route contract for lobby chores, cross-place resume, hunt, sell, weapons, upgrades, dogs, and rewards)"
