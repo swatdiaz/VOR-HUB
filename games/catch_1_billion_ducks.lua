@@ -466,6 +466,10 @@ local function createRuntime(context)
         LobbyChoresReady = false,
         LobbyChoresBusy = false,
         LobbySettleUntil = os.clock() + 1.25,
+        LobbySpendStartedAt = 0,
+        LobbyLastSpendAt = 0,
+        LobbySpendQuietSeconds = 8,
+        LobbySpendHardLimit = 60,
         LastSessionChecked = false,
         DailyQuestStatus = "Not checked",
         QueueToken = nil,
@@ -1717,6 +1721,10 @@ local function createRuntime(context)
             return self.LobbyChoresReady
         end
         self.LobbyChoresBusy = true
+        if self.LobbySpendStartedAt <= 0 then
+            self.LobbySpendStartedAt = os.clock()
+            self.LobbyLastSpendAt = self.LobbySpendStartedAt
+        end
         local changed = false
         local ok, errorMessage = xpcall(function()
             local lastSessionReady = true
@@ -1770,6 +1778,7 @@ local function createRuntime(context)
         end)
         if changed then
             self.LobbySettleUntil = os.clock() + 1
+            self.LobbyLastSpendAt = os.clock()
         end
         self.LobbyChoresBusy = false
         if not ok then
@@ -1777,7 +1786,12 @@ local function createRuntime(context)
             self:SetError("Lobby chores: " .. tostring(errorMessage))
             return false
         end
-        return self.LobbyChoresReady and os.clock() >= self.LobbySettleUntil
+        local now = os.clock()
+        local quietFor = now - self.LobbyLastSpendAt
+        local totalWindow = now - self.LobbySpendStartedAt
+        local spendingSettled = quietFor >= self.LobbySpendQuietSeconds
+            or totalWindow >= self.LobbySpendHardLimit
+        return self.LobbyChoresReady and spendingSettled and now >= self.LobbySettleUntil
     end
 
     function runtime:VoteSkip(manual)
@@ -2604,6 +2618,8 @@ local function buildInterface(runtime)
             runtime.LastReward = 0
             runtime.LastLobbyChore = 0
             runtime.LobbyChoresReady = false
+            runtime.LobbySpendStartedAt = 0
+            runtime.LobbyLastSpendAt = 0
             runtime.AutomationReadyAt = os.clock() + 1
             if not enabled then
                 runtime:RestoreBossMovement()

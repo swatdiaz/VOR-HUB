@@ -1280,6 +1280,8 @@ $duckNativeBehavior = (
     $duckText -match 'Respawn_Controller_ClaimLastSession' -and
     $duckText -match 'permanentProgressionReady = self:NextMissingWeaponCost\(\) == nil and #slots >= 2' -and
     $duckText -match 'pcall\(self\.BuyDogCrate, self, false, true\)' -and
+    $duckText -match 'LobbySpendQuietSeconds\s*=\s*8' -and
+    $duckText -match 'LobbySpendHardLimit\s*=\s*60' -and
     $duckText -match 'DailyQuests_GetState' -and
     $duckText -match 'Queue\.ChooseSize\(1\)' -and
     $duckText -match 'Queue\.CreateParty\(\)' -and
