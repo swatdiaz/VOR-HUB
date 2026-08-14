@@ -80,6 +80,9 @@ return function(context)
     local WeaponService = safeRequire(Remote and Remote:FindFirstChild("WeaponService"))
     local WeaponStore = safeRequire(Remote and Remote:FindFirstChild("WeaponService") and Remote.WeaponService:FindFirstChild("LocalWeaponStore"))
     local LoadoutService = safeRequire(Remote and Remote:FindFirstChild("LoadoutService"))
+    local BackpackService = safeRequire(Remote and Remote:FindFirstChild("BackpackService"))
+    local CombatService = safeRequire(Remote and Remote:FindFirstChild("CombatService"))
+    local EntityService = safeRequire(Remote and Remote:FindFirstChild("EntityService"))
     local StatusService = safeRequire(Remote and Remote:FindFirstChild("StatusService"))
     local StatsStore = safeRequire(Remote and Remote:FindFirstChild("StatsService") and Remote.StatsService:FindFirstChild("LocalStatsStore"))
     local QuestService = safeRequire(Remote and Remote:FindFirstChild("QuestService"))
@@ -91,11 +94,13 @@ return function(context)
     local GachaConfig = safeRequire(Config and Config:FindFirstChild("GachaConfig")) or {}
     local CombatController = Client and Client:FindFirstChild("CombatController")
     local CombatControllerApi = safeRequire(CombatController)
+    local WeaponControllerApi = safeRequire(Client and Client:FindFirstChild("WeaponController"))
     local ClientComponent = CombatController and CombatController:FindFirstChild("ClientComponent")
     local ClientShootableComponent = safeRequire(ClientComponent and ClientComponent:FindFirstChild("ClientShootableComponent"))
     local SlideHelper = safeRequire(Client and Client:FindFirstChild("CombatHelper") and Client.CombatHelper:FindFirstChild("Slide"))
     local GameConfig = safeRequire(Config and Config:FindFirstChild("Config")) or {}
     local WeaponConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Weapon")) or {}
+    local CosmeticConfig = safeRequire(Config and Config:FindFirstChild("WeaponConfig")) or {}
     local MatchConfig = safeRequire(Config and Config:FindFirstChild("Config") and Config.Config:FindFirstChild("Matchmaking")) or {}
 
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
@@ -103,29 +108,33 @@ return function(context)
     local InventoryPage = addHomeCategory("🎒 Inventory", 2, CATEGORY_DECALS.Mastery or CATEGORY_DECALS.Progress)
     local ProgressPage = addHomeCategory("🏆 Progress", 3, CATEGORY_DECALS.Progress)
     local VisualsPage = addHomeCategory("👁️ Visuals", 4, CATEGORY_DECALS.Visuals)
-    local WorldPage = addHomeCategory("🌍 World", 5, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
+    local PlayerPage = addHomeCategory("🧍 Player", 5, CATEGORY_DECALS.Player or CATEGORY_DECALS.World)
+    local WorldPage = addHomeCategory("🌍 World", 6, CATEGORY_DECALS.World or CATEGORY_DECALS.Player)
 
     local AimSection = CombatPage:AddSection("Aim Assist", "Left")
     local CombatStatusSection = CombatPage:AddSection("Combat Status", "Right")
     local WeaponModsSection = CombatPage:AddSection("Weapon Mods", "Left")
     local WeaponSection = InventoryPage:AddSection("Owned Snipers", "Left")
     local UnlockSection = InventoryPage:AddSection("Server Unlock Progress", "Right")
+    local CosmeticSection = InventoryPage:AddSection("FE Cosmetic Showcase", "Left")
     local CaseSection = InventoryPage:AddSection("Owned Cases", "Right")
     local ClaimSection = ProgressPage:AddSection("Claims", "Left")
     local CoachSection = ProgressPage:AddSection("What To Do Next", "Right")
     local EspSection = VisualsPage:AddSection("Enemy ESP", "Left")
     local VisibilitySection = VisualsPage:AddSection("Visibility", "Right")
     local QueueSection = WorldPage:AddSection("Matchmaking", "Left")
-    local MovementSection = WorldPage:AddSection("Native Slide", "Left")
+    local MovementSection = PlayerPage:AddSection("Movement", "Left")
+    local PlayerStatusSection = PlayerPage:AddSection("Player Status", "Right")
     local WorldStatusSection = WorldPage:AddSection("Server Status", "Right")
 
     HomePage:AddSection("Sniper Arena Support", "Left"):AddParagraph({
-        Title = "Native, server-checked progression",
-        Content = "VOR uses the game's owned weapon store, kill-gated unlock service, loadouts, tasks, mailbox, queues, and match state. Locked inventory is never presented as owned.",
+        Title = "Progression + local showcase",
+        Content = "Earned progression stays server-checked. FE Cosmetic Showcase is a separate local-only preview: it changes what you see without claiming ownership or changing server damage.",
     })
     local guide = HomePage:AddSection("Quick Start", "Right")
     guide:AddParagraph({Title = "Combat", Content = "Silent Aim redirects native shot rays without moving the camera. Cursor Aimbot visibly tracks targets. Trigger Assist, hitbox expansion, recoil, spread, and reload controls are separate toggles."})
     guide:AddParagraph({Title = "Progress", Content = "Use Auto Unlock Earned Snipers and Auto Claim. The server still enforces kill requirements and reward readiness."})
+    guide:AddParagraph({Title = "Cosmetics", Content = "FE Cosmetic Showcase previews sniper, melee, glove, and charm skins only on your client. Toggle it off to restore the server-equipped look."})
     guide:AddButton({Name = "Open Combat", Persist = false, Callback = function() selectHomeCategory("🎯 Combat") end})
     guide:AddButton({Name = "Open Progress", Persist = false, Callback = function() selectHomeCategory("🏆 Progress") end})
 
@@ -186,6 +195,16 @@ return function(context)
         SlideBoost = false,
         SlideMultiplier = 1.5,
         BoostedSlides = 0,
+        JumpBoost = false,
+        JumpHeight = 25,
+        FEUnlock = false,
+        FESniperFamily = "SSG",
+        FEMeleeFamily = "Karambit",
+        FESelections = {Sniper = nil, Melee = nil, Glove = nil, Charm = nil},
+        FEAppliedCount = 0,
+        FELocalAppliedCount = 0,
+        FELastApply = "Original server cosmetics",
+        FELocalStatus = "Local inventory route idle",
         SelectedFamily = "SSG",
         LastClaim = 0,
         LastUnlock = 0,
@@ -197,6 +216,11 @@ return function(context)
     local highlights = {}
     local hitboxDefaults = setmetatable({}, {__mode = "k"})
     local weaponValueDefaults = setmetatable({}, {__mode = "k"})
+    local jumpDefaults = setmetatable({}, {__mode = "k"})
+    local feAppliedWeapons = setmetatable({}, {__mode = "k"})
+    local feFakeKeys = {}
+    local feOriginalSlots = {}
+    local feCharmState
 
     local originalSlide, boostedSlide
     if SlideHelper and type(SlideHelper.Slide) == "function" then
@@ -281,7 +305,9 @@ return function(context)
 
     local function isEnemy(player)
         local _, humanoid, root = character(player)
+        local replicatedHealth = player and tonumber(player:GetAttribute("Health"))
         return player ~= LocalPlayer and humanoid ~= nil and humanoid.Health > 0 and root ~= nil
+            and (replicatedHealth == nil or replicatedHealth > 0)
             and (not state.TeamCheck or not sameTeam(player))
     end
 
@@ -296,6 +322,10 @@ return function(context)
         if sameTeamModel(model) then return end
         local tempRoot = workspace:FindFirstChild("_Temp")
         if tempRoot and model:IsDescendantOf(tempRoot) then return end
+        local modelPlayer = playerForModel(model) or Players:FindFirstChild(model.Name)
+        local playerHealth = modelPlayer and tonumber(modelPlayer:GetAttribute("Health"))
+        if playerHealth ~= nil and playerHealth <= 0 then return end
+        if model:GetAttribute("Dead") == true or model:GetAttribute("Ragdoll") == true then return end
         local humanoid = model:FindFirstChildOfClass("Humanoid")
         local root = model:FindFirstChild("HumanoidRootPart", true) or model.PrimaryPart
         if not humanoid or not root or modelHealth(model, humanoid) <= 0 then return end
@@ -317,7 +347,8 @@ return function(context)
         if holder then
             for _, model in ipairs(holder:GetChildren()) do
                 if model:IsA("Model") then
-                    local kind = CollectionService:HasTag(model, "Bot") and "BOT" or "ENEMY"
+                    local kind = playerForModel(model) and "PLAYER"
+                        or (CollectionService:HasTag(model, "Bot") and "BOT" or "ENEMY")
                     addHostile(records, seen, model, model:GetAttribute("DisplayName") or model.Name, kind)
                 end
             end
@@ -401,7 +432,7 @@ return function(context)
         local pointer = UserInputService:GetMouseLocation()
         local best, bestDistance = nil, math.huge
         for _, hostile in ipairs(hostileModels()) do
-            local part = headPart(hostile.Model)
+            local part = hostile.Kind == "PLAYER" and headPart(hostile.Model) or nil
             if part then
                 local center, visible = camera:WorldToViewportPoint(part.Position)
                 if visible and center.Z > 0 then
@@ -564,11 +595,7 @@ return function(context)
             head.CanQuery = true
         end
         for _, hostile in ipairs(hostileModels()) do
-            expandModelHead(hostile.Model)
-        end
-        for _, tagged in ipairs(CollectionService:GetTagged("Bot")) do
-            local model = tagged:IsA("Model") and tagged or tagged:FindFirstAncestorOfClass("Model")
-            if model and not sameTeamModel(model) then expandModelHead(model) end
+            if hostile.Kind == "PLAYER" then expandModelHead(hostile.Model) end
         end
         for head, original in pairs(hitboxDefaults) do
             if not active[head] then
@@ -956,12 +983,326 @@ return function(context)
         notify(state.LastAction, ok and COLORS.success or COLORS.warning)
     end
 
+    local ORIGINAL_COSMETIC = "Original / Server Equipped"
+    local cosmeticCatalog = {Sniper = {}, Melee = {}, Glove = {}, Charm = {}}
+    local cosmeticKeyByLabel = {}
+
+    for key, config in pairs(CosmeticConfig) do
+        if type(key) == "string" and type(config) == "table" and type(config.Display) == "string" then
+            local weaponType = tostring(config.WeaponType or "")
+            local bucket = cosmeticCatalog[weaponType]
+            if bucket then
+                local family = tostring(config.Family or weaponType)
+                bucket[family] = bucket[family] or {}
+                local label = string.format("%s  [%s]", config.Display, key)
+                bucket[family][#bucket[family] + 1] = label
+                cosmeticKeyByLabel[label] = key
+            end
+        end
+    end
+    for _, familiesByType in pairs(cosmeticCatalog) do
+        for _, labels in pairs(familiesByType) do
+            table.sort(labels, function(a, b) return string.lower(a) < string.lower(b) end)
+        end
+    end
+
+    local function cosmeticFamilies(kind)
+        local result = {}
+        for family, labels in pairs(cosmeticCatalog[kind] or {}) do
+            if #labels > 0 then result[#result + 1] = family end
+        end
+        table.sort(result)
+        return result
+    end
+
+    local function cosmeticOptions(kind, family)
+        local result = {ORIGINAL_COSMETIC}
+        if family then
+            for _, label in ipairs((cosmeticCatalog[kind] or {})[family] or {}) do result[#result + 1] = label end
+        else
+            for _, labels in pairs(cosmeticCatalog[kind] or {}) do
+                for _, label in ipairs(labels) do result[#result + 1] = label end
+            end
+            table.sort(result, function(a, b)
+                if a == ORIGINAL_COSMETIC then return true end
+                if b == ORIGINAL_COSMETIC then return false end
+                return string.lower(a) < string.lower(b)
+            end)
+        end
+        return result
+    end
+
+    local localSetEquip
+    if BackpackService and type(BackpackService.TryEquip) == "function" and type(debug) == "table"
+        and type(debug.getupvalue) == "function" then
+        local ok, first, second = pcall(debug.getupvalue, BackpackService.TryEquip, 5)
+        localSetEquip = ok and (type(first) == "function" and first or type(second) == "function" and second) or nil
+    end
+
+    local function selectedCosmetic(kind)
+        local key = state.FESelections[kind]
+        return key and CosmeticConfig[key] and key or nil
+    end
+
+    local function fakeKeyFor(kind, configKey)
+        return "__VOR_FE_" .. kind .. "_" .. tostring(configKey):gsub("[^%w_]", "_")
+    end
+
+    local function ensureFakeCosmetic(kind, configKey)
+        if not WeaponStore or type(WeaponStore.GetWeapon) ~= "function" or type(WeaponStore.AddOne) ~= "function" then return nil end
+        local fakeKey = fakeKeyFor(kind, configKey)
+        local itemData = {
+            Name = configKey,
+            CreateTime = workspace:GetServerTimeNow(),
+            Seed = 0.5,
+            WearFactor = 0,
+        }
+        if not WeaponStore:GetWeapon(fakeKey) then
+            pcall(WeaponStore.AddOne, WeaponStore, fakeKey, itemData)
+        end
+        local content = WeaponService and type(WeaponService.GetContent) == "function" and WeaponService.GetContent() or nil
+        if type(content) == "table" and not content[fakeKey] then
+            content[fakeKey] = itemData
+        end
+        if type(content) ~= "table" or not content[fakeKey] then return nil end
+        feFakeKeys[fakeKey] = true
+        return fakeKey
+    end
+
+    local function setLocalEquip(backpackId, slot, key, options)
+        if not BackpackService or type(BackpackService.GetBackpack) ~= "function" then return false end
+        local backpack = BackpackService.GetBackpack(backpackId)
+        if type(backpack) ~= "table" then return false end
+        options = options or {}
+        if type(localSetEquip) == "function" then
+            pcall(localSetEquip, backpackId, slot, key, nil, options)
+            if backpack[slot] == key then return true end
+        end
+
+        local previous = backpack[slot]
+        if previous and previous ~= key and WeaponService and type(WeaponService.SetBackpack) == "function" then
+            pcall(WeaponService.SetBackpack, previous, nil, nil, options)
+        end
+        if key and WeaponService and type(WeaponService.SetBackpack) == "function" then
+            pcall(WeaponService.SetBackpack, key, backpackId, slot, options)
+        end
+        backpack[slot] = key
+        if BackpackService.DataUpdated and type(BackpackService.DataUpdated.Fire) == "function" then
+            local changed = {}
+            if previous then changed[previous] = true end
+            if key then changed[key] = true end
+            pcall(BackpackService.DataUpdated.Fire, BackpackService.DataUpdated, backpackId, {
+                UpdateEquip = true,
+                UpdateSlot = slot,
+                UpdateKeys = changed,
+            })
+        end
+        return backpack[slot] == key
+    end
+
+    local function restoreCharmOverlay(backpackId)
+        local saved = feCharmState
+        if not saved then return end
+        local options = {Charm = {
+            Key = saved.FakeKey,
+            CharmSlot = "Primary",
+            CharmIndex = saved.Index,
+            EquipTarget = saved.Target,
+        }}
+        setLocalEquip(backpackId, "Charm", nil, options)
+        if saved.OriginalKey then
+            options.Charm.Key = saved.OriginalKey
+            setLocalEquip(backpackId, "Charm", saved.OriginalKey, options)
+        end
+        feCharmState = nil
+    end
+
+    local function applyLocalCosmeticSlots()
+        if not state.FEUnlock or not BackpackService or type(BackpackService.GetBackpack) ~= "function"
+            or type(BackpackService.GetBackpackIdSelected) ~= "function" then
+            return 0, string.format("Local inventory unavailable (enabled=%s, backpack=%s)", tostring(state.FEUnlock), tostring(BackpackService ~= nil))
+        end
+        local okId, backpackId = pcall(BackpackService.GetBackpackIdSelected)
+        local okBag, backpack = false, nil
+        if okId then okBag, backpack = pcall(BackpackService.GetBackpack, backpackId) end
+        if not okBag or type(backpack) ~= "table" then return 0, "Local backpack data unavailable" end
+        local changed = 0
+        for _, entry in ipairs({{"Sniper", "Primary"}, {"Melee", "Secondary"}, {"Glove", "Glove"}}) do
+            local kind, slot = entry[1], entry[2]
+            local configKey = selectedCosmetic(kind)
+            if configKey then
+                if feOriginalSlots[slot] == nil then feOriginalSlots[slot] = backpack[slot] or false end
+                local fakeKey = ensureFakeCosmetic(kind, configKey)
+                if not fakeKey then return changed, "Local item injection failed: " .. kind end
+                if fakeKey and backpack[slot] ~= fakeKey then
+                    local equipped = setLocalEquip(backpackId, slot, fakeKey, {})
+                    if equipped then changed += 1 end
+                end
+            elseif feOriginalSlots[slot] ~= nil then
+                local original = feOriginalSlots[slot]
+                setLocalEquip(backpackId, slot, original ~= false and original or nil, {})
+                feOriginalSlots[slot] = nil
+            end
+        end
+
+        local charmKey = selectedCosmetic("Charm")
+        local charmFake = charmKey and ensureFakeCosmetic("Charm", charmKey) or nil
+        local charmTarget = backpack.Primary
+        if feCharmState and (not charmFake or feCharmState.FakeKey ~= charmFake or feCharmState.Target ~= charmTarget) then
+            restoreCharmOverlay(backpackId)
+        end
+        if charmFake and charmTarget and not feCharmState then
+            local content = WeaponService and type(WeaponService.GetContent) == "function" and WeaponService.GetContent() or nil
+            local targetData = type(content) == "table" and content[charmTarget] or nil
+            local targetConfig = targetData and CosmeticConfig[targetData.Name]
+            local slotCount = math.max(tonumber(targetConfig and targetConfig.CharmSlotCount) or 1, 1)
+            local occupied = {}
+            for key, charm in pairs(targetData and targetData.Charm or {}) do
+                if type(charm) == "table" and tonumber(charm.Index) then occupied[tonumber(charm.Index)] = key end
+            end
+            local index = 1
+            while index <= slotCount and occupied[index] do index += 1 end
+            if index > slotCount then index = slotCount end
+            feCharmState = {FakeKey = charmFake, Target = charmTarget, Index = index, OriginalKey = occupied[index]}
+            local options = {Charm = {Key = charmFake, CharmSlot = "Primary", CharmIndex = index, EquipTarget = charmTarget}}
+            local equipped = setLocalEquip(backpackId, "Charm", charmFake, options)
+            if equipped then changed += 1 end
+        end
+        return changed, string.format("Local inventory route ready (%d change%s)", changed, changed == 1 and "" or "s")
+    end
+
+    local function tryApplyLocalCosmeticSlots()
+        local ok, result, status = pcall(applyLocalCosmeticSlots)
+        if ok then
+            state.FELocalAppliedCount = tonumber(result) or 0
+            state.FELocalStatus = tostring(status or string.format("Local inventory route ready (%d change%s)", state.FELocalAppliedCount,
+                state.FELocalAppliedCount == 1 and "" or "s"))
+            return state.FELocalAppliedCount
+        end
+        state.FELocalAppliedCount = 0
+        state.FELocalStatus = "Local inventory route failed: " .. string.sub(tostring(result), 1, 160)
+        return 0
+    end
+
+    local function recreateLocalController(weapon, cosmeticKey)
+        if not weapon or not WeaponControllerApi or type(WeaponControllerApi.Create) ~= "function"
+            or not EntityService or not EntityService.LocalEntity then return false end
+        local realName, realConfig = weapon.Name, weapon.Config
+        if type(realName) ~= "string" then return false end
+        local oldController = weapon.Controller
+        if oldController and type(oldController.Destroy) == "function" then pcall(oldController.Destroy, oldController) end
+        weapon.Name = cosmeticKey or realName
+        weapon.Config = realConfig
+        local ok, controller = pcall(WeaponControllerApi.Create, EntityService.LocalEntity, weapon)
+        weapon.Name = realName
+        weapon.Config = realConfig
+        if not ok then
+            if not weapon.Controller then pcall(WeaponControllerApi.Create, EntityService.LocalEntity, weapon) end
+            return false
+        end
+        feAppliedWeapons[weapon] = cosmeticKey or false
+        return controller ~= nil
+    end
+
+    local function applyCombatCosmetics()
+        if not CombatService or type(CombatService.GetWeapons) ~= "function" or not EntityService or not EntityService.LocalEntity then return 0 end
+        local ok, weapons = pcall(CombatService.GetWeapons, EntityService.LocalEntity)
+        if not ok or type(weapons) ~= "table" then return 0 end
+        local applied = 0
+        for _, weapon in pairs(weapons) do
+            local realConfig = type(weapon) == "table" and (weapon.Config or WeaponConfig[weapon.Name]) or nil
+            local kind = realConfig and tostring(realConfig.WeaponType or "") or ""
+            local desired = state.FEUnlock and selectedCosmetic(kind) or nil
+            local controller = type(weapon) == "table" and weapon.Controller or nil
+            local controllerName = controller and controller.Name or nil
+            local desiredName = desired or (type(weapon) == "table" and weapon.Name or nil)
+            if desiredName and controllerName ~= desiredName then recreateLocalController(weapon, desired) end
+            if desired and weapon.Controller and weapon.Controller.Name == desired then applied += 1 end
+        end
+        state.FEAppliedCount = applied
+        state.FELastApply = applied > 0 and string.format("%d local combat cosmetic(s) active", applied)
+            or (state.FEUnlock and "Waiting for a compatible weapon" or "Original server cosmetics")
+        return applied
+    end
+
+    local function restoreLocalCosmeticSlots()
+        if BackpackService and type(BackpackService.GetBackpack) == "function"
+            and type(BackpackService.GetBackpackIdSelected) == "function" then
+            local okId, backpackId = pcall(BackpackService.GetBackpackIdSelected)
+            local okBag, backpack = false, nil
+            if okId then okBag, backpack = pcall(BackpackService.GetBackpack, backpackId) end
+            if okBag and type(backpack) == "table" then
+                restoreCharmOverlay(backpackId)
+                for slot, original in pairs(feOriginalSlots) do
+                    local key = original ~= false and original or nil
+                    setLocalEquip(backpackId, slot, key, {})
+                    feOriginalSlots[slot] = nil
+                end
+            end
+        end
+        if WeaponStore and type(WeaponStore.Remove) == "function" then
+            local keys = {}
+            for key in pairs(feFakeKeys) do keys[#keys + 1] = key end
+            if #keys > 0 then pcall(WeaponStore.Remove, WeaponStore, keys) end
+        end
+        local content = WeaponService and type(WeaponService.GetContent) == "function" and WeaponService.GetContent() or nil
+        if type(content) == "table" then
+            for key in pairs(feFakeKeys) do content[key] = nil end
+        end
+        table.clear(feFakeKeys)
+    end
+
+    local function restoreFECosmetics()
+        local wasEnabled = state.FEUnlock
+        state.FEUnlock = false
+        applyCombatCosmetics()
+        restoreLocalCosmeticSlots()
+        state.FEUnlock = wasEnabled
+        state.FEAppliedCount = 0
+        state.FELastApply = "Original server cosmetics"
+    end
+
+    local function applyJumpBoost()
+        local _, humanoid = character()
+        if not humanoid then return end
+        if not jumpDefaults[humanoid] then
+            jumpDefaults[humanoid] = {
+                UseJumpPower = humanoid.UseJumpPower,
+                JumpPower = humanoid.JumpPower,
+                JumpHeight = humanoid.JumpHeight,
+            }
+        end
+        if state.JumpBoost then
+            humanoid.UseJumpPower = false
+            humanoid.JumpHeight = math.clamp(tonumber(state.JumpHeight) or 25, 7, 100)
+        end
+    end
+
+    local function restoreJumpBoost()
+        for humanoid, original in pairs(jumpDefaults) do
+            if humanoid and humanoid.Parent then
+                pcall(function()
+                    humanoid.UseJumpPower = original.UseJumpPower
+                    humanoid.JumpPower = original.JumpPower
+                    humanoid.JumpHeight = original.JumpHeight
+                end)
+            end
+            jumpDefaults[humanoid] = nil
+        end
+    end
+
     local families = ownedFamilies()
     if #families == 0 then families = {"SSG"} end
     state.SelectedFamily = bestOwnedPrimary() or families[1]
 
+    local sniperFamilies = cosmeticFamilies("Sniper")
+    local meleeFamilies = cosmeticFamilies("Melee")
+    if not cosmeticCatalog.Sniper[state.FESniperFamily] then state.FESniperFamily = sniperFamilies[1] or "SSG" end
+    if not cosmeticCatalog.Melee[state.FEMeleeFamily] then state.FEMeleeFamily = meleeFamilies[1] or "Karambit" end
+    local sniperSkinControl, meleeSkinControl
+
     AimSection:AddToggle({Name = "Cursor Aimbot", Description = "Uses the executor mouse mover like the proven Polo script. Hold right-click by default.", Flag = "sniper_arena_cursor_aimbot", Default = true, Callback = function(v) state.AimAssist = v == true end})
-    AimSection:AddToggle({Name = "Silent Aim", Description = "Optional. Big Head is the simpler forgiving-shot alternative and now includes bots.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
+    AimSection:AddToggle({Name = "Silent Aim", Description = "Optional. Dead players and one-second ragdolls are rejected immediately.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
     AimSection:AddSlider({Name = "Silent Hit Chance", Flag = "sniper_arena_silent_chance", Min = 1, Max = 100, Step = 1, Default = 100, Suffix = "%", Callback = function(v) state.SilentAimChance = tonumber(v) or 100 end})
     AimSection:AddSlider({Name = "Target Prediction", Flag = "sniper_arena_silent_prediction", Min = 0, Max = 0.3, Step = 0.01, Default = 0, Suffix = "s", Callback = function(v) state.SilentAimPrediction = tonumber(v) or 0 end})
     AimSection:AddDropdown({Name = "Activation", Flag = "sniper_arena_cursor_activation", Options = {"While Aiming", "While Firing", "Always"}, Default = "While Aiming", Callback = function(v) state.AimActivation = v or "While Aiming" end})
@@ -974,11 +1315,11 @@ return function(context)
 
     CombatStatusSection:AddToggle({Name = "Trigger Assist (Auto Fire)", Description = "Pauses while the VOR or Roblox menu is open, then resumes automatically when it closes.", Flag = "sniper_arena_triggerbot", Default = false, Callback = function(v) state.TriggerBot = v == true end})
     CombatStatusSection:AddSlider({Name = "Trigger Repeat Delay", Description = "First hover fires immediately. Zero repeats every rendered frame.", Flag = "sniper_arena_trigger_delay_ms", Min = 0, Max = 250, Step = 5, Default = 0, Suffix = "ms", Callback = function(v) state.TriggerDelay = (tonumber(v) or 0) / 1000 end})
-    CombatStatusSection:AddToggle({Name = "Big Head (Visible Body Required)", Description = "Manual and session-only. The enlarged head is assisted only while the enemy's real torso or root has a clear camera ray.", Flag = "sniper_arena_hitbox_visible_body_v3", Persist = false, Default = false, Callback = function(v)
+    CombatStatusSection:AddToggle({Name = "Big Head (Players Only)", Description = "Manual and session-only. NPCs, bots, and dead ragdolls are ignored; a living player's real body must be visible.", Flag = "sniper_arena_hitbox_visible_body_v3", Persist = false, Default = false, Callback = function(v)
         state.HitboxExpand = v == true
         if not state.HitboxExpand then restoreHitboxes() end
     end})
-    CombatStatusSection:AddSlider({Name = "Big Head Size (Experimental)", Description = "Expands enemy and bot heads. Very large values are intentionally ridiculous and may not register every server-checked shot.", Flag = "sniper_arena_hitbox_size_v3", Persist = false, Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
+    CombatStatusSection:AddSlider({Name = "Big Head Size (Experimental)", Description = "Expands living enemy-player heads only. Very large values may not register every server-checked shot.", Flag = "sniper_arena_hitbox_size_v3", Persist = false, Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
     local combatLabel = CombatStatusSection:AddLabel("Target: none")
     local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
 
@@ -998,8 +1339,60 @@ return function(context)
 
     UnlockSection:AddToggle({Name = "Auto Unlock Earned Snipers", Description = "Calls the native unlock only after credited kills meet the server requirement.", Flag = "sniper_arena_auto_unlock", Default = false, Callback = function(v) state.AutoUnlock = v == true end})
     UnlockSection:AddButton({Name = "Unlock Everything Earned", Callback = function() local n = unlockEarned() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
-    UnlockSection:AddLabel("FE unlock-all is not faked: ownership stays server-authoritative.")
+    UnlockSection:AddLabel("Server ownership stays untouched. The FE showcase below is local-only.")
     local unlockLabel = UnlockSection:AddLabel("Unlocks: scanning...")
+
+    CosmeticSection:AddParagraph({
+        Title = "Soft unlock — only you see it",
+        Content = "Choose any sniper, melee, glove, or charm model. VOR swaps the local inventory/first-person presentation while every real server weapon ID and ownership record stays unchanged.",
+    })
+    CosmeticSection:AddToggle({Name = "FE Unlock All Cosmetics", Description = "Enables client-only inventory and viewmodel swaps. Toggle off restores the exact server-equipped cosmetics.", Flag = "sniper_arena_fe_unlock_all", Default = false, Callback = function(v)
+        local enabled = v == true
+        if not enabled then restoreFECosmetics() end
+        state.FEUnlock = enabled
+        if enabled then
+            tryApplyLocalCosmeticSlots()
+            applyCombatCosmetics()
+        end
+    end})
+    CosmeticSection:AddDropdown({Name = "Sniper Family", Flag = "sniper_arena_fe_sniper_family", Options = sniperFamilies, Default = state.FESniperFamily, Callback = function(v)
+        state.FESniperFamily = v or state.FESniperFamily
+        state.FESelections.Sniper = nil
+        if sniperSkinControl then
+            sniperSkinControl:SetOptions(cosmeticOptions("Sniper", state.FESniperFamily))
+            sniperSkinControl:Set(ORIGINAL_COSMETIC)
+        end
+    end})
+    sniperSkinControl = CosmeticSection:AddDropdown({Name = "Sniper Model / Skin", Flag = "sniper_arena_fe_sniper_skin", Options = cosmeticOptions("Sniper", state.FESniperFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+        state.FESelections.Sniper = cosmeticKeyByLabel[v]
+        if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+    end})
+    CosmeticSection:AddDropdown({Name = "Melee Family", Flag = "sniper_arena_fe_melee_family", Options = meleeFamilies, Default = state.FEMeleeFamily, Callback = function(v)
+        state.FEMeleeFamily = v or state.FEMeleeFamily
+        state.FESelections.Melee = nil
+        if meleeSkinControl then
+            meleeSkinControl:SetOptions(cosmeticOptions("Melee", state.FEMeleeFamily))
+            meleeSkinControl:Set(ORIGINAL_COSMETIC)
+        end
+    end})
+    meleeSkinControl = CosmeticSection:AddDropdown({Name = "Knife / Melee Model", Flag = "sniper_arena_fe_melee_skin", Options = cosmeticOptions("Melee", state.FEMeleeFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+        state.FESelections.Melee = cosmeticKeyByLabel[v]
+        if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+    end})
+    CosmeticSection:AddDropdown({Name = "Glove Model", Flag = "sniper_arena_fe_glove", Options = cosmeticOptions("Glove"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+        state.FESelections.Glove = cosmeticKeyByLabel[v]
+        if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+    end})
+    CosmeticSection:AddDropdown({Name = "Charm Model", Flag = "sniper_arena_fe_charm", Options = cosmeticOptions("Charm"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+        state.FESelections.Charm = cosmeticKeyByLabel[v]
+        if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+    end})
+    CosmeticSection:AddButton({Name = "Reapply FE Cosmetics", Callback = function()
+        local localCount = tryApplyLocalCosmeticSlots()
+        local combatCount = applyCombatCosmetics()
+        notify(string.format("FE cosmetics reapplied (%d local, %d combat)", localCount, combatCount), COLORS.success)
+    end})
+    local cosmeticLabel = CosmeticSection:AddLabel("FE: original server cosmetics")
 
     CaseSection:AddToggle({Name = "Auto Open Owned Cases", Description = "Uses the native case service and stops when ownership or inventory-space checks fail.", Flag = "sniper_arena_auto_open_cases", Default = false, Callback = function(v) state.AutoOpenCases = v == true end})
     CaseSection:AddSlider({Name = "Cases Per Batch", Flag = "sniper_arena_case_batch", Min = 1, Max = 5, Step = 1, Default = 5, Callback = function(v) state.CaseBatchSize = math.clamp(tonumber(v) or 5, 1, 5) end})
@@ -1040,6 +1433,16 @@ return function(context)
 
     MovementSection:AddToggle({Name = "Native Slide Speed", Description = "Multiplies the game's own slide impulse. No CFrame teleporting.", Flag = "sniper_arena_native_slide_speed", Default = false, Callback = function(v) state.SlideBoost = v == true end})
     MovementSection:AddSlider({Name = "Slide Multiplier", Description = "Experimental native range. Start at 1.5x.", Flag = "sniper_arena_slide_multiplier", Min = 1, Max = 3, Step = 0.1, Default = 1.5, Suffix = "x", Callback = function(v) state.SlideMultiplier = math.clamp(tonumber(v) or 1.5, 1, 3) end})
+    MovementSection:AddToggle({Name = "Jump Height Override", Description = "Uses the character's native Humanoid jump height. No teleport or CFrame movement.", Flag = "sniper_arena_jump_override", Default = false, Callback = function(v)
+        state.JumpBoost = v == true
+        if state.JumpBoost then applyJumpBoost() else restoreJumpBoost() end
+    end})
+    MovementSection:AddSlider({Name = "Jump Height", Flag = "sniper_arena_jump_height", Min = 7, Max = 100, Step = 1, Default = 25, Suffix = " studs", Callback = function(v)
+        state.JumpHeight = math.clamp(tonumber(v) or 25, 7, 100)
+        if state.JumpBoost then applyJumpBoost() end
+    end})
+    MovementSection:AddLabel("Movement stays native: slide impulse + Humanoid jump only.")
+    local playerStatusLabel = PlayerStatusSection:AddLabel("Player: scanning...")
 
     local queueNames = {}
     for name in pairs(MatchConfig.Queues or {}) do queueNames[#queueNames + 1] = name end
@@ -1113,6 +1516,10 @@ return function(context)
         local caseTotal = 0
         for _, entry in ipairs(cases) do caseTotal += entry.Owned end
         caseLabel.Text = string.format("Owned %d across %d case type(s) | Opened %d", caseTotal, #cases, state.CasesOpened)
+        cosmeticLabel.Text = "FE: " .. state.FELastApply .. " | " .. state.FELocalStatus
+        local _, humanoid = character()
+        playerStatusLabel.Text = string.format("Health %s | Jump %.1f | Slide %.1fx", tostring(LocalPlayer:GetAttribute("Health") or "--"),
+            humanoid and humanoid.JumpHeight or 0, state.SlideMultiplier)
         actionLabel.Text = "Last action: " .. state.LastAction
         pcall(function()
             gui:SetAttribute("SniperArenaModuleReady", true)
@@ -1131,6 +1538,16 @@ return function(context)
             gui:SetAttribute("SniperArenaSlideMultiplier", state.SlideMultiplier)
             gui:SetAttribute("SniperArenaBoostedSlides", state.BoostedSlides)
             gui:SetAttribute("SniperArenaNativeSlideAvailable", originalSlide ~= nil)
+            gui:SetAttribute("SniperArenaJumpBoost", state.JumpBoost)
+            gui:SetAttribute("SniperArenaJumpHeight", state.JumpHeight)
+            gui:SetAttribute("SniperArenaFEUnlock", state.FEUnlock)
+            gui:SetAttribute("SniperArenaFEAppliedCount", state.FEAppliedCount)
+            gui:SetAttribute("SniperArenaFELocalAppliedCount", state.FELocalAppliedCount)
+            gui:SetAttribute("SniperArenaFELocalStatus", state.FELocalStatus)
+            gui:SetAttribute("SniperArenaFESniper", state.FESelections.Sniper or "")
+            gui:SetAttribute("SniperArenaFEMelee", state.FESelections.Melee or "")
+            gui:SetAttribute("SniperArenaFEGlove", state.FESelections.Glove or "")
+            gui:SetAttribute("SniperArenaFECharm", state.FESelections.Charm or "")
             gui:SetAttribute("SniperArenaAimAssist", state.AimAssist)
             gui:SetAttribute("SniperArenaCursorAimbot", state.AimAssist)
             gui:SetAttribute("SniperArenaMouseMoverAvailable", moveMouseRelative ~= nil)
@@ -1178,6 +1595,10 @@ return function(context)
         state.FastReload = false
         state.AutoOpenCases = false
         state.SlideBoost = false
+        state.JumpBoost = false
+        restoreJumpBoost()
+        restoreFECosmetics()
+        state.FEUnlock = false
         releaseTriggerInput()
         restoreHitboxes()
         restoreWeaponValues()
@@ -1224,12 +1645,13 @@ return function(context)
             updateAim(deltaTime)
             updateFovCircle()
             updateEnvironment()
+            applyJumpBoost()
         end)
     end)
 
     track(LocalMouse.Move:Connect(tryTrigger))
 
-    local automationClock, statusClock, espClock, weaponClock, caseClock = 0, 0, 0, 0, 0
+    local automationClock, statusClock, espClock, weaponClock, caseClock, cosmeticClock = 0, 0, 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(deltaTime)
         if not state.Alive then return end
         statusClock = statusClock + deltaTime
@@ -1237,6 +1659,7 @@ return function(context)
         weaponClock = weaponClock + deltaTime
         automationClock = automationClock + deltaTime
         caseClock = caseClock + deltaTime
+        cosmeticClock = cosmeticClock + deltaTime
         if espClock >= 0.15 then espClock = 0 updateEsp() end
         tryTrigger()
         if weaponClock >= 0.1 then weaponClock = 0 updateWeaponModifiers() end
@@ -1244,6 +1667,13 @@ return function(context)
         if caseClock >= 0.85 then
             caseClock = 0
             if state.AutoOpenCases then openOwnedCases() end
+        end
+        if cosmeticClock >= 0.5 then
+            cosmeticClock = 0
+            if state.FEUnlock then
+                tryApplyLocalCosmeticSlots()
+                applyCombatCosmetics()
+            end
         end
         if automationClock >= 5 then
             automationClock = 0
