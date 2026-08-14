@@ -1290,12 +1290,18 @@ $duckNativeBehavior = (
     $duckText -match '__VORCatchBillionDucksResumeReady' -and
     $duckText -match 'PrepareTeleportResume\(100293509865504\)' -and
     $duckText -match '__VORCatchBillionDucksLatestResume' -and
+    $duckText -match 'CreatedAt=CREATED_AT' -and
     $duckText -match '__VORCatchBillionDucksResumeSticky' -and
     $duckText -match 'DogController\.Interact\(dog\)' -and
     $duckText -match 'LastDogProbe' -and
     $duckText -match 'WaitForDogInRange' -and
     $duckText -match 'BossSurvivalStep' -and
     $duckText -match 'BossKiteActive' -and
+    $duckText -match 'BossPanicSpeed\s*=\s*240' -and
+    $duckText -match 'closest\(threats\)' -and
+    $duckText -match 'stat == "Dexterity" and 0 or 1' -and
+    $duckText -match 'root\.AssemblyLinearVelocity = Vector3\.new' -and
+    $duckText -match 'FindFirstChild\("SafetyPart", true\)' -and
     $duckText -match 'Respawn_Controller_ReturnToLobby' -and
     $duckText -match 'Catch 1 Billion Ducks Live' -and
     $duckText -match 'games/multiget/thumbnails\?universeIds=10516888336' -and

@@ -497,7 +497,11 @@ local function createRuntime(context)
         BossPhase = nil,
         BossKiteActive = false,
         BossKiteSide = 1,
+        BossKiteSpeed = 180,
+        BossPanicSpeed = 240,
+        BossPanicHealthPercent = 55,
         BossKiteHumanoid = nil,
+        BossKiteRoot = nil,
         BossKiteOriginalWalkSpeed = nil,
         LastBossKite = 0,
         DeathReturnIssued = false,
@@ -710,8 +714,14 @@ local function createRuntime(context)
             end
             humanoid:Move(Vector3.zero, false)
         end
+        local root = self.BossKiteRoot
+        if root and root.Parent then
+            local velocity = root.AssemblyLinearVelocity
+            root.AssemblyLinearVelocity = Vector3.new(0, math.min(velocity.Y, 0), 0)
+        end
         self.BossKiteActive = false
         self.BossKiteHumanoid = nil
+        self.BossKiteRoot = nil
         self.BossKiteOriginalWalkSpeed = nil
     end
 
@@ -784,10 +794,17 @@ local function createRuntime(context)
         if self.BossKiteHumanoid ~= humanoid then
             self:RestoreBossMovement()
             self.BossKiteHumanoid = humanoid
+            self.BossKiteRoot = root
             self.BossKiteOriginalWalkSpeed = humanoid.WalkSpeed
         end
         self.BossKiteActive = true
-        humanoid.WalkSpeed = math.max(self.BossKiteOriginalWalkSpeed or 16, 125)
+        local healthPercent = humanoid.MaxHealth > 0 and humanoid.Health / humanoid.MaxHealth * 100 or 100
+        local panic = healthPercent <= self.BossPanicHealthPercent
+            or (nearestDistance and nearestDistance <= 24)
+        humanoid.WalkSpeed = math.max(
+            self.BossKiteOriginalWalkSpeed or 16,
+            panic and self.BossPanicSpeed or self.BossKiteSpeed
+        )
 
         local away = weightedAway.Magnitude > 0.01 and weightedAway.Unit
             or (nearest.Offset.Magnitude > 0.01 and nearest.Offset.Unit or Vector3.new(0, 0, 1))
@@ -801,31 +818,46 @@ local function createRuntime(context)
         local forward = line and line.Magnitude > 0.01 and line.Unit or -away
         local function directionFor(side)
             local tangent = Vector3.new(-forward.Z, 0, forward.X) * side
-            local combined = away * 0.35 + tangent * 0.94
+            local combined = panic and (away * 0.72 + tangent * 0.70)
+                or (away * 0.45 + tangent * 0.90)
             return combined.Magnitude > 0.01 and combined.Unit or away
         end
-        local parameters = RaycastParams.new()
-        parameters.FilterType = Enum.RaycastFilterType.Exclude
-        parameters.IgnoreWater = false
-        parameters.FilterDescendantsInstances = {character}
-        local function pathSafe(direction)
-            local wall = workspace:Raycast(root.Position + Vector3.new(0, 2, 0), direction * 8, parameters)
-            local ground = workspace:Raycast(
-                root.Position + direction * 8 + Vector3.new(0, 6, 0),
-                Vector3.new(0, -30, 0),
-                parameters
-            )
-            return wall == nil and ground ~= nil and ground.Position.Y > -90
-        end
         local direction = directionFor(self.BossKiteSide)
-        if not pathSafe(direction) then
-            self.BossKiteSide = -self.BossKiteSide
-            direction = directionFor(self.BossKiteSide)
+        local safetyPart = ume and ume:FindFirstChild("SafetyPart", true)
+        if safetyPart and safetyPart:IsA("BasePart") then
+            local center = Vector3.new(safetyPart.Position.X, 0, safetyPart.Position.Z)
+            local planar = Vector3.new(root.Position.X, 0, root.Position.Z)
+            local radial = planar - center
+            local radius = math.min(140, math.max(55, math.min(safetyPart.Size.X, safetyPart.Size.Z) * 0.22))
+            local radialDirection = radial.Magnitude > 0.01 and radial.Unit or Vector3.new(1, 0, 0)
+            local haloTangent = Vector3.new(-radialDirection.Z, 0, radialDirection.X) * self.BossKiteSide
+            local radiusCorrection = radialDirection * math.clamp((radius - radial.Magnitude) / radius, -1, 1)
+            local halo = haloTangent + radiusCorrection * 1.35 + away * (panic and 0.75 or 0.3)
+            direction = halo.Magnitude > 0.01 and halo.Unit or direction
+
+            local insetX = math.max(25, safetyPart.Size.X * 0.5 - 55)
+            local insetZ = math.max(25, safetyPart.Size.Z * 0.5 - 55)
+            local nextPosition = planar + direction * 12
+            if math.abs(nextPosition.X - center.X) > insetX
+                or math.abs(nextPosition.Z - center.Z) > insetZ then
+                local inward = center - planar
+                direction = inward.Magnitude > 0.01 and inward.Unit or -direction
+                self.BossKiteSide = -self.BossKiteSide
+            end
+
+            local targetY = safetyPart.Position.Y + 160
+            local verticalSpeed = math.clamp((targetY - root.Position.Y) * 4, -100, 100)
+            local distanceBoost = math.clamp((45 - (nearestDistance or 45)) * 3, 0, 120)
+            local haloSpeed = (panic and self.BossPanicSpeed or self.BossKiteSpeed) + distanceBoost
+            root.AssemblyLinearVelocity = Vector3.new(
+                direction.X * haloSpeed,
+                verticalSpeed,
+                direction.Z * haloSpeed
+            )
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+            return true
         end
-        if not pathSafe(direction) then
-            direction = pathSafe(away) and away or Vector3.zero
-            humanoid.Jump = true
-        end
+
         humanoid:Move(direction, false)
         return direction.Magnitude > 0
     end
@@ -851,6 +883,7 @@ local function createRuntime(context)
             return nil, "None"
         end
 
+        local threats = {}
         local bosses = {}
         local ducks = {}
         self:RefreshDuckSnapshot()
@@ -868,23 +901,33 @@ local function createRuntime(context)
                                 local bossName, bossState, bossHealth = self:BossInfoByModel(model)
                                 local bossAlive = bossHealth == nil or toNumber(bossHealth) > 0
                                 if bossAlive and (bossState == "Flying" or bossState == "Attacking") then
-                                    bosses[#bosses + 1] = {
+                                    local item = {
                                         Part = part,
                                         Model = model,
                                         Distance = distance,
                                         Name = bossName,
+                                        State = bossState,
                                     }
+                                    bosses[#bosses + 1] = item
+                                    if bossState == "Attacking" then
+                                        threats[#threats + 1] = item
+                                    end
                                 end
                             else
                                 local duckId, duckState = self:DuckInfoByModel(model)
                                 if duckState == nil or duckState == "Flying" or duckState == "Attacking" then
-                                    ducks[#ducks + 1] = {
+                                    local item = {
                                         Part = part,
                                         Model = model,
                                         Distance = distance,
                                         Name = duckId,
                                         Value = DUCK_VALUES[duckId] or 0,
+                                        State = duckState,
                                     }
+                                    ducks[#ducks + 1] = item
+                                    if duckState == "Attacking" then
+                                        threats[#threats + 1] = item
+                                    end
                                 end
                             end
                         end
@@ -909,8 +952,11 @@ local function createRuntime(context)
             return list[1]
         end
 
-        local selected
-        if self.TargetMode == "Closest" then
+        local selected = closest(threats)
+        if selected then
+            -- Any red/Attacking target is an immediate survival threat. Full
+            -- Progression never farms a harmless flyer while one is diving at us.
+        elseif self.TargetMode == "Closest" then
             local all = {}
             for _, item in ipairs(bosses) do
                 all[#all + 1] = item
@@ -1156,6 +1202,7 @@ local function createRuntime(context)
                     Stat = stat,
                     Price = toNumber(entry.Price),
                     UUID = uuid,
+                    Priority = category == "Dog" and stat == "Dexterity" and 0 or 1,
                 }
             end
         end
@@ -1176,6 +1223,9 @@ local function createRuntime(context)
             add("Dog", "Dexterity", stats.Dexterity, upgradeState.Dog.UUID)
         end
         table.sort(candidates, function(a, b)
+            if a.Priority ~= b.Priority then
+                return a.Priority < b.Priority
+            end
             return a.Price < b.Price
         end)
         return candidates
@@ -1183,7 +1233,15 @@ local function createRuntime(context)
 
     function runtime:BuyCheapestUpgrade(manual)
         local spendable = self:Currency("Cash") - self.CashReserve
-        for _, candidate in ipairs(self:UpgradeCandidates()) do
+        local candidates = self:UpgradeCandidates()
+        local dexterity = candidates[1]
+        if dexterity and dexterity.Priority == 0 and dexterity.Price > spendable then
+            if manual then
+                self:SetStatus("Saving cash to max Dog Dexterity first")
+            end
+            return false
+        end
+        for _, candidate in ipairs(candidates) do
             if candidate.Price <= spendable then
                 local success = self:Invoke(
                     "Upgrades_Purchase",
@@ -1758,6 +1816,7 @@ local function createRuntime(context)
         local HttpService = game:GetService("HttpService")
         local json = HttpService:JSONEncode(values)
         local nonce = HttpService:GenerateGUID(false)
+        local createdAt = workspace:GetServerTimeNow()
         local expiresAt = os.time() + 300
         local originPlaceId = game.PlaceId
         local originJobId = game.JobId
@@ -1767,6 +1826,7 @@ local function createRuntime(context)
         end
         local payload = table.concat({
             "local NONCE=" .. luaQuote(nonce),
+            "local CREATED_AT=" .. string.format("%.6f", createdAt),
             "local EXPIRES_AT=" .. tostring(expiresAt),
             "local EXPECTED_UNIVERSE=10516888336",
             "local EXPECTED_PLACE=" .. tostring(destinationPlaceId),
@@ -1777,7 +1837,15 @@ local function createRuntime(context)
             "local GUI_WAS_VISIBLE=" .. tostring(guiWasVisible),
             "local ALLOWED={" .. table.concat(allowRows, ",") .. "}",
             "local env=type(getgenv)==\"function\" and getgenv() or _G",
-            "local function isLatest() local value=env.__VORCatchBillionDucksLatestResume; return type(value)==\"table\" and value.Nonce==NONCE and tonumber(value.DestinationPlaceId)==EXPECTED_PLACE end",
+            "local function isLatest()",
+            " local value=env.__VORCatchBillionDucksLatestResume",
+            " if type(value)==\"table\" and value.Nonce==NONCE and tonumber(value.DestinationPlaceId)==EXPECTED_PLACE then return true end",
+            " if type(value)~=\"table\" or tonumber(value.DestinationPlaceId)~=EXPECTED_PLACE or (tonumber(value.CreatedAt) or 0)<CREATED_AT then",
+            "  env.__VORCatchBillionDucksLatestResume={Nonce=NONCE,DestinationPlaceId=EXPECTED_PLACE,ExpiresAt=EXPIRES_AT,CreatedAt=CREATED_AT}",
+            "  return true",
+            " end",
+            " return false",
+            "end",
             "if not isLatest() then return end",
             "local transitionDeadline=os.clock()+60",
             "while isLatest() and os.clock()<transitionDeadline and (game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or (game.PlaceId==ORIGIN_PLACE and game.JobId==ORIGIN_JOB)) do task.wait(0.05) end",
@@ -1839,6 +1907,7 @@ local function createRuntime(context)
             Nonce = nonce,
             DestinationPlaceId = destinationPlaceId,
             ExpiresAt = expiresAt,
+            CreatedAt = createdAt,
         }
         local previousGeneration = environment.__VORCatchBillionDucksLatestResume
         environment.__VORCatchBillionDucksLatestResume = generation
@@ -2482,6 +2551,7 @@ local function buildInterface(runtime)
     })
     AimSection:AddDropdown({
         Name = "Target Priority",
+        Description = "Red attacking birds always override this choice and die first",
         Flag = "duckb_target_mode",
         Options = {"Boss > Value", "Most Valuable", "Closest"},
         Default = "Boss > Value",
@@ -2536,7 +2606,7 @@ local function buildInterface(runtime)
 
     GuideSection:AddLabel("Phone/AFK: enable 🔥 Full Progression. That is the whole damn point.")
     GuideSection:AddLabel("Manual style: enable only Auto Hunt and whichever progression systems you want.")
-    GuideSection:AddLabel("Boss > Value kills bosses first, then selects the most valuable visible duck.")
+    GuideSection:AddLabel("Red attacking birds always die first. Boss > Value handles everything harmless afterward.")
     GuideSection:AddLabel("Feather Reserve protects currency from weapons, slot 2, and dog crates.")
 
     WeaponSection:AddToggle({
@@ -2550,12 +2620,12 @@ local function buildInterface(runtime)
 
     UpgradeSection:AddToggle({
         Name = "⚙️ Smart Auto Upgrades",
-        Description = "Buys the cheapest useful duck, weapon, or dog stat without breaking the cash reserve",
+        Description = "Maxes Dog Dexterity first, then buys the cheapest useful stat without breaking the reserve",
         Flag = "duckb_auto_upgrades",
         Default = false,
         Callback = function(enabled) runtime.AutoUpgrades = enabled end,
     })
-    UpgradeSection:AddButton({Name = "Buy Cheapest Upgrade", Callback = function() runtime:BuyCheapestUpgrade(true) end})
+    UpgradeSection:AddButton({Name = "Buy Priority Upgrade", Callback = function() runtime:BuyCheapestUpgrade(true) end})
 
     ReserveSection:AddInput({
         Name = "Cash Reserve",
