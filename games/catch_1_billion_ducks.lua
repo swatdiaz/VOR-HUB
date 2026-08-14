@@ -524,8 +524,11 @@ local function createRuntime(context)
         CurrentDay = 0,
         BossKiteActive = false,
         BossKiteSide = 1,
-        BossKiteSpeed = 180,
-        BossPanicSpeed = 240,
+        SurvivalStartDay = 5,
+        SurvivalAltitude = 420,
+        SurvivalDaySpeed = 280,
+        BossKiteSpeed = 340,
+        BossPanicSpeed = 420,
         BossPanicHealthPercent = 55,
         BossKiteHumanoid = nil,
         BossKiteRoot = nil,
@@ -773,13 +776,17 @@ local function createRuntime(context)
 
         self:RefreshBossSnapshot()
         self:RefreshDuckSnapshot()
-        local lateDayHalo = self.CurrentDay >= 10
+        -- Staying elevated only from day 10 left the day 6+ boss transition
+        -- enough time to land a lethal burst before the snapshot caught up.
+        -- Day 5 is late enough for the tutorial dog chore to finish, while
+        -- keeping every dangerous boss transition inside the safety orbit.
+        local lateDayHalo = self.CurrentDay >= self.SurvivalStartDay
         local ume = workspace:FindFirstChild("Ume")
         local nearest
         local nearestDistance
         local weightedAway = Vector3.zero
         if ume then
-            for _, model in ipairs(ume:GetChildren()) do
+            for _, model in ipairs(ume:GetDescendants()) do
                 local id = model:IsA("Model") and string.match(model.Name, "^BossController_Client_(%d+)$") or nil
                 local row = id and self.BossSnapshotById[tostring(id)] or nil
                 local part = row and (model:FindFirstChild("Hitbox", true) or model.PrimaryPart) or nil
@@ -801,7 +808,7 @@ local function createRuntime(context)
         end
 
         if lateDayHalo and ume then
-            for _, model in ipairs(ume:GetChildren()) do
+            for _, model in ipairs(ume:GetDescendants()) do
                 if model:IsA("Model") and string.find(model.Name, "DuckController_Client_", 1, true) then
                     local _, duckState = self:DuckInfoByModel(model)
                     local part = model:FindFirstChild("Hitbox", true) or model.PrimaryPart
@@ -922,10 +929,12 @@ local function createRuntime(context)
                 self.BossKiteSide = -self.BossKiteSide
             end
 
-            local targetY = safetyPart.Position.Y + 160
-            local verticalSpeed = math.clamp((targetY - root.Position.Y) * 4, -100, 100)
+            local targetY = safetyPart.Position.Y + self.SurvivalAltitude
+            local verticalSpeed = math.clamp((targetY - root.Position.Y) * 5, -150, 150)
             local distanceBoost = math.clamp((45 - (nearestDistance or 45)) * 3, 0, 120)
-            local haloSpeed = (panic and self.BossPanicSpeed or self.BossKiteSpeed) + distanceBoost
+            local baseSpeed = bossActive and (panic and self.BossPanicSpeed or self.BossKiteSpeed)
+                or self.SurvivalDaySpeed
+            local haloSpeed = baseSpeed + distanceBoost
             root.AssemblyLinearVelocity = Vector3.new(
                 direction.X * haloSpeed,
                 verticalSpeed,
@@ -965,7 +974,7 @@ local function createRuntime(context)
         local ducks = {}
         self:RefreshDuckSnapshot()
         self:RefreshBossSnapshot()
-        for _, model in ipairs(ume:GetChildren()) do
+        for _, model in ipairs(ume:GetDescendants()) do
             if model:IsA("Model") then
                 local isBoss = string.find(model.Name, "BossController_Client_", 1, true) ~= nil
                 local isDuck = string.find(model.Name, "DuckController_Client_", 1, true) ~= nil
@@ -2012,6 +2021,18 @@ local function createRuntime(context)
             "while isLatest() and os.clock()<transitionDeadline and (game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or (game.PlaceId==ORIGIN_PLACE and game.JobId==ORIGIN_JOB)) do task.wait(0.05) end",
             "if not isLatest() then return end",
             "if game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE then env.__VORCatchBillionDucksResumeFailed=NONCE; if isLatest() then env.__VORCatchBillionDucksLatestResume=nil end; warn(\"[VOR Hub] Duck resume missed destination identity\"); return end",
+            -- Roblox sends a short-lived lobby hop after the match return. Loading
+            -- on that first lobby DataModel loses the hub again about 1.5 seconds
+            -- later. Require a stable destination identity before rebuilding VOR.
+            "local stableFor=EXPECTED_PLACE==100293509865504 and 3 or 1",
+            "local stableJob=game.JobId",
+            "local stableAt=os.clock()",
+            "local stableDeadline=os.clock()+15",
+            "while isLatest() and os.clock()<stableDeadline and os.clock()-stableAt<stableFor do",
+            " task.wait(0.1)",
+            " if game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or game.JobId~=stableJob then stableJob=game.JobId; stableAt=os.clock() end",
+            "end",
+            "if not isLatest() or game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE then return end",
             "local loadDeadline=os.clock()+30",
             "while not game:IsLoaded() and os.clock()<loadDeadline do task.wait(0.05) end",
             "local Players=game:GetService(\"Players\")",

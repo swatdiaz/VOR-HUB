@@ -1298,6 +1298,8 @@ $duckNativeBehavior = (
     $duckText -match 'RefreshCapabilities' -and
     $duckText -match 'queue_on_teleport|queueonteleport' -and
     $duckText -match 'game\.JobId==ORIGIN_JOB' -and
+    $duckText -match 'stableFor=EXPECTED_PLACE==100293509865504 and 3 or 1' -and
+    $duckText -match 'game\.JobId~=stableJob' -and
     $duckText -match '__VORCatchBillionDucksResumeReady' -and
     $duckText -match 'PrepareTeleportResume\(100293509865504\)' -and
     $duckText -match '__VORCatchBillionDucksLatestResume' -and
@@ -1308,8 +1310,13 @@ $duckNativeBehavior = (
     $duckText -match 'WaitForDogInRange' -and
     $duckText -match 'BossSurvivalStep' -and
     $duckText -match 'BossKiteActive' -and
-    $duckText -match 'BossPanicSpeed\s*=\s*240' -and
-    $duckText -match 'lateDayHalo = self\.CurrentDay >= 10' -and
+    $duckText -match 'SurvivalStartDay\s*=\s*5' -and
+    $duckText -match 'SurvivalAltitude\s*=\s*420' -and
+    $duckText -match 'SurvivalDaySpeed\s*=\s*280' -and
+    $duckText -match 'BossKiteSpeed\s*=\s*340' -and
+    $duckText -match 'BossPanicSpeed\s*=\s*420' -and
+    $duckText -match 'lateDayHalo = self\.CurrentDay >= self\.SurvivalStartDay' -and
+    $duckText -match 'for _, model in ipairs\(ume:GetDescendants\(\)\)' -and
     $duckText -match 'NormalDuckThreat = true' -and
     $duckText -match 'closest\(threats\)' -and
     $duckText -match 'bossThreat or self:Visible' -and
