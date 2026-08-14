@@ -463,6 +463,7 @@ local function createRuntime(context)
         VisibilityCheck = true,
         TargetMode = "Boss > Value",
         Prediction = 0.13,
+        ShotOriginLagCompensation = 0.055,
         SellInterval = 4,
         CashReserve = 0,
         FeatherReserve = 0,
@@ -526,9 +527,9 @@ local function createRuntime(context)
         BossKiteSide = 1,
         SurvivalStartDay = 5,
         SurvivalAltitude = 420,
-        SurvivalDaySpeed = 180,
-        BossKiteSpeed = 180,
-        BossPanicSpeed = 240,
+        SurvivalDaySpeed = 280,
+        BossKiteSpeed = 340,
+        BossPanicSpeed = 420,
         BossPanicHealthPercent = 55,
         BossKiteHumanoid = nil,
         BossKiteRoot = nil,
@@ -1121,6 +1122,13 @@ local function createRuntime(context)
         local origin = camera and camera.CFrame.Position or root and root.Position
         if not origin then
             return
+        end
+        -- Fast halo movement can put the local camera more than the weapon
+        -- server's 14-stud origin tolerance ahead of its replicated character.
+        -- Rewind by the measured one-way replication delay so high-speed dodge
+        -- shots remain server-credited instead of becoming empty requests.
+        if root then
+            origin = origin - root.AssemblyLinearVelocity * self.ShotOriginLagCompensation
         end
         local velocity = target.AssemblyLinearVelocity or Vector3.zero
         local delta = target.Position + velocity * self.Prediction - origin
