@@ -1286,10 +1286,30 @@ $duckNativeBehavior = (
     $duckText -match 'GetWeaponState' -and
     $duckText -match 'RefreshCapabilities' -and
     $duckText -match 'queue_on_teleport|queueonteleport' -and
+    $duckText -match 'game\.JobId==ORIGIN_JOB' -and
+    $duckText -match '__VORCatchBillionDucksResumeReady' -and
+    $duckText -match 'PrepareTeleportResume\(100293509865504\)' -and
+    $duckText -match '__VORCatchBillionDucksLatestResume' -and
+    $duckText -match '__VORCatchBillionDucksResumeSticky' -and
+    $duckText -match 'DogController\.Interact\(dog\)' -and
+    $duckText -match 'LastDogProbe' -and
+    $duckText -match 'WaitForDogInRange' -and
+    $duckText -match 'BossSurvivalStep' -and
+    $duckText -match 'BossKiteActive' -and
+    $duckText -match 'Respawn_Controller_ReturnToLobby' -and
+    $duckText -match 'Catch 1 Billion Ducks Live' -and
+    $duckText -match 'games/multiget/thumbnails\?universeIds=10516888336' -and
+    $duckText -match 'places/gameicons\?placeIds=100293509865504,120617974337690' -and
     $duckText -match 'KillsAtStart\s*=\s*nil' -and
     $duckText -match '__VORCatchBillionDucksCleanup' -and
     $duckText -notmatch 'VirtualInputManager' -and
     $duckText -notmatch 'CurrentCamera\.CFrame\s*='
+)
+$duckMouseContract = (
+    $uiText -match 'function Window:RefreshMenuMouse\(\)' -and
+    $uiText -match 'MouseBehavior\s*=\s*Enum\.MouseBehavior\.Default' -and
+    $uiText -match 'MouseIconEnabled\s*=\s*true' -and
+    $uiText -match 'BindToRenderStep\(mouseBindingName, Enum\.RenderPriority\.Last\.Value'
 )
 $duckPages = @("Hunt", "Progress", "Dogs", "Rewards", "Status")
 foreach ($page in $duckPages) {
@@ -1313,7 +1333,7 @@ $duckFlagDiff = @(Compare-Object ($expectedDuckFlags | Sort-Object) $duckUniqueF
 if ($duckFlags.Count -ne $expectedDuckFlags.Count -or $duckUniqueFlags.Count -ne $duckFlags.Count -or $duckFlagDiff.Count -ne 0) {
     throw "Catch 1 Billion Ducks persistent flags are missing or duplicated"
 }
-if (-not ($duckRouting -and $duckNativeBehavior)) {
+if (-not ($duckRouting -and $duckNativeBehavior -and $duckMouseContract)) {
     throw "Catch 1 Billion Ducks routing/native automation contract failed"
 }
 

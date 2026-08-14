@@ -205,17 +205,43 @@ local function applyClaimedResume(runtime)
     runtime.AutomationReadyAt = os.clock() + 1
     runtime.TeleportResumeError = nil
     runtime:SetStatus("Cross-place duck shift restored", true)
+    if runtime.Gui then
+        runtime.Gui:SetAttribute("CatchBillionDucksResumeApplied", true)
+        runtime.Gui:SetAttribute("CatchBillionDucksResumeError", nil)
+    end
+
+    local function restoreTransferredMenu()
+        if runtime.Alive and runtime.Window and type(runtime.Window.SetVisible) == "function" then
+            runtime.Window:SetVisible(runtime.ResumeGuiWasVisible ~= false)
+        end
+    end
+    task.defer(restoreTransferredMenu)
+    task.delay(2, restoreTransferredMenu)
 
     local environment = resumeEnvironment()
     local nonce = runtime.ResumeNonce
     if nonce then
         environment.__VORCatchBillionDucksResumeConsumed = nonce
+        environment.__VORCatchBillionDucksResumeReady = nonce
+        task.delay(60, function()
+            local sticky = environment.__VORCatchBillionDucksResumeSticky
+            if type(sticky) == "table" and sticky.Nonce == nonce then
+                environment.__VORCatchBillionDucksResumeSticky = nil
+            end
+            local latest = environment.__VORCatchBillionDucksLatestResume
+            if type(latest) == "table" and latest.Nonce == nonce then
+                environment.__VORCatchBillionDucksLatestResume = nil
+            end
+        end)
         task.delay(180, function()
             if environment.__VORCatchBillionDucksResumeConsumed == nonce then
                 environment.__VORCatchBillionDucksResumeConsumed = nil
             end
             if environment.__VORCatchBillionDucksResumeClaimed == nonce then
                 environment.__VORCatchBillionDucksResumeClaimed = nil
+            end
+            if environment.__VORCatchBillionDucksResumeReady == nonce then
+                environment.__VORCatchBillionDucksResumeReady = nil
             end
         end)
     end
@@ -225,14 +251,22 @@ end
 local function claimDestinationResume(runtime)
     local environment = resumeEnvironment()
     local envelope = environment.__VORCatchBillionDucksResume
+    local fromSticky = false
     if type(envelope) ~= "table" then
-        return false
+        envelope = environment.__VORCatchBillionDucksResumeSticky
+        fromSticky = type(envelope) == "table"
+        if not fromSticky then
+            return false
+        end
     end
 
     local nonce = tostring(envelope.Nonce or "")
     local function reject(reason)
         if environment.__VORCatchBillionDucksResume == envelope then
             environment.__VORCatchBillionDucksResume = nil
+        end
+        if environment.__VORCatchBillionDucksResumeSticky == envelope then
+            environment.__VORCatchBillionDucksResumeSticky = nil
         end
         if environment.__VORCatchBillionDucksResumeExecuting == nonce then
             environment.__VORCatchBillionDucksResumeExecuting = nil
@@ -247,14 +281,17 @@ local function claimDestinationResume(runtime)
     if (tonumber(envelope.ExpiresAt) or 0) < os.time() then
         return reject("resume envelope expired")
     end
+    if fromSticky and (tonumber(envelope.StickyUntil) or 0) < os.time() then
+        return reject("resume replay grace expired")
+    end
     if (tonumber(envelope.UniverseId) or 0) ~= 10516888336 or game.GameId ~= 10516888336 then
         return reject("resume universe mismatch")
     end
     if (tonumber(envelope.DestinationPlaceId) or 0) ~= game.PlaceId then
         return reject("resume destination mismatch")
     end
-    if environment.__VORCatchBillionDucksResumeConsumed == nonce
-        or environment.__VORCatchBillionDucksResumeClaimed == nonce then
+    if not fromSticky and (environment.__VORCatchBillionDucksResumeConsumed == nonce
+        or environment.__VORCatchBillionDucksResumeClaimed == nonce) then
         return reject("resume envelope was already consumed")
     end
     local valid, reason = validateResumeFlags(envelope.Flags)
@@ -272,6 +309,7 @@ local function claimDestinationResume(runtime)
     end
     runtime.PendingResumeFlags = copied
     runtime.ResumeNonce = nonce
+    runtime.ResumeGuiWasVisible = envelope.GuiWasVisible ~= false
     environment.__VORCatchBillionDucksResume = nil
     environment.__VORCatchBillionDucksResumeClaimed = nonce
     if environment.__VORCatchBillionDucksResumeExecuting == nonce then
@@ -435,7 +473,16 @@ local function createRuntime(context)
         QueueZone = nil,
         QueueBusy = false,
         TeleportResumeQueued = false,
+        TeleportResumeDestination = nil,
+        TeleportResumeExpiresAt = 0,
+        TeleportResumeSnapshot = nil,
+        TeleportResumeGuiWasVisible = nil,
+        LastResumeAttempt = 0,
         TeleportResumeError = nil,
+        LastDogInteraction = 0,
+        LastDogProbe = 0,
+        DogInteractions = 0,
+        DogDeliveryBusy = false,
         SellBusy = false,
         ShotSequence = math.floor(workspace:GetServerTimeNow() * 1000) % 1000000000,
         ReloadSequence = math.floor(workspace:GetServerTimeNow() * 1000) % 1000000000,
@@ -447,6 +494,14 @@ local function createRuntime(context)
         BossSnapshot = {},
         BossSnapshotById = {},
         BossSnapshotAt = 0,
+        BossPhase = nil,
+        BossKiteActive = false,
+        BossKiteSide = 1,
+        BossKiteHumanoid = nil,
+        BossKiteOriginalWalkSpeed = nil,
+        LastBossKite = 0,
+        DeathReturnIssued = false,
+        DeathHumanoid = nil,
         WeaponState = nil,
         WeaponStateAt = 0,
         WeaponStateTTL = 0.08,
@@ -604,6 +659,7 @@ local function createRuntime(context)
         end
         self.BossSnapshotAt = os.clock()
         local ok, snapshot = pcall(self.Invoke, self, "BossController_GetSnapshot")
+        self.BossPhase = ok and type(snapshot) == "table" and snapshot.Phase or nil
         local list = {}
         local byId = {}
         local fallback
@@ -644,6 +700,134 @@ local function createRuntime(context)
             health = item.Health or item.CurrentHealth or health
         end
         return name, state, health
+    end
+
+    function runtime:RestoreBossMovement()
+        local humanoid = self.BossKiteHumanoid
+        if humanoid and humanoid.Parent then
+            if self.BossKiteOriginalWalkSpeed then
+                humanoid.WalkSpeed = self.BossKiteOriginalWalkSpeed
+            end
+            humanoid:Move(Vector3.zero, false)
+        end
+        self.BossKiteActive = false
+        self.BossKiteHumanoid = nil
+        self.BossKiteOriginalWalkSpeed = nil
+    end
+
+    function runtime:BossSurvivalStep()
+        local now = os.clock()
+        if now - self.LastBossKite < 0.05 then
+            return false
+        end
+        self.LastBossKite = now
+        if self:IsLobby() then
+            self:RestoreBossMovement()
+            return false
+        end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not root or humanoid.Health <= 0 then
+            self:RestoreBossMovement()
+            return false
+        end
+
+        self:RefreshBossSnapshot()
+        local ume = workspace:FindFirstChild("Ume")
+        local nearest
+        local nearestDistance
+        local weightedAway = Vector3.zero
+        if ume then
+            for _, model in ipairs(ume:GetChildren()) do
+                local id = model:IsA("Model") and string.match(model.Name, "^BossController_Client_(%d+)$") or nil
+                local row = id and self.BossSnapshotById[tostring(id)] or nil
+                local part = row and (model:FindFirstChild("Hitbox", true) or model.PrimaryPart) or nil
+                local state = row and row.State
+                local health = row and (row.Health or row.CurrentHealth)
+                if part and part:IsA("BasePart") and (state == "Flying" or state == "Attacking")
+                    and (health == nil or toNumber(health) > 0) then
+                    local offset = Vector3.new(root.Position.X - part.Position.X, 0, root.Position.Z - part.Position.Z)
+                    local distance = offset.Magnitude
+                    if distance > 0.01 then
+                        weightedAway = weightedAway + offset.Unit / math.max(distance, 1)
+                    end
+                    if not nearestDistance or distance < nearestDistance then
+                        nearest = {Row = row, Part = part, Offset = offset}
+                        nearestDistance = distance
+                    end
+                end
+            end
+        end
+
+        if not nearest and self.BossPhase == "Boss" and ume then
+            local functions = ume:FindFirstChild("GameFunctions")
+            local holder = functions and functions:FindFirstChild("BossPositonPart", true)
+            local spawnPart = holder and (holder:FindFirstChild("SpawnerPart", true)
+                or (holder:IsA("BasePart") and holder))
+            if spawnPart and spawnPart:IsA("BasePart") then
+                local offset = Vector3.new(
+                    root.Position.X - spawnPart.Position.X,
+                    0,
+                    root.Position.Z - spawnPart.Position.Z
+                )
+                nearest = {Part = spawnPart, Offset = offset}
+                nearestDistance = offset.Magnitude
+                weightedAway = offset.Magnitude > 0.01 and offset.Unit or Vector3.new(0, 0, 1)
+            end
+        end
+
+        if not nearest or (self.BossPhase ~= "Boss" and #self.BossSnapshot == 0) then
+            self:RestoreBossMovement()
+            return false
+        end
+        if self.BossKiteHumanoid ~= humanoid then
+            self:RestoreBossMovement()
+            self.BossKiteHumanoid = humanoid
+            self.BossKiteOriginalWalkSpeed = humanoid.WalkSpeed
+        end
+        self.BossKiteActive = true
+        humanoid.WalkSpeed = math.max(self.BossKiteOriginalWalkSpeed or 16, 125)
+
+        local away = weightedAway.Magnitude > 0.01 and weightedAway.Unit
+            or (nearest.Offset.Magnitude > 0.01 and nearest.Offset.Unit or Vector3.new(0, 0, 1))
+        local row = nearest.Row
+        local line
+        if row and row.State == "Attacking" and typeof(row.SegmentStart) == "Vector3"
+            and typeof(row.SegmentTarget) == "Vector3" then
+            local raw = row.SegmentTarget - row.SegmentStart
+            line = Vector3.new(raw.X, 0, raw.Z)
+        end
+        local forward = line and line.Magnitude > 0.01 and line.Unit or -away
+        local function directionFor(side)
+            local tangent = Vector3.new(-forward.Z, 0, forward.X) * side
+            local combined = away * 0.35 + tangent * 0.94
+            return combined.Magnitude > 0.01 and combined.Unit or away
+        end
+        local parameters = RaycastParams.new()
+        parameters.FilterType = Enum.RaycastFilterType.Exclude
+        parameters.IgnoreWater = false
+        parameters.FilterDescendantsInstances = {character}
+        local function pathSafe(direction)
+            local wall = workspace:Raycast(root.Position + Vector3.new(0, 2, 0), direction * 8, parameters)
+            local ground = workspace:Raycast(
+                root.Position + direction * 8 + Vector3.new(0, 6, 0),
+                Vector3.new(0, -30, 0),
+                parameters
+            )
+            return wall == nil and ground ~= nil and ground.Position.Y > -90
+        end
+        local direction = directionFor(self.BossKiteSide)
+        if not pathSafe(direction) then
+            self.BossKiteSide = -self.BossKiteSide
+            direction = directionFor(self.BossKiteSide)
+        end
+        if not pathSafe(direction) then
+            direction = pathSafe(away) and away or Vector3.zero
+            humanoid.Jump = true
+        end
+        humanoid:Move(direction, false)
+        return direction.Magnitude > 0
     end
 
     function runtime:Visible(origin, part, model)
@@ -1051,6 +1235,185 @@ local function createRuntime(context)
         return true
     end
 
+    function runtime:FindOwnedDogWithDuck()
+        local ume = workspace:FindFirstChild("Ume")
+        local folder = ume and ume:FindFirstChild("DogController_Dogs")
+        if not folder then
+            return nil
+        end
+        for _, dog in ipairs(folder:GetChildren()) do
+            if dog:IsA("Model")
+                and dog:GetAttribute("DogController_OwnerUserId") == LocalPlayer.UserId
+                and dog:GetAttribute("DogController_HasDuck") == true
+                and dog:GetAttribute("DogController_Interactable") == true then
+                local part = dog:FindFirstChild("PositionPart", true) or dog.PrimaryPart
+                    or dog:FindFirstChildWhichIsA("BasePart")
+                if part and part:IsA("BasePart") then
+                    return dog, part
+                end
+            end
+        end
+        return nil
+    end
+
+    function runtime:MoveNearInteractionPart(part, timeoutSeconds)
+        if not part or not part:IsA("BasePart") then
+            return false
+        end
+        local deadline = os.clock() + (tonumber(timeoutSeconds) or 8)
+        local RunService = game:GetService("RunService")
+        while self.Alive and not self.BossKiteActive and part.Parent and os.clock() < deadline do
+            local root = self:CharacterRoot()
+            if not root then
+                return false
+            end
+            local targetPosition = part.Position + Vector3.new(0, 2, 0)
+            local delta = targetPosition - root.Position
+            if delta.Magnitude <= 6 then
+                return true
+            end
+            local dt = RunService.Heartbeat:Wait()
+            local step = math.min(delta.Magnitude - 5, 90 * math.max(dt, 1 / 120))
+            if step > 0 then
+                root.CFrame = CFrame.new(root.Position + delta.Unit * step) * root.CFrame.Rotation
+                root.AssemblyLinearVelocity = Vector3.zero
+            end
+        end
+        local root = self:CharacterRoot()
+        return root ~= nil and part.Parent ~= nil and (root.Position - part.Position).Magnitude <= 8
+    end
+
+    function runtime:WaitForDogInRange(dog, part, timeoutSeconds)
+        local deadline = os.clock() + (tonumber(timeoutSeconds) or 12)
+        while self.Alive and not self.BossKiteActive and dog and dog.Parent and part and part.Parent
+            and os.clock() < deadline do
+            if dog:GetAttribute("DogController_HasDuck") ~= true
+                or dog:GetAttribute("DogController_Interactable") ~= true then
+                return false
+            end
+            local root = self:CharacterRoot()
+            if root and (root.Position - part.Position).Magnitude <= 7.5 then
+                return true
+            end
+            task.wait(0.1)
+        end
+        local root = self:CharacterRoot()
+        return root ~= nil and part ~= nil and part.Parent ~= nil
+            and (root.Position - part.Position).Magnitude <= 8
+    end
+
+    function runtime:FindOwnedFreezerPart()
+        local ume = workspace:FindFirstChild("Ume")
+        local folder = ume and ume:FindFirstChild("DuckController_Freezers")
+        if not folder then
+            return nil
+        end
+        for _, freezer in ipairs(folder:GetChildren()) do
+            if freezer:IsA("Model")
+                and freezer:GetAttribute("DuckController_FreezerOwnerUserId") == LocalPlayer.UserId then
+                local part = freezer:FindFirstChild("InteractPart", true)
+                if part and part:IsA("BasePart") and part:GetAttribute("Freezer_InteractPart") == true then
+                    return part
+                end
+            end
+        end
+        return nil
+    end
+
+    function runtime:ProcessDogDelivery()
+        if self:IsLobby() or not self.V or not hasMethod(self.V.DogController, "Interact") then
+            return false
+        end
+        self.LastDogInteraction = os.clock()
+        local state = self:Invoke("DuckController_GetInteractionState") or {}
+        if not state.HeldDuckId then
+            local dog, dogPart = self:FindOwnedDogWithDuck()
+            -- Low-dexterity dogs return to their owner with the duck. Waiting for
+            -- that native return is safer than dragging the player through a live wave.
+            if not dog or not self:WaitForDogInRange(dog, dogPart, 15) then
+                return false
+            end
+            local ok = self:Call(function()
+                return self.V.DogController.Interact(dog)
+            end, "Collect dog duck")
+            if not ok then
+                return false
+            end
+            local pickupDeadline = os.clock() + 1
+            repeat
+                task.wait(0.05)
+                state = self:Invoke("DuckController_GetInteractionState") or {}
+            until state.HeldDuckId or os.clock() >= pickupDeadline or not self.Alive
+        end
+        if not state.HeldDuckId then
+            return false
+        end
+
+        local freezerPart = self:FindOwnedFreezerPart()
+        if not freezerPart or not self:MoveNearInteractionPart(freezerPart, 10) then
+            return false
+        end
+        local beforeStorage = toNumber(state.StorageCount)
+        local ok = self:Call(function()
+            return self:Invoke("DuckController_Deposit", freezerPart)
+        end, "Deposit dog duck")
+        if not ok then
+            return false
+        end
+        local depositDeadline = os.clock() + 1
+        repeat
+            task.wait(0.05)
+            state = self:Invoke("DuckController_GetInteractionState") or {}
+        until not state.HeldDuckId or toNumber(state.StorageCount) > beforeStorage
+            or os.clock() >= depositDeadline or not self.Alive
+        if state.HeldDuckId then
+            return false
+        end
+        self.DogInteractions = self.DogInteractions + 1
+        local tutorialNeedsFreezer = false
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local tutorialGui = playerGui and playerGui:FindFirstChild("TutorialGui")
+        if tutorialGui and tutorialGui.Enabled then
+            for _, descendant in ipairs(tutorialGui:GetDescendants()) do
+                if (descendant:IsA("TextLabel") or descendant:IsA("TextButton"))
+                    and string.find(string.lower(descendant.Text), "open freezer", 1, true) then
+                    tutorialNeedsFreezer = true
+                    break
+                end
+            end
+        end
+        if tutorialNeedsFreezer and self.V.WidgetManager and type(self.V.WidgetManager.Open) == "function" then
+            pcall(self.V.WidgetManager.Open, "Upgrades")
+            task.wait(0.2)
+            pcall(self.SellNow, self, false)
+        end
+        self:SetStatus("Dog duck collected and stored", true)
+        return true
+    end
+
+    function runtime:ScheduleDogDelivery()
+        local now = os.clock()
+        if self.BossKiteActive or self.BossPhase == "Boss" or self.DogDeliveryBusy
+            or now - self.LastDogInteraction < 0.75
+            or now - self.LastDogProbe < 0.5 then
+            return false
+        end
+        self.LastDogProbe = now
+        local interaction = self:Invoke("DuckController_GetInteractionState") or {}
+        if not interaction.HeldDuckId and not self:FindOwnedDogWithDuck() then
+            return false
+        end
+        self.DogDeliveryBusy = true
+        task.spawn(function()
+            local ok, errorMessage = pcall(self.ProcessDogDelivery, self)
+            if not ok then
+                self:SetError("Dog delivery: " .. tostring(errorMessage))
+            end
+            self.DogDeliveryBusy = false
+        end)
+        return true
+    end
+
     function runtime:BuyDogCrate(manual, progressionSafe)
         if progressionSafe then
             local dogState = self.V.Dogs and self.V.Dogs.GetState and self.V.Dogs.GetState()
@@ -1355,7 +1718,31 @@ local function createRuntime(context)
         if destinationPlaceId ~= 100293509865504 and destinationPlaceId ~= 120617974337690 then
             return false, "unsupported resume destination"
         end
-        if self.TeleportResumeQueued then
+        local values, snapshotReason = snapshotResumeFlags(self.Window)
+        if not values then
+            return false, snapshotReason
+        end
+        local guiWasVisible = not self.Gui or self.Gui.Enabled ~= false
+        local sameSnapshot = type(self.TeleportResumeSnapshot) == "table"
+        if sameSnapshot then
+            for _, flag in ipairs(DUCK_RESUME_FLAGS) do
+                if self.TeleportResumeSnapshot[flag] ~= values[flag] then
+                    sameSnapshot = false
+                    break
+                end
+            end
+        end
+        local environment = resumeEnvironment()
+        local latest = environment.__VORCatchBillionDucksLatestResume
+        local nowUnix = os.time()
+        if self.TeleportResumeQueued
+            and self.TeleportResumeDestination == destinationPlaceId
+            and nowUnix < toNumber(self.TeleportResumeExpiresAt) - 15
+            and sameSnapshot
+            and self.TeleportResumeGuiWasVisible == guiWasVisible
+            and type(latest) == "table"
+            and latest.Nonce == self.TeleportResumeNonce
+            and toNumber(latest.DestinationPlaceId) == destinationPlaceId then
             return true
         end
         local queue = self:ResolveTeleportQueue()
@@ -1367,15 +1754,13 @@ local function createRuntime(context)
         if #commit ~= 40 or not commit:match("^[0-9a-f]+$") then
             return false, "reviewed module commit is invalid"
         end
-        local values, snapshotReason = snapshotResumeFlags(self.Window)
-        if not values then
-            return false, snapshotReason
-        end
 
         local HttpService = game:GetService("HttpService")
         local json = HttpService:JSONEncode(values)
         local nonce = HttpService:GenerateGUID(false)
-        local expiresAt = os.time() + (destinationPlaceId == 120617974337690 and 90 or 60)
+        local expiresAt = os.time() + 300
+        local originPlaceId = game.PlaceId
+        local originJobId = game.JobId
         local allowRows = {}
         for _, flag in ipairs(DUCK_RESUME_FLAGS) do
             allowRows[#allowRows + 1] = "[" .. luaQuote(flag) .. "]=true"
@@ -1385,22 +1770,35 @@ local function createRuntime(context)
             "local EXPIRES_AT=" .. tostring(expiresAt),
             "local EXPECTED_UNIVERSE=10516888336",
             "local EXPECTED_PLACE=" .. tostring(destinationPlaceId),
+            "local ORIGIN_PLACE=" .. tostring(originPlaceId),
+            "local ORIGIN_JOB=" .. luaQuote(originJobId),
             "local COMMIT=" .. luaQuote(commit),
             "local FLAG_JSON=" .. luaQuote(json),
+            "local GUI_WAS_VISIBLE=" .. tostring(guiWasVisible),
             "local ALLOWED={" .. table.concat(allowRows, ",") .. "}",
-            "repeat task.wait() until game:IsLoaded()",
+            "local env=type(getgenv)==\"function\" and getgenv() or _G",
+            "local function isLatest() local value=env.__VORCatchBillionDucksLatestResume; return type(value)==\"table\" and value.Nonce==NONCE and tonumber(value.DestinationPlaceId)==EXPECTED_PLACE end",
+            "if not isLatest() then return end",
+            "local transitionDeadline=os.clock()+60",
+            "while isLatest() and os.clock()<transitionDeadline and (game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or (game.PlaceId==ORIGIN_PLACE and game.JobId==ORIGIN_JOB)) do task.wait(0.05) end",
+            "if not isLatest() then return end",
+            "if game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE then env.__VORCatchBillionDucksResumeFailed=NONCE; if isLatest() then env.__VORCatchBillionDucksLatestResume=nil end; warn(\"[VOR Hub] Duck resume missed destination identity\"); return end",
+            "local loadDeadline=os.clock()+30",
+            "while not game:IsLoaded() and os.clock()<loadDeadline do task.wait(0.05) end",
             "local Players=game:GetService(\"Players\")",
             "local deadline=os.clock()+30",
             "while not Players.LocalPlayer and os.clock()<deadline do task.wait(0.05) end",
-            "if not Players.LocalPlayer or os.time()>EXPIRES_AT then return end",
-            "if game.GameId~=EXPECTED_UNIVERSE or game.PlaceId~=EXPECTED_PLACE then return end",
-            "local env=type(getgenv)==\"function\" and getgenv() or _G",
+            "if not Players.LocalPlayer or os.time()>EXPIRES_AT or not isLatest() then return end",
             "if env.__VORCatchBillionDucksResumeExecuting==NONCE or env.__VORCatchBillionDucksResumeConsumed==NONCE then return end",
             "env.__VORCatchBillionDucksResumeExecuting=NONCE",
             "local function clearFailed(message)",
             " local saved=env.__VORCatchBillionDucksResume",
             " if type(saved)==\"table\" and saved.Nonce==NONCE then env.__VORCatchBillionDucksResume=nil end",
+            " local sticky=env.__VORCatchBillionDucksResumeSticky",
+            " if type(sticky)==\"table\" and sticky.Nonce==NONCE then env.__VORCatchBillionDucksResumeSticky=nil end",
             " if env.__VORCatchBillionDucksResumeExecuting==NONCE then env.__VORCatchBillionDucksResumeExecuting=nil end",
+            " env.__VORCatchBillionDucksResumeFailed=NONCE",
+            " if isLatest() then env.__VORCatchBillionDucksLatestResume=nil end",
             " warn(\"[VOR Hub] Duck resume aborted: \"..tostring(message))",
             "end",
             "local trace=type(debug)==\"table\" and type(debug.traceback)==\"function\" and debug.traceback or tostring",
@@ -1415,29 +1813,48 @@ local function createRuntime(context)
             " end",
             " for flag in pairs(decoded) do if not ALLOWED[flag] then error(\"unexpected flag: \"..tostring(flag)) end end",
             " if count~=" .. tostring(#DUCK_RESUME_FLAGS) .. " then error(\"resume allowlist count mismatch\") end",
-            " env.__VORCatchBillionDucksResume={Version=1,Nonce=NONCE,ExpiresAt=EXPIRES_AT,UniverseId=EXPECTED_UNIVERSE,DestinationPlaceId=EXPECTED_PLACE,Flags=decoded}",
+            " local envelope={Version=1,Nonce=NONCE,ExpiresAt=EXPIRES_AT,StickyUntil=os.time()+60,UniverseId=EXPECTED_UNIVERSE,DestinationPlaceId=EXPECTED_PLACE,GuiWasVisible=GUI_WAS_VISIBLE,Flags=decoded}",
+            " env.__VORCatchBillionDucksResume=envelope",
+            " env.__VORCatchBillionDucksResumeSticky=envelope",
             " local url=\"https://raw.githubusercontent.com/swatdiaz/VOR-HUB/\"..COMMIT..\"/loader.lua\"",
-            " local source=game:HttpGet(url)",
+            " local source",
+            " for attempt=1,3 do local fetched,body=pcall(game.HttpGet,game,url..\"?resume=\"..NONCE..\"-\"..attempt); if fetched and type(body)==\"string\" and body~=\"\" then source=body break end; task.wait(0.5*attempt) end",
             " if type(source)~=\"string\" or source==\"\" then error(\"pinned loader download was empty\") end",
             [=[ local patched,replacements=source:gsub('local COMMIT = "%x+"','local COMMIT = "'..COMMIT..'"')]=],
             " if replacements~=1 then error(\"expected exactly one loader COMMIT literal; got \"..tostring(replacements)) end",
             " local chunk,compileError=loadstring(patched)",
             " if not chunk then error(\"pinned loader compile failed: \"..tostring(compileError)) end",
-            " chunk()",
+            " local window=chunk()",
+            " if GUI_WAS_VISIBLE and type(window)==\"table\" and type(window.SetVisible)==\"function\" then window:SetVisible(true) end",
             "end,trace)",
             "if not ok then clearFailed(err) return end",
-            "local leftover=env.__VORCatchBillionDucksResume",
-            "if type(leftover)==\"table\" and leftover.Nonce==NONCE then clearFailed(\"destination module did not claim resume state\") return end",
+            "local readyDeadline=os.clock()+8",
+            "while env.__VORCatchBillionDucksResumeReady~=NONCE and os.clock()<readyDeadline do task.wait(0.05) end",
+            "if env.__VORCatchBillionDucksResumeReady~=NONCE then clearFailed(\"destination module did not apply resume state\") return end",
             "if env.__VORCatchBillionDucksResumeExecuting==NONCE then env.__VORCatchBillionDucksResumeExecuting=nil end",
+            "if env.__VORCatchBillionDucksResumeFailed==NONCE then env.__VORCatchBillionDucksResumeFailed=nil end",
         }, "\n")
 
+        local generation = {
+            Nonce = nonce,
+            DestinationPlaceId = destinationPlaceId,
+            ExpiresAt = expiresAt,
+        }
+        local previousGeneration = environment.__VORCatchBillionDucksLatestResume
+        environment.__VORCatchBillionDucksLatestResume = generation
         local queued, queueError = pcall(queue, payload)
         if not queued then
+            if environment.__VORCatchBillionDucksLatestResume == generation then
+                environment.__VORCatchBillionDucksLatestResume = previousGeneration
+            end
             return false, "teleport resume queue failed: " .. tostring(queueError)
         end
         self.TeleportResumeQueued = true
+        self.TeleportResumeDestination = destinationPlaceId
         self.TeleportResumeNonce = nonce
         self.TeleportResumeExpiresAt = expiresAt
+        self.TeleportResumeSnapshot = values
+        self.TeleportResumeGuiWasVisible = guiWasVisible
         self.TeleportResumeError = nil
         return true
     end
@@ -1532,6 +1949,31 @@ local function createRuntime(context)
     end
 
     function runtime:UpdateTelemetry()
+        if self:IsLobby() then
+            if self.HuntLabel then
+                self.HuntLabel.Text = "Target: Lobby | Waiting for the next solo run"
+                self.WorldLabel.Text = "Lobby chores and solo queue are active"
+                self.EconomyLabel.Text = string.format(
+                    "Cash: %s | Feathers: %s | Match automation resumes after teleport",
+                    compactNumber(self:Currency("Cash")),
+                    compactNumber(self:Currency("Feathers"))
+                )
+                self.ProgressLabel.Text = string.format(
+                    "Purchases: %d | Claims: %d | Dog collections: %d",
+                    self.Purchases,
+                    self.Claims,
+                    self.DogInteractions
+                )
+                self.ErrorLabel.Text = "Last error: " .. self.LastError
+            end
+            if self.Gui then
+                self.Gui:SetAttribute("CatchBillionDucksAdapter", true)
+                self.Gui:SetAttribute("CatchBillionDucksFullProgression", self.FullProgression)
+                self.Gui:SetAttribute("CatchBillionDucksLastError", self.LastError)
+                self.Gui:SetAttribute("CatchBillionDucksResumeError", self.TeleportResumeError)
+            end
+            return
+        end
         local interaction = self:Invoke("DuckController_GetInteractionState") or {}
         local boss = self:Invoke("BossController_GetSnapshot") or {}
         local weapon = self:GetWeaponState(false) or {}
@@ -1582,14 +2024,57 @@ local function createRuntime(context)
                 self.Gui:SetAttribute("CatchBillionDucksCash", self:Currency("Cash"))
                 self.Gui:SetAttribute("CatchBillionDucksFeathers", self:Currency("Feathers"))
                 self.Gui:SetAttribute("CatchBillionDucksLastError", self.LastError)
+                self.Gui:SetAttribute("CatchBillionDucksResumeError", self.TeleportResumeError)
+                self.Gui:SetAttribute("CatchBillionDucksDogCollections", self.DogInteractions)
             end)
         end
+    end
+
+    function runtime:ArmDeathRecovery(character)
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid == self.DeathHumanoid then
+            return false
+        end
+        self.DeathHumanoid = humanoid
+        self.DeathReturnIssued = false
+        self.Connections[#self.Connections + 1] = humanoid.Died:Connect(function()
+            if not self.Alive or self:IsLobby() or self.DeathReturnIssued
+                or not (self.FullProgression or self.AutoQueue) then
+                return
+            end
+            self.DeathReturnIssued = true
+            self:RestoreBossMovement()
+            local resumeOk, resumeReason = self:PrepareTeleportResume(100293509865504)
+            if not resumeOk then
+                self.TeleportResumeError = tostring(resumeReason)
+                self:SetError("Death return resume: " .. tostring(resumeReason))
+            else
+                self:SetStatus("Run ended; securing payout and returning to lobby")
+            end
+            task.spawn(function()
+                local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+                local deadline = os.clock() + 2
+                repeat
+                    local deathGui = playerGui and playerGui:FindFirstChild("DeathGui", true)
+                    if deathGui and (not deathGui:IsA("ScreenGui") or deathGui.Enabled) then
+                        break
+                    end
+                    task.wait(0.1)
+                until os.clock() >= deadline or not self.Alive
+                if self.Alive and self.V and self.V.Network and type(self.V.Network.Fire) == "function" then
+                    pcall(self.V.Network.Fire, "Respawn_Controller_ReturnToLobby")
+                    self:SetStatus("Payout secured; returning to lobby for the next solo run", true)
+                end
+            end)
+        end)
+        return true
     end
 
     function runtime:Stop()
         if not self.Alive then
             return
         end
+        self:RestoreBossMovement()
         self.Alive = false
         disconnectAll(self.Connections)
         if getgenv then
@@ -1654,12 +2139,22 @@ local function createRuntime(context)
                 end)
             end
         end)
-        self.Connections[#self.Connections + 1] = LocalPlayer.CharacterAdded:Connect(function()
+        self:ArmDeathRecovery(LocalPlayer.Character)
+        self.Connections[#self.Connections + 1] = LocalPlayer.CharacterAdded:Connect(function(character)
+            self:RestoreBossMovement()
             self.WeaponState = nil
             self.WeaponStateAt = 0
             self.DuckSnapshotAt = 0
             self.BossSnapshotAt = 0
+            self.BossPhase = nil
+            self.DeathHumanoid = nil
+            self.DeathReturnIssued = false
             self.AutomationReadyAt = os.clock() + 1
+            task.defer(function()
+                if self.Alive then
+                    self:ArmDeathRecovery(character)
+                end
+            end)
         end)
         self.Connections[#self.Connections + 1] = LocalPlayer.OnTeleport:Connect(function(teleportState, placeId)
             if teleportState == Enum.TeleportState.Started and (self.FullProgression or self.AutoQueue) then
@@ -1671,6 +2166,18 @@ local function createRuntime(context)
                         self:SetError("Teleport resume: " .. tostring(reason))
                     end
                 end
+            elseif teleportState == Enum.TeleportState.Failed then
+                local environment = resumeEnvironment()
+                local latest = environment.__VORCatchBillionDucksLatestResume
+                if type(latest) == "table" and latest.Nonce == self.TeleportResumeNonce then
+                    environment.__VORCatchBillionDucksLatestResume = nil
+                end
+                self.TeleportResumeQueued = false
+                self.TeleportResumeDestination = nil
+                self.TeleportResumeExpiresAt = 0
+                self.TeleportResumeSnapshot = nil
+                self.TeleportResumeGuiWasVisible = nil
+                self:SetStatus("Teleport failed; cross-place resume will re-arm", false)
             end
         end)
         task.spawn(function()
@@ -1679,10 +2186,29 @@ local function createRuntime(context)
                 local full = self.FullProgression
                 local automationReady = now >= self.AutomationReadyAt
                 local lobby = self:IsLobby()
+                if not lobby and (full or self.AutoQueue) and now - self.LastResumeAttempt >= 2 then
+                    self.LastResumeAttempt = now
+                    local resumeOk, resumeReason = self:PrepareTeleportResume(100293509865504)
+                    if not resumeOk then
+                        local reason = tostring(resumeReason)
+                        if self.TeleportResumeError ~= reason then
+                            self.TeleportResumeError = reason
+                            self:SetError("Teleport resume: " .. reason)
+                        end
+                    end
+                end
                 if automationReady and lobby and (full or self.AutoLastSession or self.AutoDailyQuests)
                     and now - self.LastLobbyChore >= 2 then
                     self.LastLobbyChore = now
                     pcall(self.RunLobbyChores, self)
+                end
+                if automationReady and not lobby and full then
+                    local okSurvival, survivalError = pcall(self.BossSurvivalStep, self)
+                    if not okSurvival then
+                        self:SetError("Boss survival: " .. tostring(survivalError))
+                    end
+                elseif self.BossKiteActive then
+                    self:RestoreBossMovement()
                 end
                 if automationReady and not lobby and (full or self.AutoHunt) then
                     local okHunt, errorMessage = pcall(self.HuntStep, self)
@@ -1692,6 +2218,9 @@ local function createRuntime(context)
                 end
                 if automationReady and not lobby and (full or self.AutoSell) and now - self.LastSell >= self.SellInterval then
                     self:SellNow(false)
+                end
+                if automationReady and not lobby and full then
+                    pcall(self.ScheduleDogDelivery, self)
                 end
                 if automationReady and not (lobby and full) and now - self.LastProgress >= 2 then
                     self.LastProgress = now
@@ -1767,6 +2296,119 @@ local function buildInterface(runtime)
     local context = runtime.Context
     local createCategoryHomePage = assert(context.CreateCategoryHomePage, "Catch 1 Billion Ducks: category builder is required")
     local decals = context.CategoryDecals or context.CATEGORY_DECALS or {}
+    local settings = context.SETTINGS or context.Settings or {}
+    local environment = resumeEnvironment()
+
+    local function installLiveDuckBackgrounds()
+        local requestFunction = environment.request or environment.http_request
+            or (type(environment.syn) == "table" and environment.syn.request)
+        local writeFile = environment.writefile
+        local isFile = environment.isfile
+        local makeFolder = environment.makefolder
+        local customAsset = environment.getcustomasset or environment.getsynasset
+        if type(requestFunction) ~= "function" or type(writeFile) ~= "function"
+            or type(customAsset) ~= "function" then
+            return nil, {}
+        end
+
+        local key = "🦆 Catch 1 Billion Ducks Live"
+        local assets = {}
+        local ok = pcall(function()
+            if type(makeFolder) == "function" then
+                pcall(makeFolder, "VORHub")
+                pcall(makeFolder, "VORHub/Assets")
+            end
+            local HttpService = game:GetService("HttpService")
+            local thumbnails = {}
+            local seenUrls = {}
+            local function addThumbnail(thumbnail)
+                local targetId = tonumber(thumbnail and thumbnail.targetId)
+                local imageUrl = thumbnail and thumbnail.state == "Completed" and thumbnail.imageUrl or nil
+                if targetId and type(imageUrl) == "string" and imageUrl ~= "" and not seenUrls[imageUrl] then
+                    seenUrls[imageUrl] = true
+                    thumbnails[#thumbnails + 1] = {targetId = targetId, imageUrl = imageUrl}
+                end
+            end
+            local gameMetadata = HttpService:JSONDecode(game:HttpGet(
+                "https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=10516888336&countPerUniverse=10&defaults=true&size=768x432&format=Png&isCircular=false"
+            ))
+            for _, thumbnail in ipairs(
+                gameMetadata and gameMetadata.data and gameMetadata.data[1]
+                    and gameMetadata.data[1].thumbnails or {}
+            ) do
+                addThumbnail(thumbnail)
+            end
+            local iconMetadata = HttpService:JSONDecode(game:HttpGet(
+                "https://thumbnails.roblox.com/v1/games/icons?universeIds=10516888336&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false"
+            ))
+            for _, thumbnail in ipairs(iconMetadata and iconMetadata.data or {}) do
+                addThumbnail(thumbnail)
+            end
+            local placeMetadata = HttpService:JSONDecode(game:HttpGet(
+                "https://thumbnails.roblox.com/v1/places/gameicons?placeIds=100293509865504,120617974337690&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false"
+            ))
+            for _, thumbnail in ipairs(placeMetadata and placeMetadata.data or {}) do
+                addThumbnail(thumbnail)
+            end
+            for _, thumbnail in ipairs(thumbnails) do
+                local targetId = tonumber(thumbnail.targetId)
+                local imageUrl = thumbnail.imageUrl
+                if targetId and type(imageUrl) == "string" and imageUrl ~= "" then
+                    local assetPath = "VORHub/Assets/catch_billion_ducks_" .. tostring(targetId) .. ".png"
+                    if type(isFile) ~= "function" or not isFile(assetPath) then
+                        local response = requestFunction({Url = imageUrl, Method = "GET"})
+                        local body = response and (response.Body or response.body)
+                        if type(body) == "string" and #body > 0 then
+                            writeFile(assetPath, body)
+                        end
+                    end
+                    if type(isFile) ~= "function" or isFile(assetPath) then
+                        local assetOk, content = pcall(customAsset, assetPath)
+                        if assetOk and type(content) == "string" and content ~= "" then
+                            assets[#assets + 1] = content
+                        end
+                    end
+                end
+            end
+            assert(#assets > 0, "No Duck experience thumbnails were cached")
+            settings.PanelBackgrounds = settings.PanelBackgrounds or {}
+            settings.PanelBackgrounds[key] = assets[1]
+            settings.DefaultPanelBackground = key
+        end)
+        if not ok then
+            return nil, {}
+        end
+        return key, assets
+    end
+
+    local backgroundKey, backgroundAssets = installLiveDuckBackgrounds()
+    if backgroundKey and #backgroundAssets > 0 and runtime.Window then
+        local function showBackground(frame)
+            if not runtime.Alive or not runtime.Gui then
+                return false
+            end
+            frame = ((tonumber(frame) or 1) - 1) % #backgroundAssets + 1
+            runtime.BackgroundFrame = frame
+            settings.PanelBackgrounds[backgroundKey] = backgroundAssets[frame]
+            runtime.Window:SetPanelBackground(backgroundKey)
+            runtime.Gui:SetAttribute("CatchBillionDucksBackgroundFrame", frame)
+            runtime.Gui:SetAttribute("CatchBillionDucksBackgroundFrameCount", #backgroundAssets)
+            return true
+        end
+        if showBackground(1) then
+            task.spawn(function()
+                while runtime.Alive do
+                    task.wait(15)
+                    if runtime.Alive and runtime.Gui:GetAttribute("VORPanelBackground") == backgroundKey then
+                        showBackground(runtime.BackgroundFrame + 1)
+                    end
+                end
+            end)
+        end
+    end
+    context.CatchBillionDucksBackgroundKey = backgroundKey
+    context.CatchBillionDucksBackgroundAssets = backgroundAssets
+
     local HomePage, addHomeCategory, selectHomeCategory = createCategoryHomePage()
     local HuntPage = addHomeCategory("🦆 Hunt", 1, decals.Farming or decals.Overnight)
     local ProgressPage = addHomeCategory("📈 Progress", 2, decals.Progress)
@@ -1801,7 +2443,7 @@ local function buildInterface(runtime)
 
     FullSection:AddToggle({
         Name = "🔥 Full Progression",
-        Description = "Lobby chores, queue/reload, hunt, sell, buy/equip, upgrade, dogs, crates, rewards, and skip",
+        Description = "One-click AFK: cross-place resume, boss kiting, death return, hunt, economy, dogs, rewards, and solo requeue",
         Flag = "duckb_full_progression",
         Default = false,
         Callback = function(enabled)
@@ -1813,6 +2455,9 @@ local function buildInterface(runtime)
             runtime.LastLobbyChore = 0
             runtime.LobbyChoresReady = false
             runtime.AutomationReadyAt = os.clock() + 1
+            if not enabled then
+                runtime:RestoreBossMovement()
+            end
             runtime:SetStatus(enabled and "Full Progression owns the duck shift" or "Full Progression disabled", true)
         end,
     })
@@ -1824,7 +2469,7 @@ local function buildInterface(runtime)
             runtime.AntiAfk = enabled
         end,
     })
-    FullSection:AddLabel("Full Progression includes every automation below; individual toggles remain optional.")
+    FullSection:AddLabel("Full Progression includes boss survival and free lobby recovery; it never buys the Robux revive.")
 
     AimSection:AddToggle({
         Name = "🎯 Permanent Auto Hunt",
@@ -2003,7 +2648,7 @@ local function buildInterface(runtime)
     })
     DaySection:AddButton({Name = "Queue Solo Now", Callback = function() runtime:QueueSolo(true) end})
     DaySection:AddButton({Name = "Vote Skip Now", Callback = function() runtime:VoteSkip(true) end})
-    DaySection:AddLabel("Bosses always override ducks in the default target mode.")
+    DaySection:AddLabel("Bosses override ducks; Full Progression strafes attacks, restores speed, and requeues after death.")
 
     if runtime.Gui then
         runtime.Connections[#runtime.Connections + 1] = runtime.Gui.Destroying:Connect(function()
@@ -2018,6 +2663,16 @@ local function buildCatchOneBillionDucks(context)
     buildInterface(runtime)
     installDestinationResume(runtime)
     runtime:Start()
+    if context.CatchBillionDucksBackgroundKey then
+        task.defer(function()
+            if runtime.Alive and runtime.Window then
+                runtime.Window:SetPanelBackground(context.CatchBillionDucksBackgroundKey)
+            end
+        end)
+    end
+    if getgenv then
+        getgenv().VOR_DuckShift = runtime
+    end
     return runtime
 end
 

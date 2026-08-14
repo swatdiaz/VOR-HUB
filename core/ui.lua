@@ -8,6 +8,7 @@ return function(context)
     local Services = Utilities.Services
     local COLORS = SETTINGS.COLORS
     local LocalPlayer = Utilities.LocalPlayer
+    local UserInputService = Services.UserInputService
     local BASE_WIDTH = 900
     local BASE_HEIGHT = 574
     local RAIL_COLLAPSED_WIDTH = 74
@@ -661,7 +662,46 @@ return function(context)
         BackgroundMotionSpeed = tonumber(SETTINGS.BackgroundMotionSpeed) or 65,
         BackgroundMotionStrength = tonumber(SETTINGS.BackgroundMotionStrength) or 0.22,
         TransparencyBases = setmetatable({}, {__mode = "k"}),
+        MenuMouseOwned = false,
+        PreviousMouseBehavior = nil,
+        PreviousMouseIconEnabled = nil,
     }
+
+    function Window:RefreshMenuMouse()
+        if not UserInputService or UserInputService.TouchEnabled then
+            return
+        end
+        local wantsMouse = gui.Enabled and main.Visible and not self.Minimized
+        if wantsMouse then
+            if not self.MenuMouseOwned then
+                self.PreviousMouseBehavior = UserInputService.MouseBehavior
+                self.PreviousMouseIconEnabled = UserInputService.MouseIconEnabled
+                self.MenuMouseOwned = true
+            end
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        elseif self.MenuMouseOwned then
+            local previousBehavior = self.PreviousMouseBehavior or Enum.MouseBehavior.Default
+            local previousIcon = self.PreviousMouseIconEnabled
+            self.MenuMouseOwned = false
+            self.PreviousMouseBehavior = nil
+            self.PreviousMouseIconEnabled = nil
+            UserInputService.MouseBehavior = previousBehavior
+            if previousIcon ~= nil then
+                UserInputService.MouseIconEnabled = previousIcon
+            end
+        end
+    end
+
+    local mouseBindingName = "VORHubMenuMouse_" .. Services.HttpService:GenerateGUID(false)
+    Services.RunService:BindToRenderStep(mouseBindingName, Enum.RenderPriority.Last.Value, function()
+        if not Window.Destroyed then
+            Window:RefreshMenuMouse()
+        end
+    end)
+    Utilities.OnCleanup(function()
+        pcall(Services.RunService.UnbindFromRenderStep, Services.RunService, mouseBindingName)
+    end)
 
     local iconMap = {
         Offense = utf8.char(0x1F3C0),
@@ -1335,6 +1375,7 @@ return function(context)
 
     function Window:SetVisible(visible)
         gui.Enabled = visible == true
+        self:RefreshMenuMouse()
     end
 
     function Window:ToggleVisible()
@@ -1362,6 +1403,7 @@ return function(context)
             minimized.Visible = false
             tween(main, 0.22, {Size = UDim2.fromOffset(BASE_WIDTH, BASE_HEIGHT)}, Enum.EasingStyle.Back)
         end
+        self:RefreshMenuMouse()
     end
 
     function Window:GetMinimizeStyle()
@@ -2778,6 +2820,15 @@ return function(context)
             return
         end
         self.Destroyed = true
+        if self.MenuMouseOwned then
+            local previousBehavior = self.PreviousMouseBehavior or Enum.MouseBehavior.Default
+            local previousIcon = self.PreviousMouseIconEnabled
+            self.MenuMouseOwned = false
+            UserInputService.MouseBehavior = previousBehavior
+            if previousIcon ~= nil then
+                UserInputService.MouseIconEnabled = previousIcon
+            end
+        end
         Utilities.Cleanup()
         if gui.Parent then
             gui:Destroy()
@@ -2823,6 +2874,7 @@ return function(context)
 
     Window:RefreshBackgroundMotion()
     Window:UpdateScale()
+    Window:RefreshMenuMouse()
     Window:SetModuleIdentity(SETTINGS.ActiveGame and SETTINGS.ActiveGame.DisplayName or "Unsupported", SETTINGS.Version, true)
     Window:SetContextStatus("Ready  •  Waiting for module")
     Window:SetProfileState("Default", "SAVED")
