@@ -1300,6 +1300,9 @@ $duckNativeBehavior = (
     $duckText -match 'game\.JobId==ORIGIN_JOB' -and
     $duckText -match 'stableFor=EXPECTED_PLACE==100293509865504 and 3 or 1' -and
     $duckText -match 'game\.JobId~=stableJob' -and
+    $duckText -match 'local bouncePayload = table\.concat' -and
+    $duckText -match 'Duck second-hop loader download failed' -and
+    $duckText -match 'pcall\(bounceQueue,BOUNCE_PAYLOAD\)' -and
     $duckText -match '__VORCatchBillionDucksResumeReady' -and
     $duckText -match 'PrepareTeleportResume\(100293509865504\)' -and
     $duckText -match '__VORCatchBillionDucksLatestResume' -and

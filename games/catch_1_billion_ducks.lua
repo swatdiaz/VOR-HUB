@@ -1994,6 +1994,37 @@ local function createRuntime(context)
         for _, flag in ipairs(DUCK_RESUME_FLAGS) do
             allowRows[#allowRows + 1] = "[" .. luaQuote(flag) .. "]=true"
         end
+        -- Match returns pass through a disposable lobby and then a second lobby
+        -- job roughly two seconds later. Potassium consumes the original queued
+        -- chunk on the first hop, so arm a short-lived second-hop continuation
+        -- as soon as that first lobby identity appears.
+        local bouncePayload = table.concat({
+            "local NONCE=" .. luaQuote(nonce),
+            "local EXPECTED_PLACE=" .. tostring(destinationPlaceId),
+            "local EXPECTED_UNIVERSE=10516888336",
+            "local COMMIT=" .. luaQuote(commit),
+            "local DEADLINE=os.time()+20",
+            "local env=type(getgenv)==\"function\" and getgenv() or _G",
+            "local originJob=game.JobId",
+            "while os.time()<=DEADLINE and (game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or game.JobId==originJob) do task.wait(0.05) end",
+            "if os.time()>DEADLINE or game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or game.JobId==originJob then return end",
+            "local latest=env.__VORCatchBillionDucksLatestResume",
+            "local envelope=env.__VORCatchBillionDucksResumeSticky",
+            "if type(latest)~=\"table\" or latest.Nonce~=NONCE or type(envelope)~=\"table\" or envelope.Nonce~=NONCE then return end",
+            "local stableJob=game.JobId",
+            "local stableAt=os.clock()",
+            "while os.time()<=DEADLINE and os.clock()-stableAt<2 do task.wait(0.1); if game.JobId~=stableJob then stableJob=game.JobId; stableAt=os.clock() end end",
+            "if os.time()>DEADLINE or game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE then return end",
+            "local source",
+            "local url=\"https://raw.githubusercontent.com/swatdiaz/VOR-HUB/\"..COMMIT..\"/loader.lua\"",
+            "for attempt=1,3 do local ok,body=pcall(game.HttpGet,game,url..\"?bounce=\"..NONCE..\"-\"..attempt); if ok and type(body)==\"string\" and body~=\"\" then source=body break end; task.wait(0.5*attempt) end",
+            "if type(source)~=\"string\" or source==\"\" then warn(\"[VOR Hub] Duck second-hop loader download failed\"); return end",
+            [=[local patched,count=source:gsub('local COMMIT = "%x+"','local COMMIT = "'..COMMIT..'"')]=],
+            "if count~=1 then warn(\"[VOR Hub] Duck second-hop loader pin failed\"); return end",
+            "local chunk,compileError=loadstring(patched)",
+            "if not chunk then warn(\"[VOR Hub] Duck second-hop loader compile failed: \"..tostring(compileError)); return end",
+            "chunk()",
+        }, "\n")
         local payload = table.concat({
             "local NONCE=" .. luaQuote(nonce),
             "local CREATED_AT=" .. string.format("%.6f", createdAt),
@@ -2005,6 +2036,7 @@ local function createRuntime(context)
             "local COMMIT=" .. luaQuote(commit),
             "local FLAG_JSON=" .. luaQuote(json),
             "local GUI_WAS_VISIBLE=" .. tostring(guiWasVisible),
+            "local BOUNCE_PAYLOAD=" .. luaQuote(bouncePayload),
             "local ALLOWED={" .. table.concat(allowRows, ",") .. "}",
             "local env=type(getgenv)==\"function\" and getgenv() or _G",
             "local function isLatest()",
@@ -2021,6 +2053,15 @@ local function createRuntime(context)
             "while isLatest() and os.clock()<transitionDeadline and (game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE or (game.PlaceId==ORIGIN_PLACE and game.JobId==ORIGIN_JOB)) do task.wait(0.05) end",
             "if not isLatest() then return end",
             "if game.PlaceId~=EXPECTED_PLACE or game.GameId~=EXPECTED_UNIVERSE then env.__VORCatchBillionDucksResumeFailed=NONCE; if isLatest() then env.__VORCatchBillionDucksLatestResume=nil end; warn(\"[VOR Hub] Duck resume missed destination identity\"); return end",
+            "if EXPECTED_PLACE==100293509865504 then",
+            " local earlyOk,earlyFlags=pcall(game:GetService(\"HttpService\").JSONDecode,game:GetService(\"HttpService\"),FLAG_JSON)",
+            " if earlyOk and type(earlyFlags)==\"table\" then",
+            "  local earlyEnvelope={Version=1,Nonce=NONCE,ExpiresAt=EXPIRES_AT,StickyUntil=os.time()+60,UniverseId=EXPECTED_UNIVERSE,DestinationPlaceId=EXPECTED_PLACE,GuiWasVisible=GUI_WAS_VISIBLE,Flags=earlyFlags}",
+            "  env.__VORCatchBillionDucksResume=earlyEnvelope; env.__VORCatchBillionDucksResumeSticky=earlyEnvelope",
+            "  local bounceQueue=type(env.queue_on_teleport)==\"function\" and env.queue_on_teleport or env.queueonteleport",
+            "  if type(bounceQueue)==\"function\" then pcall(bounceQueue,BOUNCE_PAYLOAD) end",
+            " end",
+            "end",
             -- Roblox sends a short-lived lobby hop after the match return. Loading
             -- on that first lobby DataModel loses the hub again about 1.5 seconds
             -- later. Require a stable destination identity before rebuilding VOR.
