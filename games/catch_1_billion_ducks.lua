@@ -17,6 +17,27 @@ local DUCK_VALUES = {
     Duck_BBQ = 20000,
 }
 
+local WEAPON_PROGRESSION_IDS = {
+    "Hunting_Rifle",
+    "Shotgun",
+    "Military_Shotgun",
+    "M4",
+    "SCAR_H",
+    "M249",
+}
+
+local TARGET_DOG_IDS = {
+    "Dogs_Ace",
+    "Dogs_Chief",
+    "Dogs_Winston",
+}
+
+local TARGET_DOG_NAMES = {
+    Dogs_Ace = "Ace",
+    Dogs_Chief = "Chief",
+    Dogs_Winston = "Winston",
+}
+
 local DUCK_RESUME_FLAGS = {
     "duckb_full_progression",
     "duckb_anti_afk",
@@ -470,6 +491,7 @@ local function createRuntime(context)
         LobbyLastSpendAt = 0,
         LobbySpendQuietSeconds = 8,
         LobbySpendHardLimit = 60,
+        CratesThisLobby = 0,
         LastSessionChecked = false,
         DailyQuestStatus = "Not checked",
         QueueToken = nil,
@@ -1164,25 +1186,37 @@ local function createRuntime(context)
         return self.WeaponCatalog
     end
 
+    function runtime:WeaponProgression(weaponState)
+        local ownedById = {}
+        for _, owned in ipairs(weaponState and weaponState.Owned or {}) do
+            ownedById[owned.Id] = owned
+        end
+        local catalogById = {}
+        for _, config in ipairs(self:LoadWeaponCatalog()) do
+            catalogById[config.Id] = config
+        end
+        local bestOwned
+        local highestOwnedIndex = 0
+        for index, id in ipairs(WEAPON_PROGRESSION_IDS) do
+            if ownedById[id] then
+                bestOwned = ownedById[id]
+                highestOwnedIndex = index
+            end
+        end
+        if not bestOwned then
+            bestOwned = ownedById.Basic_Rifle
+        end
+        local nextId = WEAPON_PROGRESSION_IDS[highestOwnedIndex + 1]
+        local nextConfig = nextId and catalogById[nextId] or nil
+        return bestOwned, nextConfig
+    end
+
     function runtime:NextMissingWeaponCost()
         if not self.Ready or not self.V.Weapons then
             return nil
         end
-        local state = self.V.Weapons.GetState()
-        local owned = {}
-        for _, item in ipairs(state and state.Owned or {}) do
-            owned[item.Id] = true
-        end
-        local nextCost
-        for _, config in ipairs(self:LoadWeaponCatalog()) do
-            if not owned[config.Id] then
-                local price = toNumber(config.Price)
-                if not nextCost or price < nextCost then
-                    nextCost = price
-                end
-            end
-        end
-        return nextCost
+        local _, nextConfig = self:WeaponProgression(self.V.Weapons.GetState())
+        return nextConfig and toNumber(nextConfig.Price) or nil
     end
 
     function runtime:BuyAndEquipBestWeapon(manual)
@@ -1190,59 +1224,50 @@ local function createRuntime(context)
             return false
         end
         local weaponState = self.V.Weapons.GetState()
-        local ownedById = {}
-        for _, owned in ipairs(weaponState and weaponState.Owned or {}) do
-            ownedById[owned.Id] = owned
-        end
+        local bestOwned, nextConfig = self:WeaponProgression(weaponState)
         local feathers = self:Currency("Feathers") - self.FeatherReserve
-        local selected
-        for _, config in ipairs(self:LoadWeaponCatalog()) do
-            if ownedById[config.Id] or toNumber(config.Price) <= feathers then
-                selected = config
-                break
-            end
-        end
-        if not selected then
-            return false
-        end
-        local owned = ownedById[selected.Id]
-        if not owned then
+        if nextConfig and toNumber(nextConfig.Price) <= feathers then
             if not self:IsLobby() then
                 if manual then
                     self:SetStatus("Weapon purchases are queued for the lobby; hunting continues here")
                 end
                 return false
             end
-            local result = self.V.Weapons.Buy(selected.Id)
+            local purchaseId = nextConfig.Id
+            local result = self.V.Weapons.Buy(purchaseId)
             if not result then
                 return false
             end
             task.wait(0.15)
             weaponState = self.V.Weapons.GetState()
+            local purchased = false
             for _, item in ipairs(weaponState and weaponState.Owned or {}) do
-                if item.Id == selected.Id then
-                    owned = item
+                if item.Id == purchaseId then
+                    purchased = true
                     break
                 end
             end
-            if owned then
+            if purchased then
                 self.Purchases = self.Purchases + 1
             end
+            bestOwned, nextConfig = self:WeaponProgression(weaponState)
         end
-        if owned and weaponState.EquippedUUID ~= owned.UUID then
-            local requested = self.V.Weapons.Equip(owned.UUID)
+        if bestOwned and weaponState.EquippedUUID ~= bestOwned.UUID then
+            local requested = self.V.Weapons.Equip(bestOwned.UUID)
             if requested ~= false then
                 task.wait(0.1)
                 weaponState = self.V.Weapons.GetState()
             end
         end
-        local equipped = owned and weaponState and weaponState.EquippedUUID == owned.UUID
+        local equipped = bestOwned and weaponState and weaponState.EquippedUUID == bestOwned.UUID
         if manual then
-            self:SetStatus(
-                equipped and ("Best weapon equipped: " .. tostring(selected.Name))
-                    or ("Weapon equip was not confirmed: " .. tostring(selected.Name)),
-                equipped
-            )
+            local nextText = nextConfig and string.format(
+                "; saving %s for %s",
+                compactNumber(nextConfig.Price),
+                tostring(nextConfig.Name)
+            ) or "; weapon ladder complete"
+            self:SetStatus(equipped and ("Weapon equipped: " .. tostring(bestOwned.Name) .. nextText)
+                or "Weapon equip was not confirmed", equipped)
         end
         return equipped
     end
@@ -1343,13 +1368,16 @@ local function createRuntime(context)
         end
         local dogState = self.V.Dogs.GetState()
         local slots = dogState and dogState.UnlockedSlots or {}
-        local weaponReserve = self:NextMissingWeaponCost() or 0
-        local feathers = self:Currency("Feathers") - math.max(self.FeatherReserve, weaponReserve)
-        if #slots < 2 and feathers >= 900 and self.V.Dogs.UnlockSlotWithFeathers then
+        local feathers = self:Currency("Feathers") - self.FeatherReserve
+        if countEntries(slots) < 2 and feathers >= 900 and self.V.Dogs.UnlockSlotWithFeathers then
             local unlocked = self.V.Dogs.UnlockSlotWithFeathers()
             if unlocked then
-                self.Purchases = self.Purchases + 1
-                feathers = feathers - 900
+                task.wait(0.15)
+                dogState = self.V.Dogs.GetState()
+                slots = dogState and dogState.UnlockedSlots or {}
+                if countEntries(slots) >= 2 then
+                    self.Purchases = self.Purchases + 1
+                end
             end
         end
         if self.V.Dogs.EquipBest then
@@ -1361,6 +1389,21 @@ local function createRuntime(context)
             self:SetStatus("Best dogs equipped; feather slot checked", true)
         end
         return true
+    end
+
+    function runtime:MissingTargetDogs()
+        local dogState = self.V.Dogs and self.V.Dogs.GetState and self.V.Dogs.GetState()
+        local owned = {}
+        for _, dog in ipairs(dogState and (dogState.Inventory or dogState.Owned) or {}) do
+            owned[dog.Id] = true
+        end
+        local missing = {}
+        for _, id in ipairs(TARGET_DOG_IDS) do
+            if not owned[id] then
+                missing[#missing + 1] = TARGET_DOG_NAMES[id]
+            end
+        end
+        return missing, dogState
     end
 
     function runtime:FindOwnedDogWithDuck()
@@ -1543,12 +1586,30 @@ local function createRuntime(context)
     end
 
     function runtime:BuyDogCrate(manual, progressionSafe)
+        if not self:IsLobby() then
+            if manual then
+                self:SetStatus("Dog crates are purchased in the lobby")
+            end
+            return false
+        end
+        local missing, dogState = self:MissingTargetDogs()
+        if #missing == 0 then
+            if manual then
+                self:SetStatus("Target dog trio complete: Ace, Chief, and Winston", true)
+            end
+            return true
+        end
         if progressionSafe then
-            local dogState = self.V.Dogs and self.V.Dogs.GetState and self.V.Dogs.GetState()
             local slots = dogState and dogState.UnlockedSlots or {}
-            if self:NextMissingWeaponCost() or #slots < 2 then
+            if countEntries(slots) < 2 then
                 if manual then
-                    self:SetStatus("Crates wait until non-Robux weapons and dog slot 2 are secured")
+                    self:SetStatus("Dog crates wait until the 900-feather second slot is secured")
+                end
+                return false
+            end
+            if self:NextMissingWeaponCost() and self.CratesThisLobby >= 1 then
+                if manual then
+                    self:SetStatus("One target-dog roll used; remaining feathers are saving for the next weapon")
                 end
                 return false
             end
@@ -1562,11 +1623,15 @@ local function createRuntime(context)
         local results, reason = self:Invoke("Gacha_BuyCrate", "Dogs_Crate")
         if results then
             self.Purchases = self.Purchases + 1
+            self.CratesThisLobby = self.CratesThisLobby + 1
             if self.V.Dogs and self.V.Dogs.EquipBest then
                 task.defer(self.V.Dogs.EquipBest)
             end
             if manual then
-                self:SetStatus("Dog crate opened and best team refreshed", true)
+                task.wait(0.1)
+                local stillMissing = self:MissingTargetDogs()
+                self:SetStatus("Dog crate opened; hunting: " .. (#stillMissing > 0
+                    and table.concat(stillMissing, ", ") or "target trio complete"), true)
             end
             return true
         end
@@ -1748,30 +1813,31 @@ local function createRuntime(context)
             end
             local dogsReady = true
             if self.FullProgression or self.AutoDogs then
+                local beforePurchases = self.Purchases
                 local callOk, result = pcall(self.ManageDogs, self, false)
                 dogsReady = callOk and result == true
+                changed = changed or self.Purchases > beforePurchases
             end
             local freezerReady = true
             if self.FullProgression or self.AutoFreezer then
                 local callOk, result = pcall(self.EquipBestFreezer, self, false)
                 freezerReady = callOk and result == true
             end
-            local cratesReady = true
             if self.FullProgression then
-                local dogState = self.V.Dogs and self.V.Dogs.GetState and self.V.Dogs.GetState()
+                local missing, dogState = self:MissingTargetDogs()
                 local slots = dogState and dogState.UnlockedSlots or {}
-                local permanentProgressionReady = self:NextMissingWeaponCost() == nil and #slots >= 2
+                local weaponLadderComplete = self:NextMissingWeaponCost() == nil
                 local crateAffordable = self:Currency("Feathers") - self.FeatherReserve >= 150
-                if permanentProgressionReady and crateAffordable then
+                local targetRollAllowed = countEntries(slots) >= 2 and #missing > 0 and crateAffordable
+                    and (weaponLadderComplete or self.CratesThisLobby < 1)
+                if targetRollAllowed then
                     local beforePurchases = self.Purchases
-                    local callOk, result = pcall(self.BuyDogCrate, self, false, true)
+                    pcall(self.BuyDogCrate, self, false, true)
                     changed = changed or self.Purchases > beforePurchases
-                    cratesReady = callOk and result == true
-                        and self:Currency("Feathers") - self.FeatherReserve < 150
                 end
             end
             self.LobbyChoresReady = lastSessionReady and dailyReady and weaponReady
-                and dogsReady and freezerReady and cratesReady
+                and dogsReady and freezerReady
         end, function(message)
             return type(debug) == "table" and type(debug.traceback) == "function"
                 and debug.traceback(message, 2) or tostring(message)
@@ -2620,6 +2686,7 @@ local function buildInterface(runtime)
             runtime.LobbyChoresReady = false
             runtime.LobbySpendStartedAt = 0
             runtime.LobbyLastSpendAt = 0
+            runtime.CratesThisLobby = 0
             runtime.AutomationReadyAt = os.clock() + 1
             if not enabled then
                 runtime:RestoreBossMovement()
@@ -2704,11 +2771,12 @@ local function buildInterface(runtime)
     GuideSection:AddLabel("Phone/AFK: enable 🔥 Full Progression. That is the whole damn point.")
     GuideSection:AddLabel("Manual style: enable only Auto Hunt and whichever progression systems you want.")
     GuideSection:AddLabel("Red attacking birds always die first. Boss > Value handles everything harmless afterward.")
-    GuideSection:AddLabel("Feather Reserve protects currency from weapons, slot 2, and dog crates.")
+    GuideSection:AddLabel("Feathers: slot 2 first, one target-dog roll per lobby, then the next weapon milestone.")
+    GuideSection:AddLabel("After M249, the lobby spends for up to 60s until Ace, Chief, and Winston are owned.")
 
     WeaponSection:AddToggle({
         Name = "🔫 Auto Buy & Equip Best",
-        Description = "Strongest owned or currently affordable non-Robux weapon",
+        Description = "Follows Hunting Rifle > Shotgun > Military Shotgun > M4 > SCAR > M249; Robux guns are ignored",
         Flag = "duckb_auto_weapons",
         Default = false,
         Callback = function(enabled) runtime.AutoWeapons = enabled end,
@@ -2742,7 +2810,7 @@ local function buildInterface(runtime)
 
     DogSection:AddToggle({
         Name = "🐕 Auto Best Dogs & Slot 2",
-        Description = "Equips the best team and unlocks the 900-feather second slot when affordable",
+        Description = "Unlocks the 900-feather second slot, then equips the best owned team",
         Flag = "duckb_auto_dogs",
         Default = false,
         Callback = function(enabled) runtime.AutoDogs = enabled end,
@@ -2751,13 +2819,14 @@ local function buildInterface(runtime)
 
     CrateSection:AddToggle({
         Name = "📦 Auto Open Dog Crates",
-        Description = "Uses feathers only; never opens a Robux prompt",
+        Description = "Rolls 150-feather crates only until Ace, Chief, and Winston are owned",
         Flag = "duckb_auto_crates",
         Default = false,
         Callback = function(enabled) runtime.AutoCrates = enabled end,
     })
     CrateSection:AddButton({Name = "Open One Feather Crate", Callback = function() runtime:BuyDogCrate(true, false) end})
-    CrateSection:AddLabel("Duplicates are handled by the game's normal refund system; inventory limits stay server-owned.")
+    CrateSection:AddLabel("Targets: Ace 12% | Chief 5% | Winston 1%. Full Progression balances rolls with weapon savings.")
+    CrateSection:AddLabel("Slot 3 is Robux-only, so automation never opens its purchase prompt.")
 
     AchievementSection:AddToggle({
         Name = "🏆 Auto Claim Achievements",

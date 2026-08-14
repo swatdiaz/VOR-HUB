@@ -1274,11 +1274,18 @@ $duckNativeBehavior = (
     $duckText -match 'DuckController_SellDucks|SellDucks' -and
     $duckText -match 'Upgrades_Purchase' -and
     $duckText -match 'Gacha_BuyCrate' -and
+    $duckText -match 'WEAPON_PROGRESSION_IDS' -and
+    $duckText -match '"M4",\s*\r?\n\s*"SCAR_H",\s*\r?\n\s*"M249"' -and
+    $duckText -match 'TARGET_DOG_IDS' -and
+    $duckText -match '"Dogs_Ace",\s*\r?\n\s*"Dogs_Chief",\s*\r?\n\s*"Dogs_Winston"' -and
+    $duckText -match 'CratesThisLobby' -and
+    $duckText -match 'Slot 3 is Robux-only' -and
     $duckText -match 'Achievements_ClaimReward' -and
     $duckText -match 'FreezerSkins\.Equip' -and
     $duckText -match 'BossController_GetSkipVoteState' -and
     $duckText -match 'Respawn_Controller_ClaimLastSession' -and
-    $duckText -match 'permanentProgressionReady = self:NextMissingWeaponCost\(\) == nil and #slots >= 2' -and
+    $duckText -match 'weaponLadderComplete = self:NextMissingWeaponCost\(\) == nil' -and
+    $duckText -match 'targetRollAllowed = countEntries\(slots\) >= 2 and #missing > 0' -and
     $duckText -match 'pcall\(self\.BuyDogCrate, self, false, true\)' -and
     $duckText -match 'LobbySpendQuietSeconds\s*=\s*8' -and
     $duckText -match 'LobbySpendHardLimit\s*=\s*60' -and
