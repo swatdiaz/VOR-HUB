@@ -1748,7 +1748,22 @@ local function createRuntime(context)
                 local callOk, result = pcall(self.EquipBestFreezer, self, false)
                 freezerReady = callOk and result == true
             end
-            self.LobbyChoresReady = lastSessionReady and dailyReady and weaponReady and dogsReady and freezerReady
+            local cratesReady = true
+            if self.FullProgression then
+                local dogState = self.V.Dogs and self.V.Dogs.GetState and self.V.Dogs.GetState()
+                local slots = dogState and dogState.UnlockedSlots or {}
+                local permanentProgressionReady = self:NextMissingWeaponCost() == nil and #slots >= 2
+                local crateAffordable = self:Currency("Feathers") - self.FeatherReserve >= 150
+                if permanentProgressionReady and crateAffordable then
+                    local beforePurchases = self.Purchases
+                    local callOk, result = pcall(self.BuyDogCrate, self, false, true)
+                    changed = changed or self.Purchases > beforePurchases
+                    cratesReady = callOk and result == true
+                        and self:Currency("Feathers") - self.FeatherReserve < 150
+                end
+            end
+            self.LobbyChoresReady = lastSessionReady and dailyReady and weaponReady
+                and dogsReady and freezerReady and cratesReady
         end, function(message)
             return type(debug) == "table" and type(debug.traceback) == "function"
                 and debug.traceback(message, 2) or tostring(message)

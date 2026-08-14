@@ -1278,6 +1278,8 @@ $duckNativeBehavior = (
     $duckText -match 'FreezerSkins\.Equip' -and
     $duckText -match 'BossController_GetSkipVoteState' -and
     $duckText -match 'Respawn_Controller_ClaimLastSession' -and
+    $duckText -match 'permanentProgressionReady = self:NextMissingWeaponCost\(\) == nil and #slots >= 2' -and
+    $duckText -match 'pcall\(self\.BuyDogCrate, self, false, true\)' -and
     $duckText -match 'DailyQuests_GetState' -and
     $duckText -match 'Queue\.ChooseSize\(1\)' -and
     $duckText -match 'Queue\.CreateParty\(\)' -and
