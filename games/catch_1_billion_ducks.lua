@@ -746,6 +746,8 @@ local function createRuntime(context)
         end
 
         self:RefreshBossSnapshot()
+        self:RefreshDuckSnapshot()
+        local lateDayHalo = self.CurrentDay >= 10
         local ume = workspace:FindFirstChild("Ume")
         local nearest
         local nearestDistance
@@ -772,6 +774,35 @@ local function createRuntime(context)
             end
         end
 
+        if lateDayHalo and ume then
+            for _, model in ipairs(ume:GetChildren()) do
+                if model:IsA("Model") and string.find(model.Name, "DuckController_Client_", 1, true) then
+                    local _, duckState = self:DuckInfoByModel(model)
+                    local part = model:FindFirstChild("Hitbox", true) or model.PrimaryPart
+                    if duckState == "Attacking" and part and part:IsA("BasePart") then
+                        local offset = Vector3.new(
+                            root.Position.X - part.Position.X,
+                            0,
+                            root.Position.Z - part.Position.Z
+                        )
+                        local distance = offset.Magnitude
+                        if distance > 0.01 then
+                            weightedAway = weightedAway + offset.Unit / math.max(distance, 1)
+                        end
+                        if not nearestDistance or distance < nearestDistance then
+                            nearest = {
+                                Row = {State = "Attacking"},
+                                Part = part,
+                                Offset = offset,
+                                NormalDuckThreat = true,
+                            }
+                            nearestDistance = distance
+                        end
+                    end
+                end
+            end
+        end
+
         if not nearest and self.BossPhase == "Boss" and ume then
             local functions = ume:FindFirstChild("GameFunctions")
             local holder = functions and functions:FindFirstChild("BossPositonPart", true)
@@ -789,7 +820,25 @@ local function createRuntime(context)
             end
         end
 
-        if not nearest or (self.BossPhase ~= "Boss" and #self.BossSnapshot == 0) then
+        if not nearest and lateDayHalo and ume then
+            local safetyPart = ume:FindFirstChild("SafetyPart", true)
+            if safetyPart and safetyPart:IsA("BasePart") then
+                local offset = Vector3.new(
+                    root.Position.X - safetyPart.Position.X,
+                    0,
+                    root.Position.Z - safetyPart.Position.Z
+                )
+                nearest = {
+                    Part = safetyPart,
+                    Offset = offset.Magnitude > 0.01 and offset or Vector3.new(1, 0, 0),
+                }
+                nearestDistance = math.huge
+                weightedAway = nearest.Offset.Unit
+            end
+        end
+
+        local bossActive = self.BossPhase == "Boss" or #self.BossSnapshot > 0
+        if not nearest or (not bossActive and not lateDayHalo) then
             self:RestoreBossMovement()
             return false
         end
@@ -2735,7 +2784,7 @@ local function buildInterface(runtime)
     })
     DaySection:AddButton({Name = "Queue Solo Now", Callback = function() runtime:QueueSolo(true) end})
     DaySection:AddButton({Name = "Vote Skip Now", Callback = function() runtime:VoteSkip(true) end})
-    DaySection:AddLabel("Bosses override ducks; Full Progression strafes attacks, restores speed, and requeues after death.")
+    DaySection:AddLabel("Red attackers die first; bosses use the halo immediately and every wave stays airborne after day 10.")
 
     if runtime.Gui then
         runtime.Connections[#runtime.Connections + 1] = runtime.Gui.Destroying:Connect(function()

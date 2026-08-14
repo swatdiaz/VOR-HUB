@@ -1298,6 +1298,8 @@ $duckNativeBehavior = (
     $duckText -match 'BossSurvivalStep' -and
     $duckText -match 'BossKiteActive' -and
     $duckText -match 'BossPanicSpeed\s*=\s*240' -and
+    $duckText -match 'lateDayHalo = self\.CurrentDay >= 10' -and
+    $duckText -match 'NormalDuckThreat = true' -and
     $duckText -match 'closest\(threats\)' -and
     $duckText -match 'bossThreat or self:Visible' -and
     $duckText -match 'category == "Dog" and stat == "Dexterity"' -and
