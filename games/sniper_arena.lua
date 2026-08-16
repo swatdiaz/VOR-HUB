@@ -986,6 +986,25 @@ return function(context)
     local ORIGINAL_COSMETIC = "Original / Server Equipped"
     local cosmeticCatalog = {Sniper = {}, Melee = {}, Glove = {}, Charm = {}}
     local cosmeticKeyByLabel = {}
+    state.CosmeticBrowserRoot = nil
+    state.CosmeticItemsByKind = {Sniper = {}, Melee = {}, Glove = {}, Charm = {}}
+    state.CosmeticLabelByKey = {}
+
+    do
+    local function cosmeticImage(config)
+        if type(config) ~= "table" then return "" end
+        local image = config.Image or config.Icon or config.Thumbnail or config.ImageId
+            or config.IconId or config.ThumbnailId or config.TextureId or config.AssetId
+        if type(image) == "table" then image = image.Image or image.AssetId or image.Id or image[1] end
+        if type(image) == "number" then return "rbxassetid://" .. tostring(math.floor(image)) end
+        if type(image) ~= "string" or image == "" then return "" end
+        if string.find(image, "rbxassetid://", 1, true) == 1 or string.find(image, "rbxthumb://", 1, true) == 1
+            or string.find(image, "http://", 1, true) == 1 or string.find(image, "https://", 1, true) == 1 then
+            return image
+        end
+        local numeric = tonumber(image)
+        return numeric and ("rbxassetid://" .. tostring(math.floor(numeric))) or image
+    end
 
     for key, config in pairs(CosmeticConfig) do
         if type(key) == "string" and type(config) == "table" and type(config.Display) == "string" then
@@ -997,13 +1016,28 @@ return function(context)
                 local label = string.format("%s  [%s]", config.Display, key)
                 bucket[family][#bucket[family] + 1] = label
                 cosmeticKeyByLabel[label] = key
+                state.CosmeticLabelByKey[key] = label
+                state.CosmeticItemsByKind[weaponType][#state.CosmeticItemsByKind[weaponType] + 1] = {
+                    Kind = weaponType,
+                    Family = family,
+                    Key = key,
+                    Label = label,
+                    Display = config.Display,
+                    Image = cosmeticImage(config),
+                    Rarity = tostring(config.Rarity or "Standard"),
+                    Search = string.lower(table.concat({config.Display, key, family, tostring(config.Rarity or "")}, " ")),
+                }
             end
         end
+    end
     end
     for _, familiesByType in pairs(cosmeticCatalog) do
         for _, labels in pairs(familiesByType) do
             table.sort(labels, function(a, b) return string.lower(a) < string.lower(b) end)
         end
+    end
+    for _, items in pairs(state.CosmeticItemsByKind) do
+        table.sort(items, function(a, b) return string.lower(a.Display) < string.lower(b.Display) end)
     end
 
     local function cosmeticFamilies(kind)
@@ -1299,7 +1333,8 @@ return function(context)
     local meleeFamilies = cosmeticFamilies("Melee")
     if not cosmeticCatalog.Sniper[state.FESniperFamily] then state.FESniperFamily = sniperFamilies[1] or "SSG" end
     if not cosmeticCatalog.Melee[state.FEMeleeFamily] then state.FEMeleeFamily = meleeFamilies[1] or "Karambit" end
-    local sniperSkinControl, meleeSkinControl
+    do
+    local cosmeticControls = {}
 
     AimSection:AddToggle({Name = "Cursor Aimbot", Description = "Uses the executor mouse mover like the proven Polo script. Hold right-click by default.", Flag = "sniper_arena_cursor_aimbot", Default = true, Callback = function(v) state.AimAssist = v == true end})
     AimSection:AddToggle({Name = "Silent Aim", Description = "Optional. Dead players and one-second ragdolls are rejected immediately.", Flag = "sniper_arena_silent_aim", Default = false, Callback = function(v) state.SilentAim = v == true end})
@@ -1346,7 +1381,7 @@ return function(context)
         Title = "Soft unlock — only you see it",
         Content = "Choose any sniper, melee, glove, or charm model. VOR swaps the local inventory/first-person presentation while every real server weapon ID and ownership record stays unchanged.",
     })
-    CosmeticSection:AddToggle({Name = "FE Unlock All Cosmetics", Description = "Enables client-only inventory and viewmodel swaps. Toggle off restores the exact server-equipped cosmetics.", Flag = "sniper_arena_fe_unlock_all", Default = false, Callback = function(v)
+    cosmeticControls.FE = CosmeticSection:AddToggle({Name = "FE Unlock All Cosmetics", Description = "Enables client-only inventory and viewmodel swaps. Toggle off restores the exact server-equipped cosmetics.", Flag = "sniper_arena_fe_unlock_all", Default = false, Callback = function(v)
         local enabled = v == true
         if not enabled then restoreFECosmetics() end
         state.FEUnlock = enabled
@@ -1354,39 +1389,522 @@ return function(context)
             tryApplyLocalCosmeticSlots()
             applyCombatCosmetics()
         end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    CosmeticSection:AddDropdown({Name = "Sniper Family", Flag = "sniper_arena_fe_sniper_family", Options = sniperFamilies, Default = state.FESniperFamily, Callback = function(v)
+    cosmeticControls.SniperFamily = CosmeticSection:AddDropdown({Name = "Sniper Family", Flag = "sniper_arena_fe_sniper_family", Options = sniperFamilies, Default = state.FESniperFamily, Callback = function(v)
         state.FESniperFamily = v or state.FESniperFamily
         state.FESelections.Sniper = nil
-        if sniperSkinControl then
-            sniperSkinControl:SetOptions(cosmeticOptions("Sniper", state.FESniperFamily))
-            sniperSkinControl:Set(ORIGINAL_COSMETIC)
+        if cosmeticControls.SniperSkin then
+            cosmeticControls.SniperSkin:SetOptions(cosmeticOptions("Sniper", state.FESniperFamily))
+            cosmeticControls.SniperSkin:Set(ORIGINAL_COSMETIC)
         end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    sniperSkinControl = CosmeticSection:AddDropdown({Name = "Sniper Model / Skin", Flag = "sniper_arena_fe_sniper_skin", Options = cosmeticOptions("Sniper", state.FESniperFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.SniperSkin = CosmeticSection:AddDropdown({Name = "Sniper Model / Skin", Flag = "sniper_arena_fe_sniper_skin", Options = cosmeticOptions("Sniper", state.FESniperFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Sniper = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    CosmeticSection:AddDropdown({Name = "Melee Family", Flag = "sniper_arena_fe_melee_family", Options = meleeFamilies, Default = state.FEMeleeFamily, Callback = function(v)
+    cosmeticControls.MeleeFamily = CosmeticSection:AddDropdown({Name = "Melee Family", Flag = "sniper_arena_fe_melee_family", Options = meleeFamilies, Default = state.FEMeleeFamily, Callback = function(v)
         state.FEMeleeFamily = v or state.FEMeleeFamily
         state.FESelections.Melee = nil
-        if meleeSkinControl then
-            meleeSkinControl:SetOptions(cosmeticOptions("Melee", state.FEMeleeFamily))
-            meleeSkinControl:Set(ORIGINAL_COSMETIC)
+        if cosmeticControls.MeleeSkin then
+            cosmeticControls.MeleeSkin:SetOptions(cosmeticOptions("Melee", state.FEMeleeFamily))
+            cosmeticControls.MeleeSkin:Set(ORIGINAL_COSMETIC)
         end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    meleeSkinControl = CosmeticSection:AddDropdown({Name = "Knife / Melee Model", Flag = "sniper_arena_fe_melee_skin", Options = cosmeticOptions("Melee", state.FEMeleeFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.MeleeSkin = CosmeticSection:AddDropdown({Name = "Knife / Melee Model", Flag = "sniper_arena_fe_melee_skin", Options = cosmeticOptions("Melee", state.FEMeleeFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Melee = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    CosmeticSection:AddDropdown({Name = "Glove Model", Flag = "sniper_arena_fe_glove", Options = cosmeticOptions("Glove"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.GloveSkin = CosmeticSection:AddDropdown({Name = "Glove Model", Flag = "sniper_arena_fe_glove", Options = cosmeticOptions("Glove"), Default = ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Glove = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    CosmeticSection:AddDropdown({Name = "Charm Model", Flag = "sniper_arena_fe_charm", Options = cosmeticOptions("Charm"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.CharmSkin = CosmeticSection:AddDropdown({Name = "Charm Model", Flag = "sniper_arena_fe_charm", Options = cosmeticOptions("Charm"), Default = ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Charm = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
+
+    local function installCosmeticBrowser()
+    local create = context.Create
+    local addCorner = context.AddCorner
+    local addStroke = context.AddStroke
+    local browserState = {Kind = "Sniper", Family = "All", Query = "", Page = 1, PageSize = 60, PreviewKey = nil}
+    local browserCards, browserFamilies, browserCategoryButtons = {}, {}, {}
+    local browserGrid, browserFamilyBar, browserPageLabel, browserResultLabel
+    local browserPreviewImage, browserPreviewName, browserPreviewMeta, browserEquipButton, browserOriginalButton
+
+    local function rarityColor(rarity)
+        local name = string.lower(tostring(rarity or ""))
+        if string.find(name, "myth", 1, true) or string.find(name, "exotic", 1, true) then return Color3.fromRGB(255, 82, 173) end
+        if string.find(name, "legend", 1, true) then return Color3.fromRGB(255, 174, 58) end
+        if string.find(name, "epic", 1, true) then return Color3.fromRGB(190, 92, 255) end
+        if string.find(name, "rare", 1, true) then return Color3.fromRGB(72, 154, 255) end
+        if string.find(name, "uncommon", 1, true) then return Color3.fromRGB(82, 214, 138) end
+        return COLORS.muted or Color3.fromRGB(172, 163, 190)
+    end
+
+    local function browserItem(kind, key)
+        if not key then return nil end
+        for _, item in ipairs(state.CosmeticItemsByKind[kind] or {}) do
+            if item.Key == key then return item end
+        end
+        return nil
+    end
+
+    local function filteredBrowserItems()
+        local result = {}
+        local query = string.lower(browserState.Query or ""):match("^%s*(.-)%s*$")
+        for _, item in ipairs(state.CosmeticItemsByKind[browserState.Kind] or {}) do
+            if (browserState.Family == "All" or item.Family == browserState.Family)
+                and (query == "" or string.find(item.Search, query, 1, true)) then
+                result[#result + 1] = item
+            end
+        end
+        return result
+    end
+
+    local function setBrowserSelection(kind, key)
+        local label = key and state.CosmeticLabelByKey[key] or ORIGINAL_COSMETIC
+        local config = key and CosmeticConfig[key] or nil
+        if kind == "Sniper" then
+            if config and cosmeticControls.SniperFamily then cosmeticControls.SniperFamily:Set(tostring(config.Family or state.FESniperFamily)) end
+            if cosmeticControls.SniperSkin then cosmeticControls.SniperSkin:Set(label) end
+        elseif kind == "Melee" then
+            if config and cosmeticControls.MeleeFamily then cosmeticControls.MeleeFamily:Set(tostring(config.Family or state.FEMeleeFamily)) end
+            if cosmeticControls.MeleeSkin then cosmeticControls.MeleeSkin:Set(label) end
+        elseif kind == "Glove" and cosmeticControls.GloveSkin then
+            cosmeticControls.GloveSkin:Set(label)
+        elseif kind == "Charm" and cosmeticControls.CharmSkin then
+            cosmeticControls.CharmSkin:Set(label)
+        end
+        if key and cosmeticControls.FE then cosmeticControls.FE:Set(true) end
+        browserState.PreviewKey = key
+        if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+    end
+
+    local function closeCosmeticBrowser()
+        if state.CosmeticBrowserRoot then state.CosmeticBrowserRoot.Visible = false end
+    end
+
+    local function makeBrowserButton(parent, text, size, position)
+        local button = create("TextButton", {
+            AutoButtonColor = false,
+            BackgroundColor3 = COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamSemibold,
+            Position = position or UDim2.new(),
+            Size = size or UDim2.fromOffset(110, 34),
+            Text = text,
+            TextColor3 = COLORS.text or Color3.fromRGB(244, 239, 251),
+            TextSize = 12,
+            ZIndex = 607,
+        }, parent)
+        addCorner(button, 9)
+        addStroke(button, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.35)
+        return button
+    end
+
+    local function buildCosmeticBrowser()
+        if not gui or state.CosmeticBrowserRoot then return end
+        state.CosmeticBrowserRoot = create("Frame", {
+            Active = true,
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0, 0),
+            Size = UDim2.fromScale(1, 1),
+            Visible = false,
+            ZIndex = 600,
+        }, gui)
+        state.CosmeticBrowserRoot.Name = "SniperCosmeticBrowser"
+
+        local backdrop = create("TextButton", {
+            AutoButtonColor = false,
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 0.28,
+            BorderSizePixel = 0,
+            Size = UDim2.fromScale(1, 1),
+            Text = "",
+            ZIndex = 600,
+        }, state.CosmeticBrowserRoot)
+        track(backdrop.Activated:Connect(closeCosmeticBrowser))
+
+        local panel = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = COLORS.surface or Color3.fromRGB(18, 11, 29),
+            BackgroundTransparency = 0.02,
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.new(0.86, 0, 0.84, 0),
+            ZIndex = 602,
+        }, state.CosmeticBrowserRoot)
+        addCorner(panel, 16)
+        addStroke(panel, COLORS.accentBright or Color3.fromRGB(151, 70, 255), 1.4, 0.12)
+        create("UISizeConstraint", {MinSize = Vector2.new(720, 480), MaxSize = Vector2.new(1220, 760)}, panel)
+
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            Position = UDim2.fromOffset(22, 8),
+            Size = UDim2.new(0.42, 0, 0, 44),
+            Text = "FE COSMETIC INVENTORY",
+            TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
+            TextSize = 18,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 604,
+        }, panel)
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Gotham,
+            Position = UDim2.fromOffset(24, 38),
+            Size = UDim2.new(0.45, 0, 0, 20),
+            Text = "CLIENT-ONLY PREVIEW  /  SERVER OWNERSHIP UNCHANGED",
+            TextColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157),
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 604,
+        }, panel)
+
+        local search = create("TextBox", {
+            BackgroundColor3 = COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            ClearTextOnFocus = false,
+            Font = Enum.Font.Gotham,
+            PlaceholderColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157),
+            PlaceholderText = "Search name, family, rarity...",
+            Position = UDim2.new(0.54, 0, 0, 13),
+            Size = UDim2.new(0.36, 0, 0, 38),
+            Text = "",
+            TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 605,
+        }, panel)
+        addCorner(search, 10)
+        addStroke(search, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.35)
+        create("UIPadding", {PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14)}, search)
+
+        local close = makeBrowserButton(panel, "×", UDim2.fromOffset(40, 38), UDim2.new(1, -52, 0, 13))
+        close.TextSize = 22
+        track(close.Activated:Connect(closeCosmeticBrowser))
+
+        local categoryBar = create("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(18, 66),
+            Size = UDim2.new(1, -36, 0, 38),
+            ZIndex = 604,
+        }, panel)
+        create("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, categoryBar)
+        for index, kind in ipairs({"Sniper", "Melee", "Glove", "Charm"}) do
+            local button = makeBrowserButton(categoryBar, kind == "Sniper" and "🎯 SNIPERS" or kind == "Melee" and "🔪 MELEE" or kind == "Glove" and "🧤 GLOVES" or "✨ CHARMS", UDim2.new(0.25, -6, 1, 0))
+            button.LayoutOrder = index
+            browserCategoryButtons[kind] = button
+            track(button.Activated:Connect(function()
+                browserState.Kind = kind
+                browserState.Family = "All"
+                browserState.Page = 1
+                browserState.PreviewKey = state.FESelections[kind]
+                if cosmeticControls.Refresh then cosmeticControls.Refresh(true) end
+            end))
+        end
+
+        browserFamilyBar = create("ScrollingFrame", {
+            AutomaticCanvasSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(),
+            Position = UDim2.fromOffset(18, 110),
+            ScrollBarImageColor3 = COLORS.accentBright or Color3.fromRGB(151, 70, 255),
+            ScrollBarThickness = 3,
+            ScrollingDirection = Enum.ScrollingDirection.X,
+            Size = UDim2.new(1, -36, 0, 42),
+            ZIndex = 604,
+        }, panel)
+
+        local body = create("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(18, 160),
+            Size = UDim2.new(1, -36, 1, -178),
+            ZIndex = 604,
+        }, panel)
+        local gridPanel = create("Frame", {
+            BackgroundColor3 = COLORS.rail or Color3.fromRGB(13, 8, 22),
+            BackgroundTransparency = 0.14,
+            BorderSizePixel = 0,
+            Size = UDim2.new(0.72, -8, 1, 0),
+            ZIndex = 603,
+        }, body)
+        addCorner(gridPanel, 12)
+        addStroke(gridPanel, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.45)
+
+        browserResultLabel = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Gotham,
+            Position = UDim2.fromOffset(12, 6),
+            Size = UDim2.new(1, -24, 0, 24),
+            Text = "Loading catalog...",
+            TextColor3 = COLORS.muted or Color3.fromRGB(180, 171, 194),
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 605,
+        }, gridPanel)
+        browserGrid = create("ScrollingFrame", {
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(),
+            Position = UDim2.fromOffset(10, 34),
+            ScrollBarImageColor3 = COLORS.accentBright or Color3.fromRGB(151, 70, 255),
+            ScrollBarThickness = 4,
+            Size = UDim2.new(1, -20, 1, -76),
+            ZIndex = 604,
+        }, gridPanel)
+
+        local footer = create("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 10, 1, -38), Size = UDim2.new(1, -20, 0, 32), ZIndex = 605}, gridPanel)
+        local previous = makeBrowserButton(footer, "‹ PREV", UDim2.fromOffset(86, 30), UDim2.fromOffset(0, 0))
+        local nextButton = makeBrowserButton(footer, "NEXT ›", UDim2.fromOffset(86, 30), UDim2.new(1, -86, 0, 0))
+        browserPageLabel = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(0.5, -90, 0, 0),
+            Size = UDim2.fromOffset(180, 30),
+            Text = "PAGE 1 / 1",
+            TextColor3 = COLORS.muted or Color3.fromRGB(180, 171, 194),
+            TextSize = 11,
+            ZIndex = 606,
+        }, footer)
+        track(previous.Activated:Connect(function()
+            browserState.Page = math.max(browserState.Page - 1, 1)
+            if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+        end))
+        track(nextButton.Activated:Connect(function()
+            browserState.Page += 1
+            if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+        end))
+
+        local preview = create("Frame", {
+            BackgroundColor3 = COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            Position = UDim2.new(0.72, 8, 0, 0),
+            Size = UDim2.new(0.28, -8, 1, 0),
+            ZIndex = 603,
+        }, body)
+        addCorner(preview, 12)
+        addStroke(preview, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.35)
+        browserPreviewImage = create("ImageLabel", {
+            BackgroundColor3 = COLORS.rail or Color3.fromRGB(13, 8, 22),
+            BackgroundTransparency = 0.12,
+            BorderSizePixel = 0,
+            Image = "",
+            Position = UDim2.fromOffset(12, 12),
+            ScaleType = Enum.ScaleType.Fit,
+            Size = UDim2.new(1, -24, 0.48, 0),
+            ZIndex = 605,
+        }, preview)
+        addCorner(browserPreviewImage, 10)
+        browserPreviewName = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            Position = UDim2.new(0, 14, 0.50, 8),
+            Size = UDim2.new(1, -28, 0, 52),
+            Text = "Select a cosmetic",
+            TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
+            TextSize = 15,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = 605,
+        }, preview)
+        browserPreviewMeta = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Gotham,
+            Position = UDim2.new(0, 14, 0.50, 64),
+            Size = UDim2.new(1, -28, 0, 64),
+            Text = "",
+            TextColor3 = COLORS.muted or Color3.fromRGB(180, 171, 194),
+            TextSize = 11,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = 605,
+        }, preview)
+        browserEquipButton = makeBrowserButton(preview, "EQUIP LOCALLY", UDim2.new(1, -28, 0, 38), UDim2.new(0, 14, 1, -94))
+        browserEquipButton.BackgroundColor3 = COLORS.accent or Color3.fromRGB(121, 45, 218)
+        browserOriginalButton = makeBrowserButton(preview, "USE ORIGINAL", UDim2.new(1, -28, 0, 34), UDim2.new(0, 14, 1, -48))
+        track(browserEquipButton.Activated:Connect(function()
+            if browserState.PreviewKey then setBrowserSelection(browserState.Kind, browserState.PreviewKey) end
+        end))
+        track(browserOriginalButton.Activated:Connect(function() setBrowserSelection(browserState.Kind, nil) end))
+
+        track(search:GetPropertyChangedSignal("Text"):Connect(function()
+            browserState.Query = search.Text
+            browserState.Page = 1
+            if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+        end))
+        track(UserInputService.InputBegan:Connect(function(input, processed)
+            if not processed and input.KeyCode == Enum.KeyCode.Escape and state.CosmeticBrowserRoot and state.CosmeticBrowserRoot.Visible then
+                closeCosmeticBrowser()
+            end
+        end))
+    end
+
+    cosmeticControls.Refresh = function(rebuildFamilies)
+        if not state.CosmeticBrowserRoot or not browserGrid then return end
+        for kind, button in pairs(browserCategoryButtons) do
+            local active = kind == browserState.Kind
+            button.BackgroundColor3 = active and (COLORS.accent or Color3.fromRGB(121, 45, 218))
+                or (COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39))
+        end
+
+        if rebuildFamilies or #browserFamilies == 0 then
+            for _, child in ipairs(browserFamilyBar:GetChildren()) do child:Destroy() end
+            table.clear(browserFamilies)
+            create("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, browserFamilyBar)
+            local familiesForKind = cosmeticFamilies(browserState.Kind)
+            table.insert(familiesForKind, 1, "All")
+            for index, family in ipairs(familiesForKind) do
+                local button = makeBrowserButton(browserFamilyBar, string.upper(family), UDim2.fromOffset(math.clamp(54 + #family * 6, 76, 170), 34))
+                button.LayoutOrder = index
+                browserFamilies[#browserFamilies + 1] = {Name = family, Button = button}
+                button.Activated:Connect(function()
+                    browserState.Family = family
+                    browserState.Page = 1
+                    if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+                end)
+            end
+        end
+        for _, entry in ipairs(browserFamilies) do
+            entry.Button.BackgroundColor3 = entry.Name == browserState.Family and (COLORS.accent or Color3.fromRGB(121, 45, 218))
+                or (COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39))
+        end
+
+        for _, child in ipairs(browserGrid:GetChildren()) do child:Destroy() end
+        table.clear(browserCards)
+        local gridLayout = create("UIGridLayout", {
+            CellPadding = UDim2.fromOffset(9, 9),
+            CellSize = UDim2.fromOffset(146, 154),
+            FillDirectionMaxCells = 5,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, browserGrid)
+        create("UIPadding", {PaddingBottom = UDim.new(0, 8)}, browserGrid)
+
+        local results = filteredBrowserItems()
+        local pageCount = math.max(math.ceil(#results / browserState.PageSize), 1)
+        browserState.Page = math.clamp(browserState.Page, 1, pageCount)
+        local first = (browserState.Page - 1) * browserState.PageSize + 1
+        local last = math.min(first + browserState.PageSize - 1, #results)
+        browserResultLabel.Text = string.format("%s  /  %s  /  %d RESULT%s", string.upper(browserState.Kind), string.upper(browserState.Family), #results, #results == 1 and "" or "S")
+        browserPageLabel.Text = string.format("PAGE %d / %d", browserState.Page, pageCount)
+        browserGrid.CanvasPosition = Vector2.zero
+
+        for index = first, last do
+            local item = results[index]
+            local selected = state.FESelections[item.Kind] == item.Key
+            local card = create("ImageButton", {
+                AutoButtonColor = false,
+                BackgroundColor3 = selected and (COLORS.surfaceHover or Color3.fromRGB(48, 28, 70)) or (COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39)),
+                BackgroundTransparency = 0.04,
+                BorderSizePixel = 0,
+                Image = "",
+                LayoutOrder = index,
+                Size = UDim2.fromOffset(146, 154),
+                ZIndex = 605,
+            }, browserGrid)
+            addCorner(card, 10)
+            addStroke(card, selected and (COLORS.accentBright or Color3.fromRGB(166, 93, 255)) or rarityColor(item.Rarity), selected and 2 or 1, selected and 0.05 or 0.42)
+            local image = create("ImageLabel", {
+                BackgroundColor3 = COLORS.rail or Color3.fromRGB(13, 8, 22),
+                BackgroundTransparency = 0.12,
+                BorderSizePixel = 0,
+                Image = item.Image,
+                Position = UDim2.fromOffset(7, 7),
+                ScaleType = Enum.ScaleType.Fit,
+                Size = UDim2.new(1, -14, 0, 94),
+                ZIndex = 606,
+            }, card)
+            addCorner(image, 8)
+            if item.Image == "" then
+                create("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.GothamBold, Size = UDim2.fromScale(1, 1), Text = "NO IMAGE", TextColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157), TextSize = 10, ZIndex = 607}, image)
+            end
+            create("TextLabel", {
+                BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold,
+                Position = UDim2.fromOffset(8, 105),
+                Size = UDim2.new(1, -16, 0, 30),
+                Text = item.Display,
+                TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
+                TextSize = 10,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
+                ZIndex = 606,
+            }, card)
+            create("TextLabel", {
+                BackgroundTransparency = 1,
+                Font = Enum.Font.GothamBold,
+                Position = UDim2.new(0, 8, 1, -18),
+                Size = UDim2.new(1, -16, 0, 14),
+                Text = string.upper(item.Rarity),
+                TextColor3 = rarityColor(item.Rarity),
+                TextSize = 9,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                ZIndex = 606,
+            }, card)
+            browserCards[#browserCards + 1] = card
+            card.Activated:Connect(function()
+                browserState.PreviewKey = item.Key
+                if cosmeticControls.Refresh then cosmeticControls.Refresh() end
+            end)
+        end
+
+        local previewItem = browserItem(browserState.Kind, browserState.PreviewKey)
+            or browserItem(browserState.Kind, state.FESelections[browserState.Kind])
+            or results[1]
+        if previewItem then
+            browserState.PreviewKey = previewItem.Key
+            browserPreviewImage.Image = previewItem.Image
+            browserPreviewName.Text = previewItem.Display
+            browserPreviewMeta.Text = string.format("%s\n%s  /  %s\n%s", previewItem.Key, previewItem.Kind, previewItem.Family, previewItem.Rarity)
+            browserPreviewMeta.TextColor3 = rarityColor(previewItem.Rarity)
+            browserEquipButton.Text = state.FESelections[previewItem.Kind] == previewItem.Key and "EQUIPPED LOCALLY" or "EQUIP LOCALLY"
+            browserEquipButton.Active = state.FESelections[previewItem.Kind] ~= previewItem.Key
+        else
+            browserState.PreviewKey = nil
+            browserPreviewImage.Image = ""
+            browserPreviewName.Text = "No cosmetics found"
+            browserPreviewMeta.Text = "Try another search or family."
+            browserEquipButton.Text = "NOTHING TO EQUIP"
+            browserEquipButton.Active = false
+        end
+        if gui then
+            gui:SetAttribute("SniperArenaCosmeticBrowserReady", true)
+            gui:SetAttribute("SniperArenaCosmeticBrowserKind", browserState.Kind)
+            gui:SetAttribute("SniperArenaCosmeticBrowserResults", #results)
+            gui:SetAttribute("SniperArenaCosmeticBrowserPage", browserState.Page)
+            gui:SetAttribute("SniperArenaCosmeticBrowserCards", math.max(last - first + 1, 0))
+        end
+    end
+
+    buildCosmeticBrowser()
+    CosmeticSection:AddButton({Name = "Open FE Cosmetic Inventory", Description = "Browse the game's real item images in a separate searchable card inventory.", Callback = function()
+        if state.CosmeticBrowserRoot then
+            state.CosmeticBrowserRoot.Visible = true
+            browserState.PreviewKey = state.FESelections[browserState.Kind]
+            cosmeticControls.Refresh(true)
+        end
+    end})
+    end
+    installCosmeticBrowser()
+    end
     CosmeticSection:AddButton({Name = "Reapply FE Cosmetics", Callback = function()
         local localCount = tryApplyLocalCosmeticSlots()
         local combatCount = applyCombatCosmetics()
@@ -1596,6 +2114,10 @@ return function(context)
         state.AutoOpenCases = false
         state.SlideBoost = false
         state.JumpBoost = false
+        if state.CosmeticBrowserRoot then
+            state.CosmeticBrowserRoot:Destroy()
+            state.CosmeticBrowserRoot = nil
+        end
         restoreJumpBoost()
         restoreFECosmetics()
         state.FEUnlock = false

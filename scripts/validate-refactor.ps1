@@ -1241,6 +1241,13 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_melee_skin"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_glove"' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_charm"' -and
+    $sniperArenaText -match 'local function cosmeticImage\(config\)' -and
+    $sniperArenaText -match 'state\.CosmeticItemsByKind' -and
+    $sniperArenaText -match 'Name = "Open FE Cosmetic Inventory"' -and
+    $sniperArenaText -match 'cosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"|CosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"' -and
+    $sniperArenaText -match 'PageSize = 60' -and
+    $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserReady", true\)' -and
+    $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserCards"' -and
     $sniperArenaText -match 'weapon\.Name = cosmeticKey or realName' -and
     $sniperArenaText -match 'weapon\.Name = realName' -and
     $sniperArenaText -match 'restoreFECosmetics\(\)' -and
@@ -1609,7 +1616,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Sniper Arena support: PASS (dead-target rejection, silent aim/cursor/trigger, player-only big head, FE local cosmetics, native jump/slide, weapon modifiers, ESP, server progression)"
+Write-Host "Sniper Arena support: PASS (dead-target rejection, silent aim/cursor/trigger, player-only big head, FE image-card cosmetic inventory, native jump/slide, weapon modifiers, ESP, server progression)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Catch 1 Billion Ducks support: PASS (static native-route contract for lobby chores, cross-place resume, hunt, sell, weapons, upgrades, dogs, and rewards)"
