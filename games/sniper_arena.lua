@@ -141,8 +141,20 @@ return function(context)
     local defaults = {
         Brightness = Lighting.Brightness,
         ClockTime = Lighting.ClockTime,
+        ExposureCompensation = Lighting.ExposureCompensation,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+        ShadowSoftness = Lighting.ShadowSoftness,
         FogEnd = Lighting.FogEnd,
         GlobalShadows = Lighting.GlobalShadows,
+        Technology = Lighting.Technology,
+        QualityLevel = (function()
+            local value
+            pcall(function() value = settings().Rendering.QualityLevel end)
+            return value
+        end)(),
         CameraFov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView or 70,
     }
     local state = {
@@ -164,6 +176,9 @@ return function(context)
         TriggerNativeAttempts = 0,
         TriggerNativeShots = 0,
         TriggerMouseFallbacks = 0,
+        TriggerRaycastHits = 0,
+        TriggerViewmodelBlocks = 0,
+        TriggerBlockReason = "idle",
         LastTriggerTarget = "",
         HitboxAssistedShots = 0,
         HitboxExpand = false,
@@ -173,6 +188,8 @@ return function(context)
         FastReload = false,
         ModifiedWeaponValues = 0,
         EnemyEsp = false,
+        EspRefreshes = 0,
+        EspLastError = "",
         EspNameText = false,
         EspNameRange = 350,
         EspMaxDistance = 2000,
@@ -180,6 +197,10 @@ return function(context)
         EspAccent = Color3.fromRGB(155, 103, 255),
         EspFillTransparency = 0.78,
         Fullbright = false,
+        RealismGraphics = false,
+        RealismStrength = 0.82,
+        RealismDepthOfField = false,
+        RealismFutureApplied = false,
         FovOverride = false,
         CameraFov = 80,
         IsAiming = false,
@@ -221,6 +242,106 @@ return function(context)
     local feFakeKeys = {}
     local feOriginalSlots = {}
     local feCharmState
+    state.GraphicsEffects = {}
+    state.VisibilityControls = {}
+    state.SetHiddenProperty = type(runtimeEnvironment.sethiddenproperty) == "function" and runtimeEnvironment.sethiddenproperty
+        or (type(sethiddenproperty) == "function" and sethiddenproperty or nil)
+
+    state.EnsureGraphicsEffect = function(className, name)
+        local effect = state.GraphicsEffects[name]
+        if effect and effect.Parent == Lighting then return effect end
+        effect = Instance.new(className)
+        effect.Name = name
+        effect.Parent = Lighting
+        state.GraphicsEffects[name] = effect
+        return effect
+    end
+
+    state.DestroyGraphicsEffects = function()
+        for name, effect in pairs(state.GraphicsEffects) do
+            if effect then pcall(function() effect:Destroy() end) end
+            state.GraphicsEffects[name] = nil
+        end
+    end
+
+    state.RestoreGraphicsDefaults = function()
+        Lighting.Brightness = defaults.Brightness
+        Lighting.ClockTime = defaults.ClockTime
+        Lighting.ExposureCompensation = defaults.ExposureCompensation
+        Lighting.Ambient = defaults.Ambient
+        Lighting.OutdoorAmbient = defaults.OutdoorAmbient
+        Lighting.EnvironmentDiffuseScale = defaults.EnvironmentDiffuseScale
+        Lighting.EnvironmentSpecularScale = defaults.EnvironmentSpecularScale
+        Lighting.ShadowSoftness = defaults.ShadowSoftness
+        Lighting.FogEnd = defaults.FogEnd
+        Lighting.GlobalShadows = defaults.GlobalShadows
+        if state.SetHiddenProperty then pcall(state.SetHiddenProperty, Lighting, "Technology", defaults.Technology) end
+        if defaults.QualityLevel ~= nil then
+            pcall(function() settings().Rendering.QualityLevel = defaults.QualityLevel end)
+        end
+        state.RealismFutureApplied = false
+        state.DestroyGraphicsEffects()
+    end
+
+    state.ApplyRealismGraphics = function()
+        if not state.RealismGraphics then
+            state.RestoreGraphicsDefaults()
+            return
+        end
+
+        local strength = math.clamp(tonumber(state.RealismStrength) or 0.82, 0, 1)
+        Lighting.Brightness = math.max(1, defaults.Brightness + 0.2 * strength)
+        Lighting.ExposureCompensation = defaults.ExposureCompensation - 0.12 * strength
+        Lighting.Ambient = defaults.Ambient:Lerp(Color3.fromRGB(54, 62, 78), 0.68 * strength)
+        Lighting.OutdoorAmbient = defaults.OutdoorAmbient:Lerp(Color3.fromRGB(116, 128, 150), 0.52 * strength)
+        Lighting.EnvironmentDiffuseScale = math.clamp(defaults.EnvironmentDiffuseScale * (1 - 0.25 * strength), 0, 1)
+        Lighting.EnvironmentSpecularScale = math.clamp(math.max(defaults.EnvironmentSpecularScale, 0.88 + 0.12 * strength), 0, 1)
+        Lighting.ShadowSoftness = defaults.ShadowSoftness + (0.12 - defaults.ShadowSoftness) * (0.9 * strength)
+        Lighting.FogEnd = defaults.FogEnd
+        Lighting.GlobalShadows = true
+
+        if not state.RealismFutureApplied or Lighting.Technology ~= Enum.Technology.Future then
+            local applied = false
+            if state.SetHiddenProperty then
+                applied = pcall(state.SetHiddenProperty, Lighting, "Technology", Enum.Technology.Future)
+            end
+            state.RealismFutureApplied = applied
+            pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level21 end)
+        end
+
+        local color = state.EnsureGraphicsEffect("ColorCorrectionEffect", "VORSniperRealismColor")
+        color.Enabled = true
+        color.Brightness = -0.04 * strength
+        color.Contrast = 0.28 * strength
+        color.Saturation = 0.035 * strength
+        color.TintColor = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 244, 232), 0.36 * strength)
+
+        local bloom = state.EnsureGraphicsEffect("BloomEffect", "VORSniperRealismBloom")
+        bloom.Enabled = true
+        bloom.Intensity = 0.12 + 0.2 * strength
+        bloom.Size = 28 + 18 * strength
+        bloom.Threshold = 1.38 - 0.23 * strength
+
+        local rays = state.EnsureGraphicsEffect("SunRaysEffect", "VORSniperRealismRays")
+        rays.Enabled = true
+        rays.Intensity = 0.09 * strength
+        rays.Spread = 0.72
+
+        local atmosphere = state.EnsureGraphicsEffect("Atmosphere", "VORSniperRealismAtmosphere")
+        atmosphere.Density = 0.22 * strength
+        atmosphere.Offset = 0.05
+        atmosphere.Color = Color3.fromRGB(205, 220, 235)
+        atmosphere.Decay = Color3.fromRGB(92, 105, 126)
+        atmosphere.Glare = 0.24 * strength
+        atmosphere.Haze = 1.45 * strength
+
+        local depth = state.EnsureGraphicsEffect("DepthOfFieldEffect", "VORSniperRealismDepth")
+        depth.Enabled = state.RealismDepthOfField == true
+        depth.FarIntensity = 0.13 * strength
+        depth.FocusDistance = 38
+        depth.InFocusRadius = 30
+        depth.NearIntensity = 0.055 * strength
+    end
 
     local originalSlide, boostedSlide
     if SlideHelper and type(SlideHelper.Slide) == "function" then
@@ -664,15 +785,65 @@ return function(context)
         return false
     end
 
+    state.ResolveTriggerTarget = function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            local mousePosition = Vector2.new(LocalMouse.X, LocalMouse.Y)
+            if mousePosition.X <= 0 and mousePosition.Y <= 0 then
+                mousePosition = camera.ViewportSize * 0.5
+            end
+            local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
+            local filter = {camera}
+            if LocalPlayer.Character then filter[#filter + 1] = LocalPlayer.Character end
+            local temp = workspace:FindFirstChild("_Temp")
+            if temp then filter[#filter + 1] = temp end
+            local highlightRoot = workspace:FindFirstChild("Highlight")
+            if highlightRoot then filter[#filter + 1] = highlightRoot end
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = filter
+            params.IgnoreWater = true
+            params.RespectCanCollide = false
+            local result = workspace:Raycast(ray.Origin, ray.Direction * 5000, params)
+            if result and result.Instance then
+                local hostile = hostileForTarget(result.Instance)
+                if hostile then state.TriggerRaycastHits += 1 end
+                return result.Instance, hostile
+            end
+        end
+
+        local target = LocalMouse.Target
+        if target and ((camera and target:IsDescendantOf(camera))
+            or (LocalPlayer.Character and target:IsDescendantOf(LocalPlayer.Character))) then
+            state.TriggerViewmodelBlocks += 1
+            return nil, nil
+        end
+        return target, hostileForTarget(target)
+    end
+
     local lastTriggerTarget, lastTriggerAt = nil, -math.huge
     local function tryTrigger()
-        if not state.Alive or not state.TriggerBot or not isActiveMatch()
-            or menuBlocksTrigger() or UserInputService:GetFocusedTextBox() ~= nil then
+        if not state.Alive or not state.TriggerBot then
+            state.TriggerBlockReason = "disabled"
             lastTriggerTarget = nil
             return false
         end
-        local target = LocalMouse.Target
-        local hostile = hostileForTarget(target)
+        if not isActiveMatch() then
+            state.TriggerBlockReason = "no active match"
+            lastTriggerTarget = nil
+            return false
+        end
+        if menuBlocksTrigger() then
+            state.TriggerBlockReason = "VOR or Roblox menu open"
+            lastTriggerTarget = nil
+            return false
+        end
+        if UserInputService:GetFocusedTextBox() ~= nil then
+            state.TriggerBlockReason = "typing"
+            lastTriggerTarget = nil
+            return false
+        end
+        local target, hostile = state.ResolveTriggerTarget()
         if hostile and state.HitboxExpand and not hasVisibleBody(hostile.Model) then
             target, hostile = nil, nil
         end
@@ -681,9 +852,11 @@ return function(context)
             hostile = hostileForTarget(target)
         end
         if not target or not hostile then
+            state.TriggerBlockReason = "no hostile under crosshair"
             lastTriggerTarget = nil
             return false
         end
+        state.TriggerBlockReason = "hostile acquired"
         local now = os.clock()
         local firstHover = target ~= lastTriggerTarget
         local repeatDelay = math.max(tonumber(state.TriggerDelay) or 0, 1 / 240)
@@ -760,54 +933,63 @@ return function(context)
         local _, _, localRoot = character()
         local active = {}
         for _, hostile in ipairs(hostileModels()) do
-            local model, humanoid, root = hostile.Model, hostile.Humanoid, hostile.Root
-            active[model] = true
-            if state.EnemyEsp then
-                local distance = localRoot and (root.Position - localRoot.Position).Magnitude or math.huge
-                if distance <= state.EspMaxDistance then
-                    local entry = highlights[model]
-                    if not entry or not entry.Highlight.Parent then
-                        clearEsp(model)
-                        local highlight = Instance.new("Highlight")
-                        highlight.Name = "VORSniperEnemy"
-                        highlight.FillColor = state.EspColor
-                        highlight.OutlineColor = state.EspAccent
-                        highlight.FillTransparency = state.EspFillTransparency
-                        highlight.OutlineTransparency = 0
-                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        highlight.Adornee = model
-                        highlight.Parent = model
-                        local billboard = Instance.new("BillboardGui")
-                        billboard.Name = "VORSniperLabel"
-                        billboard.AlwaysOnTop = true
-                        billboard.Size = UDim2.fromOffset(160, 20)
-                        billboard.StudsOffset = Vector3.new(0, 2.85, 0)
-                        billboard.Adornee = model:FindFirstChild("Head") or root
-                        billboard.Parent = model
-                        local label = Instance.new("TextLabel")
-                        label.BackgroundTransparency = 1
-                        label.Size = UDim2.fromScale(1, 1)
-                        label.Font = Enum.Font.GothamMedium
-                        label.TextColor3 = state.EspColor
-                        label.TextStrokeColor3 = Color3.fromRGB(5, 8, 14)
-                        label.TextStrokeTransparency = 0.35
-                        label.TextSize = 11
-                        label.Parent = billboard
-                        entry = {Highlight = highlight, Billboard = billboard, Label = label}
-                        highlights[model] = entry
-                    end
-                    entry.Highlight.FillColor = state.EspColor
-                    entry.Highlight.OutlineColor = state.EspAccent
-                    entry.Highlight.FillTransparency = state.EspFillTransparency
-                    entry.Billboard.Enabled = state.EspNameText and distance <= state.EspNameRange
-                    entry.Label.TextColor3 = state.EspColor
-                    entry.Label.Text = hostile.Kind == "BOT" and "BOT" or hostile.Name
+            local model = hostile.Model
+            local ok, err = pcall(function()
+                local root = hostile.Root
+                if not model or not model.Parent or not root or not root.Parent then return end
+                active[model] = true
+                if state.EnemyEsp then
+                    local distance = localRoot and localRoot.Parent and (root.Position - localRoot.Position).Magnitude or math.huge
+                    if distance <= state.EspMaxDistance then
+                        local entry = highlights[model]
+                        if not entry or not entry.Highlight or not entry.Highlight.Parent then
+                            clearEsp(model)
+                            local highlight = Instance.new("Highlight")
+                            highlight.Name = "VORSniperEnemy"
+                            highlight.FillColor = state.EspColor
+                            highlight.OutlineColor = state.EspAccent
+                            highlight.FillTransparency = state.EspFillTransparency
+                            highlight.OutlineTransparency = 0
+                            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                            highlight.Adornee = model
+                            highlight.Parent = model
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "VORSniperLabel"
+                            billboard.AlwaysOnTop = true
+                            billboard.Size = UDim2.fromOffset(160, 20)
+                            billboard.StudsOffset = Vector3.new(0, 2.85, 0)
+                            billboard.Adornee = model:FindFirstChild("Head") or root
+                            billboard.Parent = model
+                            local label = Instance.new("TextLabel")
+                            label.BackgroundTransparency = 1
+                            label.Size = UDim2.fromScale(1, 1)
+                            label.Font = Enum.Font.GothamMedium
+                            label.TextColor3 = state.EspColor
+                            label.TextStrokeColor3 = Color3.fromRGB(5, 8, 14)
+                            label.TextStrokeTransparency = 0.35
+                            label.TextSize = 11
+                            label.Parent = billboard
+                            entry = {Highlight = highlight, Billboard = billboard, Label = label}
+                            highlights[model] = entry
+                        end
+                        entry.Highlight.FillColor = state.EspColor
+                        entry.Highlight.OutlineColor = state.EspAccent
+                        entry.Highlight.FillTransparency = state.EspFillTransparency
+                        entry.Billboard.Enabled = state.EspNameText and distance <= state.EspNameRange
+                        entry.Label.TextColor3 = state.EspColor
+                        entry.Label.Text = hostile.Kind == "BOT" and "BOT" or hostile.Name
+                    else clearEsp(model) end
                 else clearEsp(model) end
-            else clearEsp(model) end
+            end)
+            if not ok then
+                state.EspLastError = tostring(err)
+                if model then clearEsp(model) end
+            end
         end
         for model in pairs(highlights) do
             if not active[model] then clearEsp(model) end
         end
+        state.EspRefreshes += 1
     end
 
     local function ownedWeapons()
@@ -986,6 +1168,7 @@ return function(context)
     local ORIGINAL_COSMETIC = "Original / Server Equipped"
     local cosmeticCatalog = {Sniper = {}, Melee = {}, Glove = {}, Charm = {}}
     local cosmeticKeyByLabel = {}
+    state.CosmeticBrowserGui = nil
     state.CosmeticBrowserRoot = nil
     state.CosmeticItemsByKind = {Sniper = {}, Melee = {}, Glove = {}, Charm = {}}
     state.CosmeticLabelByKey = {}
@@ -1517,6 +1700,7 @@ return function(context)
     local browserState = {Kind = "Sniper", Family = "All", Query = "", Page = 1, PageSize = 12, PreviewKey = nil}
     local browserCards, browserFamilies, browserCategoryButtons = {}, {}, {}
     local browserGrid, browserFamilyBar, browserPageLabel, browserResultLabel
+    local browserPanel, browserBackdrop, browserBubble
     local browserPreviewImage, browserPreviewName, browserPreviewMeta, browserEquipButton, browserOriginalButton
     local browserPreviewViewport, browserPreviewWorld, browserPreviewCamera, browserPreviewModel, browserPreviewFallback
     local browserPreviewBasePivot, browserPreviewDistance = nil, 8
@@ -1675,6 +1859,17 @@ return function(context)
         if state.CosmeticBrowserRoot then state.CosmeticBrowserRoot.Visible = false end
     end
 
+    local function setBrowserMinimized(minimized)
+        minimized = minimized == true
+        if not state.CosmeticBrowserRoot then return end
+        state.CosmeticBrowserRoot.Visible = true
+        if browserPanel then browserPanel.Visible = not minimized end
+        if browserBackdrop then browserBackdrop.Visible = not minimized end
+        if browserBubble then browserBubble.Visible = minimized end
+        state.CosmeticBrowserMinimized = minimized
+        if gui then gui:SetAttribute("SniperArenaCosmeticBrowserMinimized", minimized) end
+    end
+
     local function makeBrowserButton(parent, text, size, position)
         local button = create("TextButton", {
             AutoButtonColor = false,
@@ -1696,48 +1891,150 @@ return function(context)
 
     local function buildCosmeticBrowser()
         if not gui or state.CosmeticBrowserRoot then return end
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10)
+        if not playerGui then return end
+        local compactLayout = camera.ViewportSize.X < 900 or camera.ViewportSize.Y < 600
+        local staleBrowser = playerGui:FindFirstChild("VORSniperCosmeticInventory")
+        if staleBrowser then staleBrowser:Destroy() end
+        state.CosmeticBrowserGui = create("ScreenGui", {
+            DisplayOrder = math.max(1001, (tonumber(gui.DisplayOrder) or 0) + 10),
+            Enabled = true,
+            IgnoreGuiInset = true,
+            Name = "VORSniperCosmeticInventory",
+            ResetOnSpawn = false,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        }, playerGui)
         state.CosmeticBrowserRoot = create("Frame", {
-            Active = true,
+            Active = false,
             BackgroundTransparency = 1,
             Position = UDim2.fromScale(0, 0),
             Size = UDim2.fromScale(1, 1),
             Visible = false,
             ZIndex = 600,
-        }, gui)
+        }, state.CosmeticBrowserGui)
         state.CosmeticBrowserRoot.Name = "SniperCosmeticBrowser"
 
-        local backdrop = create("TextButton", {
-            AutoButtonColor = false,
+        browserBackdrop = create("Frame", {
+            Active = false,
             BackgroundColor3 = Color3.new(0, 0, 0),
-            BackgroundTransparency = 0.28,
+            BackgroundTransparency = 0.52,
             BorderSizePixel = 0,
             Size = UDim2.fromScale(1, 1),
-            Text = "",
             ZIndex = 600,
         }, state.CosmeticBrowserRoot)
-        track(backdrop.Activated:Connect(closeCosmeticBrowser))
 
         local panel = create("Frame", {
+            Active = true,
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundColor3 = COLORS.surface or Color3.fromRGB(18, 11, 29),
             BackgroundTransparency = 0.02,
             BorderSizePixel = 0,
             Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.new(0.94, 0, 0.90, 0),
+            Size = compactLayout and UDim2.new(0.98, 0, 0.96, 0) or UDim2.new(0.96, 0, 0.92, 0),
             ZIndex = 602,
         }, state.CosmeticBrowserRoot)
+        browserPanel = panel
+        panel.Name = "InventoryWindow"
         addCorner(panel, 16)
         addStroke(panel, COLORS.accentBright or Color3.fromRGB(151, 70, 255), 1.4, 0.12)
-        create("UISizeConstraint", {MinSize = Vector2.new(820, 520), MaxSize = Vector2.new(1680, 940)}, panel)
+        create("UISizeConstraint", {MinSize = Vector2.new(360, 320), MaxSize = Vector2.new(1680, 940)}, panel)
+
+        browserBubble = create("TextButton", {
+            Active = true,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            AutoButtonColor = false,
+            BackgroundColor3 = COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39),
+            BackgroundTransparency = 0.02,
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamBold,
+            Position = UDim2.new(1, -58, 0.5, 0),
+            Size = UDim2.fromOffset(58, 58),
+            Text = utf8.char(0x1F3AF),
+            TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
+            TextSize = 29,
+            Visible = false,
+            ZIndex = 620,
+        }, state.CosmeticBrowserRoot)
+        browserBubble.Name = "DraggableInventoryBubble"
+        addCorner(browserBubble, 18)
+        addStroke(browserBubble, COLORS.accentBright or Color3.fromRGB(151, 70, 255), 2, 0.08)
+        local bubbleDrag = {Active = false, Start = nil, Center = nil, Moved = false}
+        track(browserBubble.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            bubbleDrag.Active = true
+            bubbleDrag.Start = input.Position
+            bubbleDrag.Center = Vector2.new(
+                browserBubble.AbsolutePosition.X + browserBubble.AbsoluteSize.X * 0.5,
+                browserBubble.AbsolutePosition.Y + browserBubble.AbsoluteSize.Y * 0.5
+            )
+            bubbleDrag.Moved = false
+        end))
+        track(UserInputService.InputChanged:Connect(function(input)
+            if not bubbleDrag.Active or (input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+            local delta = input.Position - bubbleDrag.Start
+            bubbleDrag.Moved = bubbleDrag.Moved or delta.Magnitude > 8
+            local rootSize = state.CosmeticBrowserRoot.AbsoluteSize
+            local half = browserBubble.AbsoluteSize * 0.5
+            local center = bubbleDrag.Center + delta
+            center = Vector2.new(
+                math.clamp(center.X, half.X + 8, math.max(half.X + 8, rootSize.X - half.X - 8)),
+                math.clamp(center.Y, half.Y + 8, math.max(half.Y + 8, rootSize.Y - half.Y - 8))
+            )
+            browserBubble.Position = UDim2.fromOffset(center.X, center.Y)
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if not bubbleDrag.Active or (input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+            bubbleDrag.Active = false
+            if not bubbleDrag.Moved then setBrowserMinimized(false) end
+        end))
+
+        local dragHandle = create("TextButton", {
+            Active = true,
+            AutoButtonColor = false,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(0, 0),
+            Size = UDim2.new(1, 0, 0, 62),
+            Text = "",
+            ZIndex = 603,
+        }, panel)
+        dragHandle.Name = "WindowDragHandle"
+        local windowDrag = {Active = false, Start = nil, Center = nil}
+        track(dragHandle.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            windowDrag.Active = true
+            windowDrag.Start = input.Position
+            windowDrag.Center = Vector2.new(
+                panel.AbsolutePosition.X + panel.AbsoluteSize.X * 0.5,
+                panel.AbsolutePosition.Y + panel.AbsoluteSize.Y * 0.5
+            )
+        end))
+        track(UserInputService.InputChanged:Connect(function(input)
+            if not windowDrag.Active or (input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+            local delta = input.Position - windowDrag.Start
+            local rootSize = state.CosmeticBrowserRoot.AbsoluteSize
+            local half = panel.AbsoluteSize * 0.5
+            local center = windowDrag.Center + delta
+            center = Vector2.new(
+                math.clamp(center.X, half.X + 8, math.max(half.X + 8, rootSize.X - half.X - 8)),
+                math.clamp(center.Y, half.Y + 8, math.max(half.Y + 8, rootSize.Y - half.Y - 8))
+            )
+            panel.Position = UDim2.fromOffset(center.X, center.Y)
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                windowDrag.Active = false
+            end
+        end))
 
         create("TextLabel", {
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
             Position = UDim2.fromOffset(22, 8),
             Size = UDim2.new(0.42, 0, 0, 44),
-            Text = "FE COSMETIC INVENTORY",
+            Text = compactLayout and "FE INVENTORY" or "FE COSMETIC INVENTORY",
             TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
-            TextSize = 18,
+            TextSize = compactLayout and 14 or 18,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 604,
         }, panel)
@@ -1750,6 +2047,7 @@ return function(context)
             TextColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157),
             TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
+            Visible = not compactLayout,
             ZIndex = 604,
         }, panel)
 
@@ -1761,8 +2059,8 @@ return function(context)
             Font = Enum.Font.Gotham,
             PlaceholderColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157),
             PlaceholderText = "Search name, family, rarity...",
-            Position = UDim2.new(0.54, 0, 0, 13),
-            Size = UDim2.new(0.36, 0, 0, 38),
+            Position = compactLayout and UDim2.new(0.34, 0, 0, 10) or UDim2.new(0.54, 0, 0, 13),
+            Size = compactLayout and UDim2.new(0.66, -108, 0, 38) or UDim2.new(0.30, 0, 0, 38),
             Text = "",
             TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
             TextSize = 12,
@@ -1773,13 +2071,18 @@ return function(context)
         addStroke(search, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.35)
         create("UIPadding", {PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14)}, search)
 
+        local minimize = makeBrowserButton(panel, "-", UDim2.fromOffset(40, 38), UDim2.new(1, -100, 0, 13))
+        minimize.Name = "MinimizeToBubble"
+        minimize.TextSize = 22
+        track(minimize.Activated:Connect(function() setBrowserMinimized(true) end))
         local close = makeBrowserButton(panel, "×", UDim2.fromOffset(40, 38), UDim2.new(1, -52, 0, 13))
+        close.Name = "CloseInventory"
         close.TextSize = 22
         track(close.Activated:Connect(closeCosmeticBrowser))
 
         local categoryBar = create("Frame", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(18, 66),
+            Position = UDim2.fromOffset(18, compactLayout and 58 or 66),
             Size = UDim2.new(1, -36, 0, 38),
             ZIndex = 604,
         }, panel)
@@ -1802,7 +2105,7 @@ return function(context)
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             CanvasSize = UDim2.new(),
-            Position = UDim2.fromOffset(18, 110),
+            Position = UDim2.fromOffset(18, compactLayout and 102 or 110),
             ScrollBarImageColor3 = COLORS.accentBright or Color3.fromRGB(151, 70, 255),
             ScrollBarThickness = 3,
             ScrollingDirection = Enum.ScrollingDirection.X,
@@ -1812,8 +2115,8 @@ return function(context)
 
         local body = create("Frame", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(18, 160),
-            Size = UDim2.new(1, -36, 1, -178),
+            Position = UDim2.fromOffset(18, compactLayout and 148 or 160),
+            Size = UDim2.new(1, -36, 1, compactLayout and -158 or -178),
             ZIndex = 604,
         }, panel)
         local gridPanel = create("Frame", {
@@ -2172,11 +2475,12 @@ return function(context)
     end
 
     buildCosmeticBrowser()
-    CosmeticSection:AddButton({Name = "Open FE Cosmetic Inventory", Description = "Browse the game's real item images in a separate searchable card inventory.", Callback = function()
+    CosmeticSection:AddButton({Name = "Open Separate FE Inventory", Description = "Opens the independent draggable inventory and hides the main VOR window without closing the inventory.", Callback = function()
         if state.CosmeticBrowserRoot then
-            state.CosmeticBrowserRoot.Visible = true
+            setBrowserMinimized(false)
             browserState.PreviewKey = state.FESelections[browserState.Kind]
             cosmeticControls.Refresh(true)
+            if Window.SetVisible then Window:SetVisible(false) end
         end
     end})
     end
@@ -2237,15 +2541,44 @@ return function(context)
     EspSection:AddSlider({Name = "Body Fill", Flag = "sniper_arena_esp_fill", Min = 0, Max = 100, Step = 1, Default = 22, Suffix = "%", Callback = function(v) state.EspFillTransparency = 1 - math.clamp(tonumber(v) or 22, 0, 100) / 100 end})
     EspSection:AddSlider({Name = "ESP Range", Flag = "sniper_arena_esp_range", Min = 100, Max = 5000, Step = 100, Default = 2000, Suffix = "m", Callback = function(v) state.EspMaxDistance = tonumber(v) or 2000 end})
 
-    VisibilitySection:AddToggle({Name = "Fullbright", Flag = "sniper_arena_fullbright", Default = false, Callback = function(v)
+    state.VisibilityControls.Fullbright = VisibilitySection:AddToggle({Name = "Fullbright", Description = "Flat visibility mode. This disables realistic shadows and is mutually exclusive with RTX-style graphics.", Flag = "sniper_arena_fullbright", Default = false, Callback = function(v)
         state.Fullbright = v == true
-        if not state.Fullbright then
-            Lighting.Brightness = defaults.Brightness
-            Lighting.ClockTime = defaults.ClockTime
-            Lighting.FogEnd = defaults.FogEnd
-            Lighting.GlobalShadows = defaults.GlobalShadows
+        if state.Fullbright and state.RealismGraphics then
+            state.RealismGraphics = false
+            if state.VisibilityControls.Realism then state.VisibilityControls.Realism:Set(false) end
+        elseif not state.Fullbright and not state.RealismGraphics then
+            state.RestoreGraphicsDefaults()
         end
     end})
+    VisibilitySection:AddParagraph({
+        Title = "RTX Ultra realism",
+        Content = "Client-only Future lighting, harder contact shadows, atmospheric depth, stronger specular response, cinematic grading, bloom, sun rays, and optional depth of field. It is still not hardware ray tracing; Roblox does not expose that renderer.",
+    })
+    state.VisibilityControls.Realism = VisibilitySection:AddToggle({Name = "RTX ULTRA Realism", Description = "Maximum local renderer preset for capable GPUs: Future lighting, shadows, atmosphere, reflections, and post processing at Roblox quality level 21.", Flag = "sniper_arena_rtx_realism", Default = false, Callback = function(v)
+        state.RealismGraphics = v == true
+        if state.RealismGraphics and state.Fullbright then
+            state.Fullbright = false
+            if state.VisibilityControls.Fullbright then state.VisibilityControls.Fullbright:Set(false) end
+        end
+        state.ApplyRealismGraphics()
+    end})
+    state.VisibilityControls.RealismStrength = VisibilitySection:AddSlider({Name = "Realism Strength", Flag = "sniper_arena_rtx_strength", Min = 0, Max = 100, Step = 1, Default = 82, Suffix = "%", Callback = function(v)
+        state.RealismStrength = math.clamp((tonumber(v) or 82) / 100, 0, 1)
+        if state.RealismGraphics then state.ApplyRealismGraphics() end
+    end})
+    state.VisibilityControls.Depth = VisibilitySection:AddToggle({Name = "Cinematic Depth of Field", Description = "Optional subtle camera focus. Leave this off for the clearest competitive view.", Flag = "sniper_arena_rtx_dof", Default = false, Callback = function(v)
+        state.RealismDepthOfField = v == true
+        if state.RealismGraphics then state.ApplyRealismGraphics() end
+    end})
+    VisibilitySection:AddButton({Name = "Restore Original Graphics", Persist = false, Callback = function()
+        state.Fullbright = false
+        state.RealismGraphics = false
+        if state.VisibilityControls.Fullbright then state.VisibilityControls.Fullbright:Set(false) end
+        if state.VisibilityControls.Realism then state.VisibilityControls.Realism:Set(false) end
+        state.RestoreGraphicsDefaults()
+        notify("Original Sniper Arena lighting restored", COLORS.success)
+    end})
+    state.StatusLabels.Graphics = VisibilitySection:AddLabel("Graphics: original game lighting")
     VisibilitySection:AddToggle({Name = "Camera FOV Override", Flag = "sniper_arena_fov_override", Default = false, Callback = function(v)
         state.FovOverride = v == true
         local camera = workspace.CurrentCamera
@@ -2289,10 +2622,26 @@ return function(context)
         if input.UserInputType == Enum.UserInputType.MouseButton2 then state.IsAiming = false end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then state.IsFiring = false end
     end))
-    track(Players.PlayerRemoving:Connect(clearEsp))
+    track(Players.PlayerRemoving:Connect(function(player)
+        if player and player.Character then clearEsp(player.Character) end
+    end))
+    track(Players.PlayerAdded:Connect(function(player)
+        track(player.CharacterAdded:Connect(function()
+            task.defer(updateEsp)
+        end))
+    end))
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            track(player.CharacterAdded:Connect(function()
+                task.defer(updateEsp)
+            end))
+        end
+    end
 
     local function updateEnvironment()
-        if state.Fullbright then
+        if state.RealismGraphics then
+            state.ApplyRealismGraphics()
+        elseif state.Fullbright then
             Lighting.Brightness = 3
             Lighting.ClockTime = 14
             Lighting.FogEnd = 100000
@@ -2342,6 +2691,9 @@ return function(context)
         local _, humanoid = character()
         playerStatusLabel.Text = string.format("Health %s | Jump %.1f | Slide %.1fx", tostring(LocalPlayer:GetAttribute("Health") or "--"),
             humanoid and humanoid.JumpHeight or 0, state.SlideMultiplier)
+        state.StatusLabels.Graphics.Text = state.RealismGraphics
+            and string.format("Graphics: RTX ULTRA %d%% | %s", math.floor(state.RealismStrength * 100 + 0.5), tostring(Lighting.Technology):gsub("Enum.Technology.", ""))
+            or (state.Fullbright and "Graphics: Fullbright (shadows disabled)" or "Graphics: original game lighting")
         actionLabel.Text = "Last action: " .. state.LastAction
         pcall(function()
             gui:SetAttribute("SniperArenaModuleReady", true)
@@ -2386,6 +2738,9 @@ return function(context)
             gui:SetAttribute("SniperArenaTriggerNativeAttempts", state.TriggerNativeAttempts)
             gui:SetAttribute("SniperArenaTriggerNativeShots", state.TriggerNativeShots)
             gui:SetAttribute("SniperArenaTriggerMouseFallbacks", state.TriggerMouseFallbacks)
+            gui:SetAttribute("SniperArenaTriggerRaycastHits", state.TriggerRaycastHits)
+            gui:SetAttribute("SniperArenaTriggerViewmodelBlocks", state.TriggerViewmodelBlocks)
+            gui:SetAttribute("SniperArenaTriggerBlockReason", state.TriggerBlockReason)
             gui:SetAttribute("SniperArenaLastTriggerTarget", state.LastTriggerTarget)
             gui:SetAttribute("SniperArenaMouseClickAvailable", clickMouseOne ~= nil)
             gui:SetAttribute("SniperArenaNativeTriggerAvailable", CombatControllerApi ~= nil)
@@ -2397,6 +2752,17 @@ return function(context)
             gui:SetAttribute("SniperArenaFastReload", state.FastReload)
             gui:SetAttribute("SniperArenaModifiedWeaponValues", state.ModifiedWeaponValues)
             gui:SetAttribute("SniperArenaEnemyEsp", state.EnemyEsp)
+            gui:SetAttribute("SniperArenaEspRefreshes", state.EspRefreshes)
+            gui:SetAttribute("SniperArenaEspLastError", state.EspLastError)
+            gui:SetAttribute("SniperArenaRTXRealism", state.RealismGraphics)
+            gui:SetAttribute("SniperArenaRTXStrength", state.RealismStrength)
+            gui:SetAttribute("SniperArenaRTXDepthOfField", state.RealismDepthOfField)
+            gui:SetAttribute("SniperArenaRTXFutureApplied", state.RealismFutureApplied)
+            gui:SetAttribute("SniperArenaRTXTechnology", tostring(Lighting.Technology))
+            gui:SetAttribute("SniperArenaCosmeticBrowserStandalone", state.CosmeticBrowserGui ~= nil and state.CosmeticBrowserGui.Parent ~= nil)
+            gui:SetAttribute("SniperArenaCosmeticBrowserVisible", state.CosmeticBrowserRoot ~= nil and state.CosmeticBrowserRoot.Visible)
+            gui:SetAttribute("SniperArenaCosmeticBrowserMinimized", state.CosmeticBrowserMinimized == true)
+            gui:SetAttribute("SniperArenaCosmeticBrowserMobileReady", true)
         end)
     end
 
@@ -2418,7 +2784,11 @@ return function(context)
         state.AutoOpenCases = false
         state.SlideBoost = false
         state.JumpBoost = false
-        if state.CosmeticBrowserRoot then
+        if state.CosmeticBrowserGui then
+            state.CosmeticBrowserGui:Destroy()
+            state.CosmeticBrowserGui = nil
+            state.CosmeticBrowserRoot = nil
+        elseif state.CosmeticBrowserRoot then
             state.CosmeticBrowserRoot:Destroy()
             state.CosmeticBrowserRoot = nil
         end
@@ -2447,10 +2817,7 @@ return function(context)
         end
         for player in pairs(highlights) do clearEsp(player) end
         for _, object in ipairs(drawings) do pcall(function() object:Remove() end) end
-        Lighting.Brightness = defaults.Brightness
-        Lighting.ClockTime = defaults.ClockTime
-        Lighting.FogEnd = defaults.FogEnd
-        Lighting.GlobalShadows = defaults.GlobalShadows
+        state.RestoreGraphicsDefaults()
         local camera = workspace.CurrentCamera
         if camera then camera.FieldOfView = defaults.CameraFov end
     end

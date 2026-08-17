@@ -1200,7 +1200,8 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'local function menuBlocksTrigger\(\)' -and
     $sniperArenaText -match 'GuiService\.MenuIsOpen' -and
     $sniperArenaText -match 'mainWindow == nil or mainWindow\.Visible' -and
-    $sniperArenaText -match '(?s)not isActiveMatch\(\).*?or menuBlocksTrigger\(\)' -and
+    $sniperArenaText -match 'if not isActiveMatch\(\) then' -and
+    $sniperArenaText -match 'if menuBlocksTrigger\(\) then' -and
     $sniperArenaText -match 'SniperArenaTriggerPausedByMenu' -and
     $sniperArenaText -match 'hostileForTarget\(target\)' -and
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_hitbox_visible_body_v3"[^\r\n]*Persist\s*=\s*false[^\r\n]*Default\s*=\s*false' -and
@@ -1243,7 +1244,7 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_fe_charm"' -and
     $sniperArenaText -match 'local function cosmeticImage\(config\)' -and
     $sniperArenaText -match 'state\.CosmeticItemsByKind' -and
-    $sniperArenaText -match 'Name = "Open FE Cosmetic Inventory"' -and
+    $sniperArenaText -match 'Name = "Open Separate FE Inventory"' -and
     $sniperArenaText -match 'cosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"|CosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"' -and
     $sniperArenaText -match 'PageSize = 12' -and
     $sniperArenaText -match 'create\("ViewportFrame"' -and
@@ -1252,6 +1253,25 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'state\.StatusLabels\.Inventory = WeaponSection:AddLabel' -and
     $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserReady", true\)' -and
     $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserCards"' -and
+    $sniperArenaText -match 'Name = "VORSniperCosmeticInventory"' -and
+    $sniperArenaText -match 'dragHandle\.InputBegan:Connect' -and
+    $sniperArenaText -match 'SniperArenaCosmeticBrowserStandalone' -and
+    $sniperArenaText -match 'Name = "MinimizeToBubble"' -and
+    $sniperArenaText -match 'Name = "DraggableInventoryBubble"' -and
+    $sniperArenaText -match 'bubbleDrag\.Moved' -and
+    $sniperArenaText -match 'Enum\.UserInputType\.Touch' -and
+    $sniperArenaText -match 'SniperArenaCosmeticBrowserMobileReady' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_rtx_realism"' -and
+    $sniperArenaText -match 'Flag\s*=\s*"sniper_arena_rtx_strength"' -and
+    $sniperArenaText -match 'Enum\.Technology\.Future' -and
+    $sniperArenaText -match 'ColorCorrectionEffect.*VORSniperRealismColor' -and
+    $sniperArenaText -match 'BloomEffect.*VORSniperRealismBloom' -and
+    $sniperArenaText -match 'Atmosphere.*VORSniperRealismAtmosphere' -and
+    $sniperArenaText -match 'state\.RestoreGraphicsDefaults\(\)' -and
+    $sniperArenaText -match 'camera:ViewportPointToRay' -and
+    $sniperArenaText -match 'FilterType\s*=\s*Enum\.RaycastFilterType\.Exclude' -and
+    $sniperArenaText -match 'state\.TriggerBlockReason' -and
+    $sniperArenaText -match 'state\.EspRefreshes \+= 1' -and
     $sniperArenaText -match 'weapon\.Name = cosmeticKey or realName' -and
     $sniperArenaText -match 'weapon\.Name = realName' -and
     $sniperArenaText -match 'restoreFECosmetics\(\)' -and
@@ -1620,7 +1640,7 @@ Write-Host "Revive removal: PASS (routing, module, and standalone builder remove
 Write-Host "Murder Mystery 2 support: PASS (native roles, tagged weapons, gun/knife remotes, coins, boxes, prestige)"
 Write-Host "Murder Mystery 2 pages: PASS ($($mm2Pages.Count)/$($mm2Pages.Count))"
 Write-Host "Gunfight Arena support: PASS (Vortex modifiers, custom teams, movement data, PC/controller/mobile aim modes)"
-Write-Host "Sniper Arena support: PASS (dead-target rejection, silent aim/cursor/trigger, player-only big head, FE image-card cosmetic inventory, native jump/slide, weapon modifiers, ESP, server progression)"
+Write-Host "Sniper Arena support: PASS (combat, standalone draggable FE inventory, RTX-style reversible graphics, movement, ESP, and progression)"
 Write-Host "Iron Man: Reimagined support: PASS (native actions, paid-suit ownership, custom finite flight speed, repair/flares, aim assist, ESP)"
 Write-Host "Dog Race support: PASS (guided full progression, smart/manual eggs, race/train hybrid, birds, bone shoes, rewards, shops, gear, unlocks, cleanup)"
 Write-Host "Catch 1 Billion Ducks support: PASS (static native-route contract for lobby chores, cross-place resume, hunt, sell, weapons, upgrades, dogs, and rewards)"
