@@ -1245,7 +1245,11 @@ $sniperArenaNativeBehavior = (
     $sniperArenaText -match 'state\.CosmeticItemsByKind' -and
     $sniperArenaText -match 'Name = "Open FE Cosmetic Inventory"' -and
     $sniperArenaText -match 'cosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"|CosmeticBrowserRoot\.Name = "SniperCosmeticBrowser"' -and
-    $sniperArenaText -match 'PageSize = 60' -and
+    $sniperArenaText -match 'PageSize = 12' -and
+    $sniperArenaText -match 'create\("ViewportFrame"' -and
+    $sniperArenaText -match 'config\.ThirdPersonModel or config\.FirstPersonModel' -and
+    $sniperArenaText -match 'COSMETIC_STATE_PATH = "VORHub/SniperArenaCosmetics\.json"' -and
+    $sniperArenaText -match 'state\.StatusLabels\.Inventory = WeaponSection:AddLabel' -and
     $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserReady", true\)' -and
     $sniperArenaText -match 'gui:SetAttribute\("SniperArenaCosmeticBrowserCards"' -and
     $sniperArenaText -match 'weapon\.Name = cosmeticKey or realName' -and

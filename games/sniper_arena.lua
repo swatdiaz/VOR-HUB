@@ -995,6 +995,12 @@ return function(context)
         if type(config) ~= "table" then return "" end
         local image = config.Image or config.Icon or config.Thumbnail or config.ImageId
             or config.IconId or config.ThumbnailId or config.TextureId or config.AssetId
+        if (image == nil or image == "") and type(config.Instances) == "table" then
+            local imageLabel = config.Instances.ImageLabel
+            if typeof(imageLabel) == "Instance" and imageLabel:IsA("ImageLabel") then
+                image = imageLabel.Image
+            end
+        end
         if type(image) == "table" then image = image.Image or image.AssetId or image.Id or image[1] end
         if type(image) == "number" then return "rbxassetid://" .. tostring(math.floor(image)) end
         if type(image) ~= "string" or image == "" then return "" end
@@ -1038,6 +1044,70 @@ return function(context)
     end
     for _, items in pairs(state.CosmeticItemsByKind) do
         table.sort(items, function(a, b) return string.lower(a.Display) < string.lower(b.Display) end)
+    end
+
+    do
+    local COSMETIC_STATE_PATH = "VORHub/SniperArenaCosmetics.json"
+    local COSMETIC_STATE_VERSION = 1
+    local function validCosmeticSelection(kind, key)
+        local config = type(key) == "string" and CosmeticConfig[key] or nil
+        return config and tostring(config.WeaponType or "") == kind and key or nil
+    end
+    local function readSavedCosmeticState()
+        local saved = runtimeEnvironment.__VORSniperArenaCosmetics
+        local readFile = runtimeEnvironment.readfile
+        local isFile = runtimeEnvironment.isfile
+        if type(saved) ~= "table" and type(readFile) == "function" and type(isFile) == "function" then
+            local ok, decoded = pcall(function()
+                if not isFile(COSMETIC_STATE_PATH) then return nil end
+                return HttpService:JSONDecode(readFile(COSMETIC_STATE_PATH))
+            end)
+            if ok and type(decoded) == "table" then saved = decoded end
+        end
+        if type(saved) ~= "table" or tonumber(saved.Version) ~= COSMETIC_STATE_VERSION then
+            state.CosmeticPersistenceReady = true
+            return
+        end
+        state.CosmeticResume = saved
+        state.CosmeticPersistenceReady = false
+        state.FEUnlock = saved.Enabled == true
+        state.FESniperFamily = tostring(saved.SniperFamily or state.FESniperFamily)
+        state.FEMeleeFamily = tostring(saved.MeleeFamily or state.FEMeleeFamily)
+        local selections = type(saved.Selections) == "table" and saved.Selections or {}
+        for _, kind in ipairs({"Sniper", "Melee", "Glove", "Charm"}) do
+            state.FESelections[kind] = validCosmeticSelection(kind, selections[kind])
+        end
+        if state.FESelections.Sniper then state.FESniperFamily = tostring(CosmeticConfig[state.FESelections.Sniper].Family or state.FESniperFamily) end
+        if state.FESelections.Melee then state.FEMeleeFamily = tostring(CosmeticConfig[state.FESelections.Melee].Family or state.FEMeleeFamily) end
+    end
+
+    state.SaveCosmeticState = function()
+        if state.CosmeticPersistenceReady == false then return end
+        local payload = {
+            Version = COSMETIC_STATE_VERSION,
+            Enabled = state.FEUnlock == true,
+            SniperFamily = state.FESniperFamily,
+            MeleeFamily = state.FEMeleeFamily,
+            Selections = {
+                Sniper = state.FESelections.Sniper,
+                Melee = state.FESelections.Melee,
+                Glove = state.FESelections.Glove,
+                Charm = state.FESelections.Charm,
+            },
+        }
+        runtimeEnvironment.__VORSniperArenaCosmetics = payload
+        local writeFile = runtimeEnvironment.writefile
+        if type(writeFile) ~= "function" then return end
+        pcall(function()
+            local makeFolder = runtimeEnvironment.makefolder
+            local isFolder = runtimeEnvironment.isfolder
+            if type(makeFolder) == "function" then
+                if type(isFolder) ~= "function" or not isFolder("VORHub") then makeFolder("VORHub") end
+            end
+            writeFile(COSMETIC_STATE_PATH, HttpService:JSONEncode(payload))
+        end)
+    end
+    readSavedCosmeticState()
     end
 
     local function cosmeticFamilies(kind)
@@ -1333,6 +1403,7 @@ return function(context)
     local meleeFamilies = cosmeticFamilies("Melee")
     if not cosmeticCatalog.Sniper[state.FESniperFamily] then state.FESniperFamily = sniperFamilies[1] or "SSG" end
     if not cosmeticCatalog.Melee[state.FEMeleeFamily] then state.FEMeleeFamily = meleeFamilies[1] or "Karambit" end
+    state.StatusLabels = {}
     do
     local cosmeticControls = {}
 
@@ -1355,13 +1426,13 @@ return function(context)
         if not state.HitboxExpand then restoreHitboxes() end
     end})
     CombatStatusSection:AddSlider({Name = "Big Head Size (Experimental)", Description = "Expands living enemy-player heads only. Very large values may not register every server-checked shot.", Flag = "sniper_arena_hitbox_size_v3", Persist = false, Min = 1, Max = 30, Step = 1, Default = 5, Callback = function(v) state.HitboxSize = math.clamp(tonumber(v) or 5, 1, 30) end})
-    local combatLabel = CombatStatusSection:AddLabel("Target: none")
-    local ammoLabel = CombatStatusSection:AddLabel("Combat: scanning...")
+    state.StatusLabels.Combat = CombatStatusSection:AddLabel("Target: none")
+    state.StatusLabels.Ammo = CombatStatusSection:AddLabel("Combat: scanning...")
 
     WeaponModsSection:AddToggle({Name = "No Recoil", Description = "Zeros recoil and kick values on the equipped tool.", Flag = "sniper_arena_no_recoil", Default = false, Callback = function(v) state.NoRecoil = v == true if not state.NoRecoil then updateWeaponModifiers() end end})
     WeaponModsSection:AddToggle({Name = "No Spread", Description = "Zeros spread and accuracy values on the equipped tool.", Flag = "sniper_arena_no_spread", Default = false, Callback = function(v) state.NoSpread = v == true if not state.NoSpread then updateWeaponModifiers() end end})
     WeaponModsSection:AddToggle({Name = "Fast Reload", Description = "Sets equipped-tool reload/time values to 0.05 and restores them on toggle-off.", Flag = "sniper_arena_fast_reload", Default = false, Callback = function(v) state.FastReload = v == true if not state.FastReload then updateWeaponModifiers() end end})
-    local weaponModsLabel = WeaponModsSection:AddLabel("Modified weapon values: 0")
+    state.StatusLabels.WeaponMods = WeaponModsSection:AddLabel("Modified weapon values: 0")
 
     WeaponSection:AddDropdown({Name = "Owned Family", Flag = "sniper_arena_family", Options = families, Default = state.SelectedFamily, Callback = function(v) state.SelectedFamily = v or state.SelectedFamily end})
     WeaponSection:AddButton({Name = "Equip Selected Family", Callback = function() if not equipFamily(state.SelectedFamily) then notify(state.LastAction, COLORS.warning) end end})
@@ -1370,18 +1441,18 @@ return function(context)
         if family then state.SelectedFamily = family equipFamily(family) else notify("No owned primary sniper found", COLORS.warning) end
     end})
     WeaponSection:AddLabel("Only server-owned weapon IDs are accepted by loadouts.")
-    local inventoryLabel = WeaponSection:AddLabel("Inventory: scanning...")
+    state.StatusLabels.Inventory = WeaponSection:AddLabel("Inventory: scanning...")
 
     UnlockSection:AddToggle({Name = "Auto Unlock Earned Snipers", Description = "Calls the native unlock only after credited kills meet the server requirement.", Flag = "sniper_arena_auto_unlock", Default = false, Callback = function(v) state.AutoUnlock = v == true end})
     UnlockSection:AddButton({Name = "Unlock Everything Earned", Callback = function() local n = unlockEarned() notify(state.LastAction, n > 0 and COLORS.success or COLORS.warning) end})
     UnlockSection:AddLabel("Server ownership stays untouched. The FE showcase below is local-only.")
-    local unlockLabel = UnlockSection:AddLabel("Unlocks: scanning...")
+    state.StatusLabels.Unlock = UnlockSection:AddLabel("Unlocks: scanning...")
 
     CosmeticSection:AddParagraph({
         Title = "Soft unlock — only you see it",
         Content = "Choose any sniper, melee, glove, or charm model. VOR swaps the local inventory/first-person presentation while every real server weapon ID and ownership record stays unchanged.",
     })
-    cosmeticControls.FE = CosmeticSection:AddToggle({Name = "FE Unlock All Cosmetics", Description = "Enables client-only inventory and viewmodel swaps. Toggle off restores the exact server-equipped cosmetics.", Flag = "sniper_arena_fe_unlock_all", Default = false, Callback = function(v)
+    cosmeticControls.FE = CosmeticSection:AddToggle({Name = "FE Unlock All Cosmetics", Description = "Enables client-only inventory and viewmodel swaps. Toggle off restores the exact server-equipped cosmetics.", Flag = "sniper_arena_fe_unlock_all", Default = state.FEUnlock, Callback = function(v)
         local enabled = v == true
         if not enabled then restoreFECosmetics() end
         state.FEUnlock = enabled
@@ -1389,44 +1460,53 @@ return function(context)
             tryApplyLocalCosmeticSlots()
             applyCombatCosmetics()
         end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
     cosmeticControls.SniperFamily = CosmeticSection:AddDropdown({Name = "Sniper Family", Flag = "sniper_arena_fe_sniper_family", Options = sniperFamilies, Default = state.FESniperFamily, Callback = function(v)
         state.FESniperFamily = v or state.FESniperFamily
-        state.FESelections.Sniper = nil
+        local selected = state.FESelections.Sniper
+        if selected and tostring((CosmeticConfig[selected] or {}).Family or "") ~= state.FESniperFamily then state.FESelections.Sniper = nil end
         if cosmeticControls.SniperSkin then
             cosmeticControls.SniperSkin:SetOptions(cosmeticOptions("Sniper", state.FESniperFamily))
             cosmeticControls.SniperSkin:Set(ORIGINAL_COSMETIC)
         end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    cosmeticControls.SniperSkin = CosmeticSection:AddDropdown({Name = "Sniper Model / Skin", Flag = "sniper_arena_fe_sniper_skin", Options = cosmeticOptions("Sniper", state.FESniperFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.SniperSkin = CosmeticSection:AddDropdown({Name = "Sniper Model / Skin", Flag = "sniper_arena_fe_sniper_skin", Options = cosmeticOptions("Sniper", state.FESniperFamily), Default = state.FESelections.Sniper and state.CosmeticLabelByKey[state.FESelections.Sniper] or ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Sniper = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
     cosmeticControls.MeleeFamily = CosmeticSection:AddDropdown({Name = "Melee Family", Flag = "sniper_arena_fe_melee_family", Options = meleeFamilies, Default = state.FEMeleeFamily, Callback = function(v)
         state.FEMeleeFamily = v or state.FEMeleeFamily
-        state.FESelections.Melee = nil
+        local selected = state.FESelections.Melee
+        if selected and tostring((CosmeticConfig[selected] or {}).Family or "") ~= state.FEMeleeFamily then state.FESelections.Melee = nil end
         if cosmeticControls.MeleeSkin then
             cosmeticControls.MeleeSkin:SetOptions(cosmeticOptions("Melee", state.FEMeleeFamily))
             cosmeticControls.MeleeSkin:Set(ORIGINAL_COSMETIC)
         end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    cosmeticControls.MeleeSkin = CosmeticSection:AddDropdown({Name = "Knife / Melee Model", Flag = "sniper_arena_fe_melee_skin", Options = cosmeticOptions("Melee", state.FEMeleeFamily), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.MeleeSkin = CosmeticSection:AddDropdown({Name = "Knife / Melee Model", Flag = "sniper_arena_fe_melee_skin", Options = cosmeticOptions("Melee", state.FEMeleeFamily), Default = state.FESelections.Melee and state.CosmeticLabelByKey[state.FESelections.Melee] or ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Melee = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() applyCombatCosmetics() end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    cosmeticControls.GloveSkin = CosmeticSection:AddDropdown({Name = "Glove Model", Flag = "sniper_arena_fe_glove", Options = cosmeticOptions("Glove"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.GloveSkin = CosmeticSection:AddDropdown({Name = "Glove Model", Flag = "sniper_arena_fe_glove", Options = cosmeticOptions("Glove"), Default = state.FESelections.Glove and state.CosmeticLabelByKey[state.FESelections.Glove] or ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Glove = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
-    cosmeticControls.CharmSkin = CosmeticSection:AddDropdown({Name = "Charm Model", Flag = "sniper_arena_fe_charm", Options = cosmeticOptions("Charm"), Default = ORIGINAL_COSMETIC, Callback = function(v)
+    cosmeticControls.CharmSkin = CosmeticSection:AddDropdown({Name = "Charm Model", Flag = "sniper_arena_fe_charm", Options = cosmeticOptions("Charm"), Default = state.FESelections.Charm and state.CosmeticLabelByKey[state.FESelections.Charm] or ORIGINAL_COSMETIC, Callback = function(v)
         state.FESelections.Charm = cosmeticKeyByLabel[v]
         if state.FEUnlock then tryApplyLocalCosmeticSlots() end
+        state.SaveCosmeticState()
         if cosmeticControls.Refresh then cosmeticControls.Refresh() end
     end})
 
@@ -1434,10 +1514,16 @@ return function(context)
     local create = context.Create
     local addCorner = context.AddCorner
     local addStroke = context.AddStroke
-    local browserState = {Kind = "Sniper", Family = "All", Query = "", Page = 1, PageSize = 60, PreviewKey = nil}
+    local browserState = {Kind = "Sniper", Family = "All", Query = "", Page = 1, PageSize = 12, PreviewKey = nil}
     local browserCards, browserFamilies, browserCategoryButtons = {}, {}, {}
     local browserGrid, browserFamilyBar, browserPageLabel, browserResultLabel
     local browserPreviewImage, browserPreviewName, browserPreviewMeta, browserEquipButton, browserOriginalButton
+    local browserPreviewViewport, browserPreviewWorld, browserPreviewCamera, browserPreviewModel, browserPreviewFallback
+    local browserPreviewBasePivot, browserPreviewDistance = nil, 8
+    local previewYaw, previewPitch, previewZoom = -24, -7, 1
+    local previewDragging, previewHovered, previewLastPosition = false, false, Vector2.zero
+    local previewAutoSpin, previewEffects = true, true
+    local previewSpinButton, previewEffectsButton
 
     local function rarityColor(rarity)
         local name = string.lower(tostring(rarity or ""))
@@ -1467,6 +1553,103 @@ return function(context)
             end
         end
         return result
+    end
+
+    local function previewModelSource(item)
+        local config = item and CosmeticConfig[item.Key]
+        if type(config) ~= "table" then return nil, false end
+        local source = config.ThirdPersonModel or config.FirstPersonModel
+        local inherited = false
+        if typeof(source) ~= "Instance" then
+            local base = CosmeticConfig[tostring(config.Family or "")]
+            source = type(base) == "table" and (base.ThirdPersonModel or base.FirstPersonModel) or nil
+            inherited = typeof(source) == "Instance"
+        end
+        return typeof(source) == "Instance" and source or nil, inherited
+    end
+
+    local function updatePreviewCamera()
+        if not browserPreviewCamera then return end
+        local distance = math.max(browserPreviewDistance * previewZoom, 2.5)
+        browserPreviewCamera.CFrame = CFrame.lookAt(Vector3.new(0, 0.15, distance), Vector3.new(0, 0, 0))
+    end
+
+    local function rotatePreviewModel()
+        if browserPreviewModel and browserPreviewModel.Parent and browserPreviewBasePivot then
+            browserPreviewModel:PivotTo(CFrame.Angles(math.rad(previewPitch), math.rad(previewYaw), 0) * browserPreviewBasePivot)
+        end
+    end
+
+    local function clearPreviewModel()
+        if browserPreviewModel then browserPreviewModel:Destroy() browserPreviewModel = nil end
+        browserPreviewBasePivot = nil
+        if browserPreviewWorld then
+            for _, child in ipairs(browserPreviewWorld:GetChildren()) do child:Destroy() end
+        end
+    end
+
+    local function setPreviewEffects(enabled)
+        previewEffects = enabled == true
+        if previewEffectsButton then previewEffectsButton.Text = previewEffects and "FX  ON" or "FX  OFF" end
+        if not browserPreviewModel then return end
+        for _, object in ipairs(browserPreviewModel:GetDescendants()) do
+            if object:IsA("ParticleEmitter") then
+                object.Enabled = previewEffects
+                if previewEffects then pcall(object.Emit, object, math.clamp(math.floor(object.Rate * 0.2), 2, 18)) end
+            elseif object:IsA("Beam") or object:IsA("Trail") then
+                object.Enabled = previewEffects
+            end
+        end
+    end
+
+    local function refreshPreviewModel(item)
+        clearPreviewModel()
+        if not browserPreviewViewport then return false, false end
+        previewYaw, previewPitch, previewZoom = -24, -7, 1
+        local source, inherited = previewModelSource(item)
+        local loaded = false
+        if source then
+            local ok, clone = pcall(source.Clone, source)
+            if ok and clone then
+                clone.Name = "CosmeticPreviewModel"
+                for _, object in ipairs(clone:GetDescendants()) do
+                    if object:IsA("LuaSourceContainer") then
+                        object:Destroy()
+                    elseif object:IsA("BasePart") then
+                        object.Anchored = true
+                        object.CanCollide = false
+                        object.CanTouch = false
+                        object.CanQuery = false
+                    end
+                end
+                clone.Parent = browserPreviewWorld
+                browserPreviewModel = clone
+                local boxCFrame, size = clone:GetBoundingBox()
+                local originalPivot = clone:GetPivot()
+                browserPreviewBasePivot = CFrame.new(-boxCFrame.Position) * originalPivot
+                clone:PivotTo(browserPreviewBasePivot)
+                local longest = math.max(size.X, size.Y, size.Z, 0.5)
+                browserPreviewDistance = math.max(longest * 1.65, 3.4)
+                browserPreviewCamera.FieldOfView = 32
+                updatePreviewCamera()
+                rotatePreviewModel()
+                setPreviewEffects(previewEffects)
+                loaded = true
+            end
+        end
+        browserPreviewViewport.Visible = loaded
+        if browserPreviewImage then
+            local hasImage = item and item.Image ~= ""
+            browserPreviewImage.Visible = hasImage
+            browserPreviewImage.Image = hasImage and item.Image or ""
+            browserPreviewImage.Position = loaded and UDim2.new(1, -132, 1, -92) or UDim2.fromOffset(10, 10)
+            browserPreviewImage.Size = loaded and UDim2.fromOffset(120, 80) or UDim2.new(1, -20, 1, -20)
+        end
+        if browserPreviewFallback then
+            browserPreviewFallback.Visible = not loaded and (not item or item.Image == "")
+            browserPreviewFallback.Text = item and (string.upper(item.Family) .. "\n3D ASSET UNAVAILABLE") or "SELECT AN ITEM"
+        end
+        return loaded, inherited
     end
 
     local function setBrowserSelection(kind, key)
@@ -1540,12 +1723,12 @@ return function(context)
             BackgroundTransparency = 0.02,
             BorderSizePixel = 0,
             Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.new(0.86, 0, 0.84, 0),
+            Size = UDim2.new(0.94, 0, 0.90, 0),
             ZIndex = 602,
         }, state.CosmeticBrowserRoot)
         addCorner(panel, 16)
         addStroke(panel, COLORS.accentBright or Color3.fromRGB(151, 70, 255), 1.4, 0.12)
-        create("UISizeConstraint", {MinSize = Vector2.new(720, 480), MaxSize = Vector2.new(1220, 760)}, panel)
+        create("UISizeConstraint", {MinSize = Vector2.new(820, 520), MaxSize = Vector2.new(1680, 940)}, panel)
 
         create("TextLabel", {
             BackgroundTransparency = 1,
@@ -1637,7 +1820,7 @@ return function(context)
             BackgroundColor3 = COLORS.rail or Color3.fromRGB(13, 8, 22),
             BackgroundTransparency = 0.14,
             BorderSizePixel = 0,
-            Size = UDim2.new(0.72, -8, 1, 0),
+            Size = UDim2.new(0.62, -8, 1, 0),
             ZIndex = 603,
         }, body)
         addCorner(gridPanel, 12)
@@ -1692,31 +1875,117 @@ return function(context)
             BackgroundColor3 = COLORS.surfaceRaised or Color3.fromRGB(28, 20, 39),
             BackgroundTransparency = 0.05,
             BorderSizePixel = 0,
-            Position = UDim2.new(0.72, 8, 0, 0),
-            Size = UDim2.new(0.28, -8, 1, 0),
+            Position = UDim2.new(0.62, 8, 0, 0),
+            Size = UDim2.new(0.38, -8, 1, 0),
             ZIndex = 603,
         }, body)
         addCorner(preview, 12)
         addStroke(preview, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.35)
-        browserPreviewImage = create("ImageLabel", {
+        local previewStage = create("Frame", {
             BackgroundColor3 = COLORS.rail or Color3.fromRGB(13, 8, 22),
-            BackgroundTransparency = 0.12,
+            BackgroundTransparency = 0.04,
             BorderSizePixel = 0,
-            Image = "",
             Position = UDim2.fromOffset(12, 12),
-            ScaleType = Enum.ScaleType.Fit,
-            Size = UDim2.new(1, -24, 0.48, 0),
+            Size = UDim2.new(1, -24, 0.58, 0),
             ZIndex = 605,
         }, preview)
+        addCorner(previewStage, 12)
+        addStroke(previewStage, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.38)
+        browserPreviewViewport = create("ViewportFrame", {
+            Active = true,
+            Ambient = Color3.fromRGB(148, 164, 205),
+            BackgroundColor3 = Color3.fromRGB(7, 11, 20),
+            BackgroundTransparency = 0.12,
+            BorderSizePixel = 0,
+            LightColor = Color3.fromRGB(230, 240, 255),
+            LightDirection = Vector3.new(-1, -0.5, -1),
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 606,
+        }, previewStage)
+        addCorner(browserPreviewViewport, 12)
+        browserPreviewWorld = create("WorldModel", {Name = "CosmeticWorld"}, browserPreviewViewport)
+        browserPreviewCamera = create("Camera", {Name = "CosmeticCamera", FieldOfView = 32}, browserPreviewViewport)
+        browserPreviewViewport.CurrentCamera = browserPreviewCamera
+        browserPreviewImage = create("ImageLabel", {
+            BackgroundColor3 = Color3.fromRGB(11, 15, 26),
+            BackgroundTransparency = 0.04,
+            BorderSizePixel = 0,
+            Image = "",
+            ScaleType = Enum.ScaleType.Fit,
+            ZIndex = 608,
+        }, previewStage)
         addCorner(browserPreviewImage, 10)
+        addStroke(browserPreviewImage, COLORS.borderBright or Color3.fromRGB(101, 68, 132), 1, 0.28)
+        browserPreviewFallback = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold,
+            Size = UDim2.fromScale(1, 1),
+            Text = "SELECT AN ITEM",
+            TextColor3 = COLORS.dim or Color3.fromRGB(140, 130, 157),
+            TextSize = 14,
+            Visible = false,
+            ZIndex = 607,
+        }, previewStage)
+        local interactionHint = create("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 1),
+            BackgroundColor3 = Color3.fromRGB(7, 11, 20),
+            BackgroundTransparency = 0.18,
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(0.5, 0, 1, -8),
+            Size = UDim2.fromOffset(230, 24),
+            Text = "DRAG TO ORBIT   |   SCROLL TO ZOOM",
+            TextColor3 = Color3.fromRGB(188, 199, 222),
+            TextSize = 9,
+            ZIndex = 609,
+        }, previewStage)
+        addCorner(interactionHint, 12)
+        previewSpinButton = makeBrowserButton(previewStage, "SPIN  ON", UDim2.fromOffset(82, 28), UDim2.fromOffset(10, 10))
+        previewSpinButton.ZIndex = 610
+        previewEffectsButton = makeBrowserButton(previewStage, "FX  ON", UDim2.fromOffset(70, 28), UDim2.fromOffset(100, 10))
+        previewEffectsButton.ZIndex = 610
+        track(previewSpinButton.Activated:Connect(function()
+            previewAutoSpin = not previewAutoSpin
+            previewSpinButton.Text = previewAutoSpin and "SPIN  ON" or "SPIN  OFF"
+        end))
+        track(previewEffectsButton.Activated:Connect(function() setPreviewEffects(not previewEffects) end))
+        track(browserPreviewViewport.MouseEnter:Connect(function() previewHovered = true end))
+        track(browserPreviewViewport.MouseLeave:Connect(function() previewHovered = false previewDragging = false end))
+        track(browserPreviewViewport.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                previewDragging = true
+                previewLastPosition = input.Position
+            end
+        end))
+        track(UserInputService.InputChanged:Connect(function(input)
+            if previewDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - previewLastPosition
+                previewLastPosition = input.Position
+                previewYaw = (previewYaw - delta.X * 0.55) % 360
+                previewPitch = math.clamp(previewPitch - delta.Y * 0.28, -38, 38)
+                rotatePreviewModel()
+            elseif previewHovered and input.UserInputType == Enum.UserInputType.MouseWheel then
+                previewZoom = math.clamp(previewZoom - input.Position.Z * 0.08, 0.55, 1.8)
+                updatePreviewCamera()
+            end
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then previewDragging = false end
+        end))
+        track(RunService.RenderStepped:Connect(function(deltaTime)
+            if previewAutoSpin and not previewDragging and state.CosmeticBrowserRoot and state.CosmeticBrowserRoot.Visible and browserPreviewModel then
+                previewYaw = (previewYaw + deltaTime * 18) % 360
+                rotatePreviewModel()
+            end
+        end))
         browserPreviewName = create("TextLabel", {
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
-            Position = UDim2.new(0, 14, 0.50, 8),
-            Size = UDim2.new(1, -28, 0, 52),
+            Position = UDim2.new(0, 14, 0.60, 8),
+            Size = UDim2.new(1, -28, 0, 44),
             Text = "Select a cosmetic",
             TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
-            TextSize = 15,
+            TextSize = 18,
             TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
@@ -1725,11 +1994,11 @@ return function(context)
         browserPreviewMeta = create("TextLabel", {
             BackgroundTransparency = 1,
             Font = Enum.Font.Gotham,
-            Position = UDim2.new(0, 14, 0.50, 64),
-            Size = UDim2.new(1, -28, 0, 64),
+            Position = UDim2.new(0, 14, 0.60, 56),
+            Size = UDim2.new(1, -28, 0, 74),
             Text = "",
             TextColor3 = COLORS.muted or Color3.fromRGB(180, 171, 194),
-            TextSize = 11,
+            TextSize = 12,
             TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
@@ -1746,6 +2015,7 @@ return function(context)
         track(search:GetPropertyChangedSignal("Text"):Connect(function()
             browserState.Query = search.Text
             browserState.Page = 1
+            browserState.PreviewKey = nil
             if cosmeticControls.Refresh then cosmeticControls.Refresh() end
         end))
         track(UserInputService.InputBegan:Connect(function(input, processed)
@@ -1776,6 +2046,7 @@ return function(context)
                 button.Activated:Connect(function()
                     browserState.Family = family
                     browserState.Page = 1
+                    browserState.PreviewKey = nil
                     if cosmeticControls.Refresh then cosmeticControls.Refresh() end
                 end)
             end
@@ -1788,9 +2059,9 @@ return function(context)
         for _, child in ipairs(browserGrid:GetChildren()) do child:Destroy() end
         table.clear(browserCards)
         local gridLayout = create("UIGridLayout", {
-            CellPadding = UDim2.fromOffset(9, 9),
-            CellSize = UDim2.fromOffset(146, 154),
-            FillDirectionMaxCells = 5,
+            CellPadding = UDim2.fromOffset(12, 12),
+            CellSize = UDim2.fromOffset(196, 208),
+            FillDirectionMaxCells = 4,
             HorizontalAlignment = Enum.HorizontalAlignment.Left,
             SortOrder = Enum.SortOrder.LayoutOrder,
         }, browserGrid)
@@ -1815,7 +2086,7 @@ return function(context)
                 BorderSizePixel = 0,
                 Image = "",
                 LayoutOrder = index,
-                Size = UDim2.fromOffset(146, 154),
+                Size = UDim2.fromOffset(196, 208),
                 ZIndex = 605,
             }, browserGrid)
             addCorner(card, 10)
@@ -1827,7 +2098,7 @@ return function(context)
                 Image = item.Image,
                 Position = UDim2.fromOffset(7, 7),
                 ScaleType = Enum.ScaleType.Fit,
-                Size = UDim2.new(1, -14, 0, 94),
+                Size = UDim2.new(1, -14, 0, 130),
                 ZIndex = 606,
             }, card)
             addCorner(image, 8)
@@ -1837,11 +2108,11 @@ return function(context)
             create("TextLabel", {
                 BackgroundTransparency = 1,
                 Font = Enum.Font.GothamSemibold,
-                Position = UDim2.fromOffset(8, 105),
-                Size = UDim2.new(1, -16, 0, 30),
+                Position = UDim2.fromOffset(10, 145),
+                Size = UDim2.new(1, -20, 0, 34),
                 Text = item.Display,
                 TextColor3 = COLORS.text or Color3.fromRGB(246, 242, 251),
-                TextSize = 10,
+                TextSize = 12,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 TextWrapped = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
@@ -1851,8 +2122,8 @@ return function(context)
             create("TextLabel", {
                 BackgroundTransparency = 1,
                 Font = Enum.Font.GothamBold,
-                Position = UDim2.new(0, 8, 1, -18),
-                Size = UDim2.new(1, -16, 0, 14),
+                Position = UDim2.new(0, 10, 1, -22),
+                Size = UDim2.new(1, -20, 0, 16),
                 Text = string.upper(item.Rarity),
                 TextColor3 = rarityColor(item.Rarity),
                 TextSize = 9,
@@ -1867,19 +2138,25 @@ return function(context)
         end
 
         local previewItem = browserItem(browserState.Kind, browserState.PreviewKey)
-            or browserItem(browserState.Kind, state.FESelections[browserState.Kind])
-            or results[1]
+        local previewIsVisible = false
+        if previewItem then
+            for _, item in ipairs(results) do
+                if item.Key == previewItem.Key then previewIsVisible = true break end
+            end
+        end
+        if not previewIsVisible then previewItem = results[1] end
         if previewItem then
             browserState.PreviewKey = previewItem.Key
-            browserPreviewImage.Image = previewItem.Image
+            local modelLoaded, inheritedModel = refreshPreviewModel(previewItem)
             browserPreviewName.Text = previewItem.Display
-            browserPreviewMeta.Text = string.format("%s\n%s  /  %s\n%s", previewItem.Key, previewItem.Kind, previewItem.Family, previewItem.Rarity)
+            local previewMode = modelLoaded and (inheritedModel and "LIVE BASE MODEL + EXACT SKIN ART" or "LIVE 3D MODEL + EFFECTS") or "EXACT CATALOG ART"
+            browserPreviewMeta.Text = string.format("%s\n%s  /  %s  /  %s\n%s", previewItem.Key, previewItem.Kind, previewItem.Family, previewItem.Rarity, previewMode)
             browserPreviewMeta.TextColor3 = rarityColor(previewItem.Rarity)
             browserEquipButton.Text = state.FESelections[previewItem.Kind] == previewItem.Key and "EQUIPPED LOCALLY" or "EQUIP LOCALLY"
             browserEquipButton.Active = state.FESelections[previewItem.Kind] ~= previewItem.Key
         else
             browserState.PreviewKey = nil
-            browserPreviewImage.Image = ""
+            refreshPreviewModel(nil)
             browserPreviewName.Text = "No cosmetics found"
             browserPreviewMeta.Text = "Try another search or family."
             browserEquipButton.Text = "NOTHING TO EQUIP"
@@ -1904,6 +2181,33 @@ return function(context)
     end})
     end
     installCosmeticBrowser()
+    task.delay(1.25, function()
+        if not state.Alive then return end
+        local resume = state.CosmeticResume
+        local selections = type(resume) == "table" and type(resume.Selections) == "table" and resume.Selections or {}
+        local function resumeKey(kind, key)
+            local config = type(key) == "string" and CosmeticConfig[key] or nil
+            return config and tostring(config.WeaponType or "") == kind and key or nil
+        end
+        local sniperKey = resumeKey("Sniper", selections.Sniper)
+        local meleeKey = resumeKey("Melee", selections.Melee)
+        local gloveKey = resumeKey("Glove", selections.Glove)
+        local charmKey = resumeKey("Charm", selections.Charm)
+        if sniperKey then
+            cosmeticControls.SniperFamily:Set(tostring(CosmeticConfig[sniperKey].Family or state.FESniperFamily))
+            cosmeticControls.SniperSkin:Set(state.CosmeticLabelByKey[sniperKey])
+        end
+        if meleeKey then
+            cosmeticControls.MeleeFamily:Set(tostring(CosmeticConfig[meleeKey].Family or state.FEMeleeFamily))
+            cosmeticControls.MeleeSkin:Set(state.CosmeticLabelByKey[meleeKey])
+        end
+        if gloveKey then cosmeticControls.GloveSkin:Set(state.CosmeticLabelByKey[gloveKey]) end
+        if charmKey then cosmeticControls.CharmSkin:Set(state.CosmeticLabelByKey[charmKey]) end
+        if type(resume) == "table" then cosmeticControls.FE:Set(resume.Enabled == true) end
+        state.CosmeticResume = nil
+        state.CosmeticPersistenceReady = true
+        state.SaveCosmeticState()
+    end)
     end
     CosmeticSection:AddButton({Name = "Reapply FE Cosmetics", Callback = function()
         local localCount = tryApplyLocalCosmeticSlots()
@@ -2004,14 +2308,14 @@ return function(context)
         local count = 0
         for _, item in pairs(content) do count = count + 1 local family = familyOf(item) if family then familySet[family] = true end end
         local familyCount = 0 for _ in pairs(familySet) do familyCount = familyCount + 1 end
-        inventoryLabel.Text = string.format("Owned: %d items | %d families | %s best", count, familyCount, tostring(bestOwnedPrimary() or "none"))
+        state.StatusLabels.Inventory.Text = string.format("Owned: %d items | %d families | %s best", count, familyCount, tostring(bestOwnedPrimary() or "none"))
         local nextFamily, nextRequired = nil, math.huge
         for family, required in pairs(WeaponConfig.KilledUnlock or {}) do
             local owned = WeaponService and type(WeaponService.HasWeapon) == "function" and WeaponService.HasWeapon(family)
             required = tonumber(required) or math.huge
             if not owned and required < nextRequired then nextFamily, nextRequired = family, required end
         end
-        unlockLabel.Text = nextFamily and string.format("Kills: %d | Next: %s at %d (%d left)", kills, nextFamily, nextRequired, math.max(0, nextRequired - kills))
+        state.StatusLabels.Unlock.Text = nextFamily and string.format("Kills: %d | Next: %s at %d (%d left)", kills, nextFamily, nextRequired, math.max(0, nextRequired - kills))
             or string.format("Kills: %d | All kill-gated snipers owned", kills)
         coachLabel.Text = nextFamily and string.format("Best move: earn %d more kills for %s", math.max(0, nextRequired - kills), nextFamily)
             or "Best move: tasks, battlepass, and ranked rewards"
@@ -2027,9 +2331,9 @@ return function(context)
         serverLabel.Text = string.format("%s | %s | Place %s", serverMode(), nameValue and tostring(nameValue.Value) or "Server", tostring(game.PlaceId))
         local stats = StatsStore and StatsStore.Data and StatsStore.Data._global or {}
         careerLabel.Text = string.format("Played %s | Kills %s | Deaths %s | Wins %s", tostring(stats.Played or 0), tostring(stats.Kill or 0), tostring(stats.Death or 0), tostring(stats.Win or 0))
-        combatLabel.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.Parent and state.CurrentTarget.Parent.Name or "none")
-        ammoLabel.Text = string.format("Team %s | Health %s | Ping %sms", tostring(LocalPlayer:GetAttribute("Team") or "--"), tostring(LocalPlayer:GetAttribute("Health") or "--"), tostring(LocalPlayer:GetAttribute("Ping") or "--"))
-        weaponModsLabel.Text = string.format("Modified weapon values: %d", state.ModifiedWeaponValues)
+        state.StatusLabels.Combat.Text = "Target: " .. (state.CurrentTarget and state.CurrentTarget.Parent and state.CurrentTarget.Parent.Name or "none")
+        state.StatusLabels.Ammo.Text = string.format("Team %s | Health %s | Ping %sms", tostring(LocalPlayer:GetAttribute("Team") or "--"), tostring(LocalPlayer:GetAttribute("Health") or "--"), tostring(LocalPlayer:GetAttribute("Ping") or "--"))
+        state.StatusLabels.WeaponMods.Text = string.format("Modified weapon values: %d", state.ModifiedWeaponValues)
         local cases = ownedCases()
         local caseTotal = 0
         for _, entry in ipairs(cases) do caseTotal += entry.Owned end
